@@ -1,0 +1,437 @@
+// Aether — task detail side drawer.
+
+import { ScrollView } from "std-widgets.slint";
+import { Aether } from "theme.slint";
+import { AetherIcons } from "icons.slint";
+import { TaskDetail, PeerRow, LogRow } from "model.slint";
+import { ChunkGrid, FileBadge, IconAction, LogLine, SpeedChart, StatusChip } from "widgets.slint";
+
+component SectionTitle inherits Text {
+    color: Aether.on-surface-muted;
+    font-size: Aether.text-micro;
+    font-weight: Aether.weight-medium;
+    letter-spacing: 0.4px;
+}
+
+component InfoRow inherits Rectangle {
+    in property <string> label: "";
+    in property <string> value: "";
+
+    height: 34px;
+
+    HorizontalLayout {
+        spacing: 16px;
+
+        Text {
+            text: root.label;
+            color: Aether.on-surface-muted;
+            font-size: Aether.text-caption;
+            min-width: 68px;
+            cross-axis-self-alignment: center;
+        }
+
+        Text {
+            text: root.value;
+            color: Aether.on-surface;
+            font-size: Aether.text-caption;
+            horizontal-stretch: 1;
+            overflow: elide;
+            cross-axis-self-alignment: center;
+        }
+    }
+}
+
+// Legend swatch for the chunk grid.
+component LegendDot inherits Rectangle {
+    in property <color> swatch: Aether.primary;
+
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    background: root.swatch;
+}
+
+component PeerItem inherits Rectangle {
+    in property <PeerRow> peer;
+
+    height: 38px;
+
+    HorizontalLayout {
+        spacing: 10px;
+
+        Rectangle {
+            width: 6px;
+            height: 6px;
+            border-radius: 3px;
+            background: root.peer.kind == 0 ? Aether.primary : Aether.outline;
+            cross-axis-self-alignment: center;
+        }
+
+        Text {
+            text: root.peer.address;
+            color: Aether.on-surface-variant;
+            font-size: Aether.text-caption;
+            horizontal-stretch: 1;
+            overflow: elide;
+            cross-axis-self-alignment: center;
+        }
+
+        Text {
+            text: root.peer.speed;
+            color: Aether.on-surface-muted;
+            font-size: Aether.text-micro;
+            cross-axis-self-alignment: center;
+        }
+    }
+}
+
+export component TaskDrawer inherits Rectangle {
+    in property <bool> open: false;
+    in property <TaskDetail> detail;
+    in property <[PeerRow]> peers: [];
+    in property <[float]> chunks: [];
+    in property <[LogRow]> logs: [];
+
+    callback closed();
+
+    visible: root.open;
+
+    // ---- scrim ------------------------------------------------------------
+    Rectangle {
+        width: 100%;
+        height: 100%;
+        background: #000000.with-alpha(0.32);
+
+        // Only the exposed strip is interactive; the sheet keeps its own
+        // pointer handling underneath.
+        TouchArea {
+            width: root.width - 420px;
+            height: 100%;
+            clicked => { root.closed(); }
+        }
+    }
+
+    // ---- drawer surface ---------------------------------------------------
+    Rectangle {
+        x: parent.width - self.width;
+        width: 420px;
+        height: 100%;
+        background: Aether.surface-container;
+        border-width: 1px;
+        border-color: Aether.outline-faint;
+        drop-shadow-color: #000000.with-alpha(0.4);
+        drop-shadow-blur: 24px;
+        drop-shadow-offset-x: -6px;
+
+        // Clicks on empty sheet space must not reach the page underneath.
+        TouchArea {}
+
+        VerticalLayout {
+            spacing: 0;
+
+            // ---- header -----------------------------------------------
+            Rectangle {
+                height: 92px;
+                HorizontalLayout {
+                    height: 100%;
+                    padding-left: 20px;
+                    padding-right: 14px;
+                    spacing: 12px;
+
+                    FileBadge {
+                        kind: root.detail.kind;
+                        tone: root.detail.kind-tone;
+                        cross-axis-self-alignment: center;
+                    }
+
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: 8px;
+                        alignment: center;
+
+                        Text {
+                            text: root.detail.name;
+                            color: Aether.on-surface;
+                            font-size: Aether.text-title;
+                            font-weight: Aether.weight-medium;
+                            overflow: elide;
+                        }
+
+                        HorizontalLayout {
+                            spacing: 8px;
+
+                            StatusChip {
+                                kind: root.detail.status;
+                                text: root.detail.status-text;
+                                min-width: 84px;
+                                max-width: 84px;
+                            }
+
+                            Text {
+                                text: root.detail.progress-text;
+                                color: Aether.on-surface-muted;
+                                font-size: Aether.text-caption;
+                                cross-axis-self-alignment: center;
+                                overflow: elide;
+                                horizontal-stretch: 1;
+                            }
+                        }
+                    }
+
+                    IconAction {
+                        icon-source: AetherIcons.close;
+                        cross-axis-self-alignment: center;
+                        clicked => { root.closed(); }
+                    }
+                }
+
+                // Header progress reads at a glance before any scrolling.
+                Rectangle {
+                    y: parent.height - self.height;
+                    width: 100%;
+                    height: 3px;
+                    background: Aether.outline-faint;
+
+                    Rectangle {
+                        x: 0;
+                        y: 0;
+                        width: parent.width * clamp(root.detail.progress, 0, 1);
+                        height: 100%;
+                        background: Aether.primary;
+                    }
+                }
+            }
+
+            // ---- body --------------------------------------------------
+            Rectangle {
+                vertical-stretch: 1;
+                clip: true;
+
+                ScrollView {
+                    width: 100%;
+                    height: 100%;
+
+                    VerticalLayout {
+                        padding-left: 20px;
+                        padding-right: 20px;
+                        padding-top: 20px;
+                        padding-bottom: 28px;
+                        spacing: 24px;
+
+
+                        // ---- speed chart -------------------------------------
+                        VerticalLayout {
+                            spacing: 10px;
+
+                            HorizontalLayout {
+                                SectionTitle { text: "传输速度"; horizontal-stretch: 1; }
+
+                                Text {
+                                    text: "峰值 " + root.detail.peak;
+                                    color: Aether.on-surface-muted;
+                                    font-size: Aether.text-micro;
+                                    cross-axis-self-alignment: center;
+                                }
+                            }
+
+                            Rectangle {
+                                width: 100%;
+                                border-radius: Aether.radius-md;
+                                background: Aether.surface-dim;
+                                border-width: 1px;
+                                border-color: Aether.outline-faint;
+
+                                VerticalLayout {
+                                    padding: 12px;
+                                    padding-bottom: 8px;
+
+                                    SpeedChart {
+                                        width: 100%;
+                                        height: 108px;
+                                        line-path: root.detail.line-path;
+                                        area-path: root.detail.area-path;
+                                        latest: root.detail.sample;
+                                        caption: "最近 60 秒 · 每秒采样";
+                                    }
+                                }
+                            }
+                        }
+
+                        // ---- chunks ------------------------------------------
+                        VerticalLayout {
+                            spacing: 10px;
+
+                            HorizontalLayout {
+                                SectionTitle { text: "分片进度"; horizontal-stretch: 1; }
+
+                                Text {
+                                    text: root.detail.chunks-text;
+                                    color: Aether.on-surface-muted;
+                                    font-size: Aether.text-micro;
+                                    cross-axis-self-alignment: center;
+                                }
+                            }
+
+                            ChunkGrid {
+                                width: 100%;
+                                chunks: root.chunks;
+                            }
+
+                            HorizontalLayout {
+                                spacing: 16px;
+
+                                HorizontalLayout {
+                                    spacing: 6px;
+
+                                    LegendDot { swatch: Aether.primary; cross-axis-self-alignment: center; }
+                                    Text {
+                                        text: "已完成";
+                                        color: Aether.on-surface-muted;
+                                        font-size: Aether.text-micro;
+                                        cross-axis-self-alignment: center;
+                                    }
+                                }
+
+                                HorizontalLayout {
+                                    spacing: 6px;
+
+                                    LegendDot { swatch: Aether.primary.with-alpha(0.55); cross-axis-self-alignment: center; }
+                                    Text {
+                                        text: "下载中";
+                                        color: Aether.on-surface-muted;
+                                        font-size: Aether.text-micro;
+                                        cross-axis-self-alignment: center;
+                                    }
+                                }
+
+                                HorizontalLayout {
+                                    spacing: 6px;
+
+                                    LegendDot { swatch: Aether.outline-faint; cross-axis-self-alignment: center; }
+                                    Text {
+                                        text: "等待中";
+                                        color: Aether.on-surface-muted;
+                                        font-size: Aether.text-micro;
+                                        cross-axis-self-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+
+                        // ---- file info ---------------------------------------
+                        VerticalLayout {
+                            spacing: 8px;
+
+                            SectionTitle { text: "文件信息"; }
+
+                            Rectangle {
+                                width: 100%;
+                                border-radius: Aether.radius-md;
+                                background: Aether.surface-container-high;
+                                border-width: 1px;
+                                border-color: Aether.outline-faint;
+
+                                VerticalLayout {
+                                    padding-left: 14px;
+                                    padding-right: 14px;
+                                    padding-top: 8px;
+                                    padding-bottom: 8px;
+                                    spacing: 0;
+
+                                    InfoRow { label: "大小"; value: root.detail.size; }
+                                    InfoRow { label: "实时速度"; value: root.detail.speed; }
+                                    InfoRow { label: "剩余时间"; value: root.detail.eta; }
+                                    InfoRow { label: "来源"; value: root.detail.source; }
+                                    InfoRow { label: "保存位置"; value: root.detail.path; }
+                                    InfoRow { label: "备注"; value: root.detail.note != "" ? root.detail.note : "—"; }
+                                }
+                            }
+                        }
+
+                        // ---- logs ---------------------------------------------
+                        VerticalLayout {
+                            spacing: 10px;
+
+                            SectionTitle { text: "日志预览"; }
+
+                            Rectangle {
+                                width: 100%;
+                                border-radius: Aether.radius-md;
+                                background: Aether.surface-dim;
+                                border-width: 1px;
+                                border-color: Aether.outline-faint;
+                                clip: true;
+
+                                VerticalLayout {
+                                    padding-left: 12px;
+                                    padding-right: 12px;
+                                    padding-top: 10px;
+                                    padding-bottom: 10px;
+                                    spacing: 2px;
+
+                                    for entry in root.logs: LogLine {
+                                        time: entry.time;
+                                        level: entry.level;
+                                        message: entry.message;
+                                    }
+                                }
+                            }
+                        }
+
+                        // ---- peers --------------------------------------------
+                        VerticalLayout {
+                            spacing: 10px;
+
+                            HorizontalLayout {
+                                SectionTitle { text: "BT 节点"; horizontal-stretch: 1; }
+
+                                Text {
+                                    text: root.peers.length + " 个连接";
+                                    color: Aether.on-surface-muted;
+                                    font-size: Aether.text-micro;
+                                    cross-axis-self-alignment: center;
+                                }
+                            }
+
+                            if root.peers.length == 0: Rectangle {
+                                width: 100%;
+                                height: 52px;
+                                border-radius: Aether.radius-md;
+                                background: Aether.surface-container-high;
+                                border-width: 1px;
+                                border-color: Aether.outline-faint;
+
+                                HorizontalLayout {
+                                    padding-left: 14px;
+                                    padding-right: 14px;
+                                    spacing: 8px;
+
+                                    Image {
+                                        source: AetherIcons.info;
+                                        width: 16px;
+                                        height: 16px;
+                                        colorize: Aether.on-surface-muted;
+                                        cross-axis-self-alignment: center;
+                                    }
+
+                                    Text {
+                                        text: "该任务不是种子任务，无节点列表";
+                                        color: Aether.on-surface-muted;
+                                        font-size: Aether.text-caption;
+                                        vertical-alignment: center;
+                                        horizontal-stretch: 1;
+                                    }
+                                }
+                            }
+
+                            for peer in root.peers: PeerItem {
+                                peer: peer;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+    }
+}

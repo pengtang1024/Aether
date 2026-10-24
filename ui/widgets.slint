@@ -1,0 +1,768 @@
+// Aether — reusable UI components.
+//
+// Everything here is built on the vendored Material 3 widget library so the
+// ripple, shape and motion behaviour matches the upstream M3 implementation.
+
+import { StateLayer } from "std-widgets.slint";
+import { Aether, FileTone, StatusColor } from "theme.slint";
+import { AetherIcons } from "icons.slint";
+
+// ---------------------------------------------------------------------------
+// Icon button with an M3 state layer.
+// ---------------------------------------------------------------------------
+export component IconAction inherits Rectangle {
+    in property <image> icon-source;
+    in property <color> icon-color: Aether.on-surface-variant;
+    in property <length> icon-size: 20px;
+    in property <bool> enabled: true;
+    in property <string> tooltip: "";
+    callback clicked;
+
+    width: 36px;
+    height: 36px;
+    border-radius: Aether.radius-full;
+    background: state-layer.has-hover ? Aether.on-surface.with-alpha(0.07) : transparent;
+
+    animate background { duration: Aether.motion-short; easing: ease; }
+
+    Image {
+        source: root.icon-source;
+        width: root.icon-size;
+        height: root.icon-size;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        colorize: root.icon-color;
+        opacity: root.enabled ? 1 : 0.35;
+    }
+
+    state-layer := StateLayer {
+        width: 100%;
+        height: 100%;
+        border-radius: Aether.radius-full;
+        ripple-color: root.icon-color;
+        has-ripple: true;
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Filled / tonal / outlined / text button.
+// ---------------------------------------------------------------------------
+export component AppButton inherits Rectangle {
+    in property <string> text: "";
+    in property <image> icon-source;
+    in property <length> icon-size: 18px;
+    in property <bool> primary: true;
+    in property <bool> tonal: false;
+    in property <bool> outlined: false;
+    in property <bool> enabled: true;
+    in property <color> accent: Aether.primary;
+    callback clicked;
+
+    height: 40px;
+    border-radius: Aether.radius-full;
+    background: root.primary ? root.accent
+        : root.tonal ? Aether.primary-container
+        : transparent;
+    border-width: root.outlined ? 1px : 0px;
+    border-color: Aether.outline;
+
+    HorizontalLayout {
+        padding-left: root.icon-source.width > 0 ? 14px : 20px;
+        padding-right: 20px;
+        spacing: 8px;
+        alignment: center;
+
+        if root.icon-source.width > 0: Image {
+            source: root.icon-source;
+            width: root.icon-size;
+            height: root.icon-size;
+            colorize: root.primary ? Aether.on-primary
+                : root.tonal ? Aether.on-primary-container
+                : Aether.on-surface-variant;
+            opacity: root.enabled ? 1 : 0.38;
+        }
+
+        Text {
+            text: root.text;
+            color: root.primary ? Aether.on-primary
+                : root.tonal ? Aether.on-primary-container
+                : Aether.on-surface-variant;
+            font-size: Aether.text-label;
+            font-weight: Aether.weight-medium;
+            opacity: root.enabled ? 1 : 0.38;
+            vertical-alignment: center;
+        }
+    }
+
+    state-layer := StateLayer {
+        width: 100%;
+        height: 100%;
+        border-radius: Aether.radius-full;
+        background: root.primary ? Aether.on-primary : Aether.on-surface;
+        ripple-color: root.primary ? Aether.on-primary : Aether.on-surface;
+        has-ripple: true;
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Status tag.
+// ---------------------------------------------------------------------------
+export component StatusChip inherits Rectangle {
+    in property <int> kind: 0;
+    in property <string> text: "";
+
+    height: 24px;
+    border-radius: Aether.radius-full;
+    background: StatusColor.container(root.kind);
+
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 12px;
+        spacing: 6px;
+
+        Rectangle {
+            width: 6px;
+            height: 6px;
+            border-radius: 3px;
+            background: StatusColor.label(root.kind);
+            cross-axis-self-alignment: center;
+        }
+
+        Text {
+            text: root.text;
+            color: StatusColor.label(root.kind);
+            font-size: Aether.text-caption;
+            font-weight: Aether.weight-medium;
+            cross-axis-self-alignment: center;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Filter chip (selectable).
+// ---------------------------------------------------------------------------
+export component FilterChip inherits Rectangle {
+    in property <string> text: "";
+    in property <bool> selected: false;
+    callback clicked;
+
+    height: 32px;
+    border-radius: Aether.radius-sm;
+    border-width: root.selected ? 0px : 1px;
+    border-color: Aether.outline-faint;
+    background: root.selected ? Aether.secondary-container
+        : state-layer.has-hover ? Aether.on-surface.with-alpha(0.05)
+        : transparent;
+
+    animate background { duration: Aether.motion-short; easing: ease; }
+
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        alignment: center;
+
+        Text {
+            text: root.text;
+            color: root.selected ? Aether.on-secondary-container : Aether.on-surface-variant;
+            font-size: Aether.text-label;
+            font-weight: root.selected ? Aether.weight-medium : Aether.weight-regular;
+            vertical-alignment: center;
+        }
+    }
+
+    state-layer := StateLayer {
+        width: 100%;
+        height: 100%;
+        border-radius: Aether.radius-sm;
+        background: Aether.on-surface;
+        ripple-color: Aether.on-surface;
+        has-ripple: true;
+        clicked => { root.clicked(); }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Search field — rounded, filled, with a leading icon.
+// ---------------------------------------------------------------------------
+export component SearchField inherits Rectangle {
+    in-out property <string> text: "";
+    out property <bool> focused: input.has-focus;
+    in property <string> placeholder: "搜索";
+    callback edited(string);
+
+    height: 40px;
+    border-radius: Aether.radius-full;
+    background: Aether.surface-container-high;
+    border-width: 1px;
+    border-color: root.focused ? Aether.primary : Aether.outline-faint;
+
+    animate border-color { duration: Aether.motion-short; easing: ease; }
+
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 10px;
+        spacing: 10px;
+
+        Image {
+            source: AetherIcons.search;
+            width: 18px;
+            height: 18px;
+            colorize: root.focused ? Aether.primary : Aether.on-surface-muted;
+            cross-axis-self-alignment: center;
+        }
+
+        field := Rectangle {
+            horizontal-stretch: 1;
+
+            Text {
+                x: 0;
+                y: (parent.height - self.height) / 2;
+                text: root.placeholder;
+                color: Aether.on-surface-muted;
+                font-size: Aether.text-body;
+                visible: root.text == "";
+            }
+
+            input := TextInput {
+                x: 0;
+                y: 0;
+                width: 100%;
+                height: 100%;
+                text <=> root.text;
+                font-size: Aether.text-body;
+                color: Aether.on-surface;
+                selection-background-color: Aether.primary.with-alpha(0.4);
+                selection-foreground-color: Aether.on-surface;
+                edited => { root.edited(self.text); }
+            }
+        }
+
+        if root.text != "": Rectangle {
+            width: 26px;
+            height: 26px;
+            border-radius: 13px;
+            background: clear.has-hover ? Aether.on-surface.with-alpha(0.08) : transparent;
+            cross-axis-self-alignment: center;
+
+            animate background { duration: Aether.motion-short; easing: ease; }
+
+            Image {
+                source: AetherIcons.close;
+                width: 14px;
+                height: 14px;
+                colorize: Aether.on-surface-muted;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+            }
+
+            clear := TouchArea {
+                clicked => {
+                    root.text = "";
+                    root.edited("");
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// File-type badge: extension as the label, category as a quiet tint.
+// ---------------------------------------------------------------------------
+export component FileBadge inherits Rectangle {
+    in property <string> kind: "";
+    in property <int> tone: 0;
+
+    width: 40px;
+    height: 40px;
+    border-radius: Aether.radius-md;
+    background: FileTone.container(root.tone);
+    border-width: 1px;
+    border-color: FileTone.outline(root.tone);
+
+    Text {
+        text: root.kind;
+        color: FileTone.label(root.tone);
+        font-size: 10px;
+        font-weight: Aether.weight-medium;
+        width: 100%;
+        height: 100%;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Linear progress indicator.
+// ---------------------------------------------------------------------------
+export component ProgressTrack inherits Rectangle {
+    in property <float> value: 0;
+    in property <color> fill-color: Aether.primary;
+    in property <color> track-color: Aether.outline-faint;
+    in property <length> bar-height: 6px;
+
+    height: root.bar-height;
+    border-radius: root.bar-height / 2;
+    background: root.track-color;
+
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width * clamp(root.value, 0, 1);
+        height: 100%;
+        border-radius: parent.border-radius;
+        background: root.fill-color;
+
+        animate width { duration: Aether.motion-long; easing: ease-out; }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Grouped settings card.
+// ---------------------------------------------------------------------------
+export component SectionCard inherits Rectangle {
+    in property <image> icon-source;
+    in property <string> title: "";
+    in property <string> subtitle: "";
+
+    border-radius: Aether.radius-lg;
+    background: Aether.surface-container;
+    border-width: 1px;
+    border-color: Aether.outline-faint;
+
+    VerticalLayout {
+        padding: 20px;
+        spacing: 14px;
+
+        HorizontalLayout {
+            spacing: 12px;
+
+            Rectangle {
+                width: 36px;
+                height: 36px;
+                border-radius: 10px;
+                background: Aether.primary-soft;
+                border-width: 1px;
+                border-color: Aether.primary.with-alpha(0.22);
+
+                Image {
+                    source: root.icon-source;
+                    width: 20px;
+                    height: 20px;
+                    colorize: Aether.primary-bright;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                }
+            }
+
+            Text {
+                text: root.title;
+                color: Aether.on-surface;
+                font-size: Aether.text-title;
+                font-weight: Aether.weight-medium;
+                cross-axis-self-alignment: center;
+            }
+        }
+
+        Rectangle {
+            horizontal-stretch: 1;
+            background: transparent;
+
+            VerticalLayout {
+                spacing: 2px;
+                @children
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// A settings row: title + description on the left, control on the right.
+// ---------------------------------------------------------------------------
+export component SettingRow inherits Rectangle {
+    in property <string> title: "";
+    in property <string> description: "";
+    in property <bool> divider: true;
+
+    VerticalLayout {
+        padding-top: 8px;
+        padding-bottom: 8px;
+        spacing: 12px;
+
+        HorizontalLayout {
+            spacing: 20px;
+
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 2px;
+
+                Text {
+                    text: root.title;
+                    color: Aether.on-surface;
+                    font-size: Aether.text-body;
+                }
+
+                Text {
+                    text: root.description;
+                    color: Aether.on-surface-muted;
+                    font-size: Aether.text-caption;
+                    visible: root.description != "";
+                }
+            }
+
+            @children
+        }
+    }
+
+    if root.divider: Rectangle {
+        y: parent.height - self.height;
+        width: 100%;
+        height: 1px;
+        background: Aether.outline-variant.with-alpha(0.75);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Navigation rail item.
+// ---------------------------------------------------------------------------
+export component NavRailItem inherits Rectangle {
+    in property <image> icon-source;
+    in property <string> label: "";
+    in property <bool> active: false;
+    callback clicked;
+
+    width: 72px;
+    height: 60px;
+    border-radius: Aether.radius-lg;
+
+    Rectangle {
+        x: 6px;
+        y: 2px;
+        width: parent.width - 12px;
+        height: 32px;
+        border-radius: Aether.radius-full;
+        background: root.active ? Aether.primary-container : transparent;
+
+        animate background { duration: Aether.motion-medium; easing: ease; }
+    }
+
+    Image {
+        source: root.icon-source;
+        width: 22px;
+        height: 22px;
+        x: (parent.width - self.width) / 2;
+        y: 6px;
+        colorize: root.active ? Aether.on-primary-container : Aether.on-surface-variant;
+
+        animate colorize { duration: Aether.motion-medium; easing: ease; }
+    }
+
+    Text {
+        text: root.label;
+        color: root.active ? Aether.on-primary-container : Aether.on-surface-muted;
+        font-size: Aether.text-micro;
+        font-weight: root.active ? Aether.weight-medium : Aether.weight-regular;
+        width: parent.width;
+        x: 0;
+        y: 40px;
+        horizontal-alignment: center;
+
+        animate color { duration: Aether.motion-medium; easing: ease; }
+    }
+
+    state-layer := StateLayer {
+        width: 100%;
+        height: 100%;
+        border-radius: Aether.radius-lg;
+        background: Aether.on-surface;
+        ripple-color: Aether.on-surface;
+        has-ripple: true;
+        clicked => { root.clicked(); }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Ambient "ether" background: slow streamlines over a faint primary glow.
+// Low contrast on purpose - it must never compete with the content.
+// ---------------------------------------------------------------------------
+export component FlowBackground inherits Rectangle {
+    in property <bool> enabled: true;
+    /// Slow oscillation in -1..1, driven from Rust at 5 Hz.
+    in property <float> drift: 0;
+
+    clip: true;
+    background: transparent;
+
+    // ---- soft glow, top-right -------------------------------------------
+    Rectangle {
+        x: parent.width * 0.58 + root.drift * 18px;
+        y: -260px;
+        width: 900px;
+        height: 720px;
+        background: @radial-gradient(circle, Aether.primary.with-alpha(root.enabled ? 0.11 : 0.0) 0%, transparent 68%);
+    }
+
+    // ---- soft glow, bottom-left -----------------------------------------
+    Rectangle {
+        x: -320px - root.drift * 14px;
+        y: parent.height - 420px;
+        width: 760px;
+        height: 640px;
+        background: @radial-gradient(circle, Aether.primary.with-alpha(root.enabled ? 0.07 : 0.0) 0%, transparent 70%);
+    }
+
+    // ---- streamline layers (static geometry, gentle horizontal drift) ----
+    Path {
+        x: root.drift * 10px;
+        y: 0;
+        width: 100%;
+        height: 100%;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 1600;
+        viewbox-height: 1000;
+        fit: fill;
+        opacity: root.enabled ? 1 : 0;
+        stroke: Aether.primary.with-alpha(0.055);
+        stroke-width: 1px;
+
+        commands: "M -140 132 C 210 42 470 268 760 206 C 1040 146 1300 116 1740 214 M -140 356 C 250 268 520 486 812 404 C 1090 326 1320 322 1740 424 M -140 596 C 260 512 512 728 828 636 C 1100 556 1340 566 1740 656 M -140 828 C 240 764 500 946 812 862 C 1090 786 1340 792 1740 892";
+    }
+
+    Path {
+        x: root.drift * -16px;
+        y: 0;
+        width: 100%;
+        height: 100%;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 1600;
+        viewbox-height: 1000;
+        fit: fill;
+        opacity: root.enabled ? 1 : 0;
+        stroke: Aether.primary.with-alpha(0.04);
+        stroke-width: 1px;
+
+        commands: "M -140 216 C 280 322 430 108 748 168 C 1020 220 1240 402 1740 330 M -140 470 C 300 566 470 380 780 440 C 1050 492 1260 640 1740 566 M -140 720 C 280 806 468 640 792 690 C 1060 732 1270 860 1740 792";
+    }
+
+    // ---- drifting motes ---------------------------------------------------
+    for i in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21] : Rectangle {
+        width: 2px + mod(i, 3) * 1px;
+        height: self.width;
+        border-radius: self.width / 2;
+        background: Aether.on-surface.with-alpha(root.enabled ? 0.09 + mod(i, 4) * 0.03 : 0.0);
+        x: (parent.width + 240px) * ((i * 0.137) - floor(i * 0.137)) - 120px
+            + root.drift * (3px + mod(i, 4) * 2px);
+        y: parent.height * (0.08 + mod(i * 0.271, 0.86)) + root.drift * (4px + mod(i, 5) * 3px);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Speed chart — a vector line chart drawn with a single SVG path.
+// ---------------------------------------------------------------------------
+export component SpeedChart inherits Rectangle {
+    in property <string> line-path: "";
+    in property <string> area-path: "";
+    in property <float> peak: 1;
+    /// Latest sample normalized to the chart peak, 0..1.
+    in property <float> latest: 0;
+    in property <string> caption: "最近 60 秒";
+
+    private property <length> dot-y: root.height * (0.94 - clamp(root.latest, 0, 1) * 0.88);
+
+    // grid
+    for i in [0, 1, 2, 3] : Rectangle {
+        x: 0;
+        y: root.height * i / 3;
+        width: 100%;
+        height: 1px;
+        background: Aether.outline-variant.with-alpha(0.75);
+    }
+
+    Path {
+        x: 0;
+        y: 0;
+        width: 100%;
+        height: 100%;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 1;
+        viewbox-height: 1;
+        fit: ImageFit.fill;
+        commands: root.area-path;
+        fill: @linear-gradient(90deg, Aether.primary.with-alpha(0.26), Aether.primary.with-alpha(0.01));
+    }
+
+    Path {
+        x: 0;
+        y: 0;
+        width: 100%;
+        height: 100%;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 1;
+        viewbox-height: 1;
+        fit: ImageFit.fill;
+        commands: root.line-path;
+        stroke: Aether.primary;
+        stroke-width: 2px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+    }
+
+    // The live end of the line: a soft halo plus a small solid dot.
+    if root.line-path != "" && root.latest > 0.02: Rectangle {
+        x: parent.width - 17px;
+        y: root.dot-y - 9px;
+        width: 18px;
+        height: 18px;
+        border-radius: 9px;
+        background: Aether.primary.with-alpha(0.18);
+    }
+
+    if root.line-path != "" && root.latest > 0.02: Rectangle {
+        x: parent.width - 12px;
+        y: root.dot-y - 4px;
+        width: 8px;
+        height: 8px;
+        border-radius: 4px;
+        background: Aether.primary-bright;
+        border-width: 2px;
+        border-color: Aether.surface-container;
+    }
+
+    Text {
+        text: root.caption;
+        color: Aether.on-surface-muted;
+        font-size: Aether.text-micro;
+        x: 0;
+        y: parent.height - self.height;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Chunk (segment) progress grid — 8 × 4.
+// ---------------------------------------------------------------------------
+export component ChunkGrid inherits Rectangle {
+    in property <[float]> chunks: [];
+
+    height: 4 * 8px + 3 * 4px;
+
+    VerticalLayout {
+        spacing: 4px;
+
+        for r in [0, 1, 2, 3] : HorizontalLayout {
+            spacing: 4px;
+
+            for c in [0, 1, 2, 3, 4, 5, 6, 7] : Rectangle {
+                horizontal-stretch: 1;
+                height: 8px;
+                border-radius: 2px;
+                background: Aether.outline-faint;
+                clip: true;
+
+                Rectangle {
+                    x: 0;
+                    y: 0;
+                    width: parent.width * clamp(root.chunks[r * 8 + c], 0, 1);
+                    height: 100%;
+                    border-radius: 2px;
+                    background: root.chunks[r * 8 + c] >= 1
+                        ? Aether.primary
+                        : Aether.primary.with-alpha(0.55);
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Peer (BT node) row.
+// ---------------------------------------------------------------------------
+export component PeerRow inherits Rectangle {
+    in property <string> address: "";
+    in property <string> speed: "";
+    in property <string> progress: "";
+    in property <float> ratio: 0;
+    in property <int> kind: 0;
+
+    height: 44px;
+
+    HorizontalLayout {
+        spacing: 12px;
+
+        Rectangle {
+            width: 8px;
+            height: 8px;
+            border-radius: 4px;
+            background: root.kind == 0 ? Aether.primary : Aether.outline;
+            cross-axis-self-alignment: center;
+        }
+
+        Text {
+            text: root.address;
+            color: Aether.on-surface;
+            font-size: Aether.text-caption;
+            horizontal-stretch: 1;
+            overflow: elide;
+            cross-axis-self-alignment: center;
+        }
+
+        Text {
+            text: root.speed;
+            color: Aether.on-surface-variant;
+            font-size: Aether.text-caption;
+            cross-axis-self-alignment: center;
+        }
+
+        ProgressTrack {
+            width: 54px;
+            value: root.ratio;
+            bar-height: 4px;
+            cross-axis-self-alignment: center;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Log preview row.
+// ---------------------------------------------------------------------------
+export component LogLine inherits Rectangle {
+    in property <string> time: "";
+    in property <string> level: "";
+    in property <string> message: "";
+
+    height: 20px;
+
+    HorizontalLayout {
+        spacing: 8px;
+
+        Text {
+            text: root.time;
+            color: Aether.on-surface-muted;
+            font-size: Aether.text-micro;
+            cross-axis-self-alignment: center;
+        }
+
+        Text {
+            text: root.level;
+            color: root.level == "ERR" ? Aether.error : root.level == "WRN" ? Aether.warning : Aether.info;
+            font-size: Aether.text-micro;
+            font-weight: Aether.weight-medium;
+            cross-axis-self-alignment: center;
+        }
+
+        Text {
+            text: root.message;
+            color: Aether.on-surface-variant;
+            font-size: Aether.text-micro;
+            horizontal-stretch: 1;
+            overflow: elide;
+            cross-axis-self-alignment: center;
+        }
+    }
+}

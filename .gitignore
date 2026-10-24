@@ -1,0 +1,12 @@
+# Build artefacts
+/target
+*.log
+
+# Editor / OS noise
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Screenshot scratch files
+/docs/screenshots/*.tmp.png

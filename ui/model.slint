@@ -1,0 +1,57 @@
+// Aether — data model shared between the Rust side and the UI.
+
+export struct TaskRow {
+    id: int,
+    name: string,
+    subtitle: string,
+    kind: string,
+    kind-tone: int,
+    progress: float,
+    progress-text: string,
+    speed: string,
+    speed-label: string,
+    eta: string,
+    status: int,
+    status-text: string,
+    paused: bool,
+    completed: bool,
+    failed: bool,
+    torrent: bool,
+    note: string,
+    selected: bool,
+}
+
+export struct TaskDetail {
+    name: string,
+    subtitle: string,
+    kind: string,
+    kind-tone: int,
+    status: int,
+    status-text: string,
+    progress: float,
+    progress-text: string,
+    speed: string,
+    eta: string,
+    size: string,
+    path: string,
+    note: string,
+    source: string,
+    line-path: string,
+    area-path: string,
+    peak: string,
+    sample: float,
+    chunks-text: string,
+}
+
+export struct PeerRow {
+    address: string,
+    speed: string,
+    ratio: float,
+    kind: int,
+}
+
+export struct LogRow {
+    time: string,
+    level: string,
+    message: string,
+}

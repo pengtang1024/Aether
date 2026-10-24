@@ -1,0 +1,353 @@
+// Aether — settings page.
+//
+// Five Material 3 grouped cards: 通用 / 网络限速 / BT 配置 / 外观 / 通知.
+
+import { ScrollView, Switch, Slider, ComboBox, LineEdit } from "std-widgets.slint";
+import { Aether } from "theme.slint";
+import { AetherIcons } from "icons.slint";
+import { SectionCard, SettingRow } from "widgets.slint";
+
+// A slider with a live value read-out on the left.
+component ValueSlider inherits Rectangle {
+    in property <string> label: "";
+    in property <float> value: 0;
+    in property <float> minimum: 0;
+    in property <float> maximum: 100;
+    in property <string> suffix: "";
+    in property <bool> divider: true;
+    in-out property <float> slider-value <=> inner.value;
+    callback changed(float);
+
+    height: 40px;
+
+    HorizontalLayout {
+        spacing: 12px;
+
+        Text {
+            text: root.label;
+            color: Aether.on-surface-variant;
+            font-size: Aether.text-caption;
+            min-width: 92px;
+            cross-axis-self-alignment: center;
+        }
+
+        inner := Slider {
+            horizontal-stretch: 1;
+            value: root.value;
+            minimum: root.minimum;
+            maximum: root.maximum;
+            changed => { root.slider-value = self.value; root.changed(self.value); }
+        }
+
+        Text {
+            text: root.slider-value + root.suffix;
+            color: Aether.on-surface;
+            font-size: Aether.text-caption;
+            font-weight: Aether.weight-medium;
+            min-width: 76px;
+            horizontal-alignment: right;
+            cross-axis-self-alignment: center;
+        }
+    }
+
+    if root.divider: Rectangle {
+        y: parent.height - self.height;
+        width: 100%;
+        height: 1px;
+        background: Aether.outline-variant.with-alpha(0.75);
+    }
+}
+
+export component SettingsPage inherits Rectangle {
+    callback settings-changed(string, string);
+
+    scroller := ScrollView {
+        VerticalLayout {
+            padding-top: 28px;
+            padding-bottom: 28px;
+            padding-left: max(28px, (scroller.visible-width - 980px) / 2);
+            padding-right: max(28px, (scroller.visible-width - 980px) / 2);
+            spacing: 20px;
+
+                // ---------------------------------------------------------
+                // 通用
+                // ---------------------------------------------------------
+                SectionCard {
+                    icon-source: AetherIcons.tune;
+                    title: "通用";
+
+                    SettingRow {
+                        title: "启动时最小化到系统托盘";
+                        description: "关闭窗口后仍在后台继续下载";
+
+                        Switch {
+                            checked: true;
+                            toggled => { root.settings-changed("tray-on-start", self.checked ? "true" : "false"); }
+                        }
+                    }
+
+                    SettingRow {
+                        title: "下载完成后自动移除任务";
+                        description: "保留已完成记录以便稍后查看";
+
+                        Switch {
+                            checked: false;
+                            toggled => { root.settings-changed("remove-on-finish", self.checked ? "true" : "false"); }
+                        }
+                    }
+
+                    SettingRow {
+                        title: "默认保存目录";
+                        description: "新建任务时预填该路径";
+
+                        LineEdit {
+                            text: "/home/aether/Downloads";
+                            placeholder-text: "/path/to/downloads";
+                            min-width: 300px;
+                            max-width: 300px;
+                            show-clear-button: false;
+                            edited => { root.settings-changed("default-dir", self.text); }
+                        }
+                    }
+
+                    SettingRow {
+                        title: "同时进行的最大任务数";
+                        divider: false;
+                        description: "超出后任务进入等待队列";
+
+                        ComboBox {
+                            model: ["1", "3", "5", "10", "不限"];
+                            current-index: 3;
+                            min-width: 140px;
+                            max-width: 140px;
+                            selected => { root.settings-changed("max-tasks", self.current-value); }
+                        }
+                    }
+                }
+
+                // ---------------------------------------------------------
+                // 网络限速
+                // ---------------------------------------------------------
+                SectionCard {
+                    icon-source: AetherIcons.gauge;
+                    title: "网络限速";
+
+                    SettingRow {
+                        title: "启用全局限速";
+                        description: "限制所有任务的合计带宽占用";
+
+                        Switch {
+                            checked: true;
+                            toggled => { root.settings-changed("global-limit-on", self.checked ? "true" : "false"); }
+                        }
+                    }
+
+                    ValueSlider {
+                        label: "下载上限";
+                        value: 2048;
+                        minimum: 64;
+                        maximum: 10240;
+                        suffix: " KB/s";
+                        changed(v) => { root.settings-changed("global-download-limit", v); }
+                    }
+
+                    ValueSlider {
+                        label: "上传上限";
+                        value: 512;
+                        minimum: 0;
+                        maximum: 4096;
+                        suffix: " KB/s";
+                        changed(v) => { root.settings-changed("global-upload-limit", v); }
+                    }
+
+                    SettingRow {
+                        title: "单任务限速";
+                        description: "新建任务时可在弹窗中单独调整";
+
+                        Switch {
+                            checked: false;
+                            toggled => { root.settings-changed("per-task-limit-on", self.checked ? "true" : "false"); }
+                        }
+                    }
+
+                    SettingRow {
+                        title: "最大连接数";
+                        divider: false;
+                        description: "单个任务同时使用的连接数量";
+
+                        ComboBox {
+                            model: ["8", "16", "32", "64", "128"];
+                            current-index: 2;
+                            min-width: 120px;
+                            max-width: 120px;
+                            selected => { root.settings-changed("max-connections", self.current-value); }
+                        }
+                    }
+                }
+
+                // ---------------------------------------------------------
+                // BT 配置
+                // ---------------------------------------------------------
+                SectionCard {
+                    icon-source: AetherIcons.seed;
+                    title: "BT 配置";
+
+                    SettingRow {
+                        title: "监听端口";
+                        description: "需要放行时可在路由器中转发该端口";
+
+                        LineEdit {
+                            text: "51413";
+                            placeholder-text: "端口";
+                            min-width: 140px;
+                            max-width: 140px;
+                            edited => { root.settings-changed("bt-port", self.text); }
+                        }
+                    }
+
+                    SettingRow {
+                        title: "加密模式";
+                        description: "与其它客户端的连接加密方式";
+
+                        ComboBox {
+                            model: ["允许加密连接", "仅加密连接", "禁用加密"];
+                            current-index: 0;
+                            min-width: 180px;
+                            max-width: 180px;
+                            selected => { root.settings-changed("bt-encryption", self.current-value); }
+                        }
+                    }
+
+                    SettingRow {
+                        title: "启用 DHT";
+                        description: "通过分布式哈希表发现更多节点";
+
+                        Switch {
+                            checked: true;
+                            toggled => { root.settings-changed("bt-dht", self.checked ? "true" : "false"); }
+                        }
+                    }
+
+                    SettingRow {
+                        title: "启用 PEX";
+                        description: "节点之间交换片信息以提高下载效率";
+
+                        Switch {
+                            checked: true;
+                            toggled => { root.settings-changed("bt-pex", self.checked ? "true" : "false"); }
+                        }
+                    }
+
+                    ValueSlider {
+                        label: "种子会话上限";
+                        divider: false;
+                        value: 200;
+                        minimum: 50;
+                        maximum: 1000;
+                        suffix: " 个";
+                        changed(v) => { root.settings-changed("bt-max-sessions", v); }
+                    }
+                }
+
+                // ---------------------------------------------------------
+                // 外观
+                // ---------------------------------------------------------
+                SectionCard {
+                    icon-source: AetherIcons.moon;
+                    title: "外观";
+
+                    SettingRow {
+                        title: "深色主题";
+                        description: "Aether 默认使用 Material 3 暗色调色板";
+
+                        Switch {
+                            checked: true;
+                            enabled: false;
+                        }
+                    }
+
+                    SettingRow {
+                        title: "背景以太流线";
+                        description: "在窗口底部显示低透明度的流线装饰";
+
+                        Switch {
+                            checked: true;
+                            toggled => { root.settings-changed("flow-background", self.checked ? "true" : "false"); }
+                        }
+                    }
+
+                    ValueSlider {
+                        label: "界面缩放";
+                        value: 100;
+                        minimum: 80;
+                        maximum: 140;
+                        suffix: "%";
+                        changed(v) => { root.settings-changed("ui-scale", v); }
+                    }
+
+                    SettingRow {
+                        title: "紧凑模式";
+                        divider: false;
+                        description: "收紧列表行高以显示更多任务";
+
+                        Switch {
+                            checked: false;
+                            toggled => { root.settings-changed("compact-mode", self.checked ? "true" : "false"); }
+                        }
+                    }
+                }
+
+                // ---------------------------------------------------------
+                // 通知
+                // ---------------------------------------------------------
+                SectionCard {
+                    icon-source: AetherIcons.info;
+                    title: "通知";
+
+                    SettingRow {
+                        title: "下载完成通知";
+                        description: "任务完成时发送桌面通知";
+
+                        Switch {
+                            checked: true;
+                            toggled => { root.settings-changed("notify-done", self.checked ? "true" : "false"); }
+                        }
+                    }
+
+                    SettingRow {
+                        title: "通知方式";
+                        description: "通知的展示形式";
+
+                        ComboBox {
+                            model: ["系统通知", "应用内提示", "仅声音"];
+                            current-index: 0;
+                            min-width: 180px;
+                            max-width: 180px;
+                            selected => { root.settings-changed("notify-style", self.current-value); }
+                        }
+                    }
+
+                    SettingRow {
+                        title: "播放提示音";
+                        description: "任务完成时播放一段轻提示音";
+
+                        Switch {
+                            checked: false;
+                            toggled => { root.settings-changed("notify-sound", self.checked ? "true" : "false"); }
+                        }
+                    }
+
+                    SettingRow {
+                        title: "勿扰时段";
+                        divider: false;
+                        description: "该时段内不弹出通知";
+
+                        Switch {
+                            checked: false;
+                            toggled => { root.settings-changed("notify-dnd", self.checked ? "true" : "false"); }
+                        }
+                    }
+                }
+        }
+    }
+}

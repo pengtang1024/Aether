@@ -1,0 +1,178 @@
+# Aether
+
+**原生 Material 3 下载管理器 · Rust + Slint · 无 WebView**
+
+Aether 是一个桌面下载管理器的界面原型（UI mockup），交互与视觉参考 Motrix，但完全用
+Rust 与 [Slint](https://slint.dev) 从零绘制：没有 Electron、没有 Chromium、没有一张位图
+贴图。窗口里的每个像素——包括图标、进度条、折线图和背景流线——都是矢量渲染。
+
+界面严格遵循 Material 3：深色主题、`#6750A4` 品牌主色、M3 形状与字号阶梯、柔和的环境
+阴影和大量留白。
+
+---
+
+## 界面预览
+
+### 下载列表
+
+虚拟化任务表：文件名与来源、进度、实时速率、状态标签、行内暂停/继续与取消操作。
+顶栏包含搜索、新建下载按钮与状态筛选 chip；右下角是新建任务 FAB。
+
+![下载列表](docs/screenshots/home.png)
+
+### 新建下载
+
+URL、保存路径（带下拉选择）、分片数、限速滑块与备注。确认后任务会立即插入列表并开始
+推进。
+
+![新建下载](docs/screenshots/dialog.png)
+
+### 任务详情抽屉
+
+固定头部展示文件徽标、状态与整宽进度条；下方依次是最近 60 秒实时速度折线图、分片进度
+网格与图例、紧凑的文件信息卡、日志预览和 BT 节点列表。点击任务行任意空白处打开，点击
+遮罩或右上角关闭。
+
+![任务详情](docs/screenshots/drawer.png)
+
+### 设置
+
+通用、网络限速、BT 配置、外观、通知五组 M3 卡片，包含开关、输入框、下拉框与滑块。
+
+![设置](docs/screenshots/settings.png)
+
+---
+
+## 运行
+
+前置条件：
+
+- Rust 1.88 或更新版本
+- Linux 桌面（X11 或 Wayland）
+- OpenGL 驱动；无 GPU 时 Slint 会回退到软件渲染
+
+```bash
+cargo run --release
+```
+
+首次构建需要编译 Slint 与整套 Material 组件，耗时略长；之后的增量构建在数秒内完成。
+
+### 开发用启动参数
+
+调试某个界面状态时，不必手动点击：
+
+```bash
+AETHER_VIEW=settings cargo run   # 直接打开设置页
+AETHER_VIEW=dialog   cargo run   # 直接打开新建下载对话框
+AETHER_VIEW=drawer   cargo run   # 打开一个正在做种/下载的任务详情
+```
+
+### 截图脚本
+
+`scripts/shot.sh` 会在私有 Xvfb 显示（默认 `:97`）上启动应用并抓图，不打扰当前桌面：
+
+```bash
+./scripts/shot.sh /tmp/aether.png 6          # 输出路径、等待秒数
+./scripts/shot.sh /tmp/aether.png 6 1500 940 # 还可指定画布尺寸
+AETHER_VIEW=drawer ./scripts/shot.sh /tmp/drawer.png
+```
+
+依赖 `Xvfb` 与 ImageMagick 的 `import`。窗口本体固定为 1440×900；脚本默认画布比窗口大，
+多出的黑边裁掉即可。
+
+---
+
+## 项目结构
+
+```
+.
+├── build.rs                 # 注册 "material" 样式、include 路径
+├── src/
+│   ├── main.rs              # UI 胶水层：过滤/搜索、行 diff、回调、200 ms 定时器
+│   ├── engine.rs            # 模拟下载引擎：种子数据、速率抖动、完成/做种迁移、图表路径
+│   └── model.rs             # Task / Status 领域模型与格式化
+├── ui/
+│   ├── app.slint            # 窗口外壳、导航栏、顶栏、筛选 chip、FAB、覆盖层
+│   ├── theme.slint          # Aether 设计令牌（surface / brand / 字号 / 圆角）
+│   ├── icons.slint          # SVG 图标注册表（33 个）
+│   ├── widgets.slint        # 自有组件：按钮、chip、速度图、分片网格、流线背景
+│   ├── model.slint          # 与 Rust 共享的结构体
+│   ├── pages/
+│   │   ├── downloads.slint  # 任务表与空状态
+│   │   ├── settings.slint   # 五组设置卡片
+│   │   ├── new-download.slint
+│   │   └── task-drawer.slint
+│   └── material/            # vendored Slint 1.18.1 Material 3 组件库
+├── assets/icons/            # 单色描边 SVG（33 个），使用时 colorize
+├── docs/screenshots/
+└── scripts/shot.sh
+```
+
+### 数据流
+
+```
+Slint 回调  →  main.rs 意图处理  →  Engine 状态变更
+    ↑                                    │
+    └──  VecModel / 属性更新  ←  行级 diff ┘
+```
+
+UI 不直接修改任务。暂停、继续、取消、新建、筛选和搜索都先变成 `main.rs` 里的意图，由
+模拟引擎算出新状态，再以最小 diff 写回 `VecModel`。定时器每 200 ms 推进一次引擎，因此
+速率、进度、剩余时间和详情图表都会连续变化。
+
+引擎内置 12 个演示任务（HTTP / BT、下载中 / 等待 / 暂停 / 完成 / 失败 / 做种），覆盖了
+列表与详情抽屉的所有视觉状态。
+
+---
+
+## 设计说明
+
+**Material 3。** 直接使用 Slint 官方 Material 组件库，而不是手写一套仿 M3 控件。
+`build.rs` 通过 `with_style("material")` 把 vendored 库注册成样式，所有 `Button`、
+`Switch`、`LineEdit`、`ComboBox`、`Slider` 都来自上游实现。Aether 只做两件事：替换品牌
+色板，以及补充列表行、状态 chip、折线图这类业务组件。
+
+**深色优先。** `MaterialPalette` 的深色角色被重定向到 Aether 的 surface 阶梯
+（`#141218` → `#211F26` → `#2B2930` → `#36343B`）。主色 `#6750A4` 驱动 accent 角色，
+`ColorSchemeSelector` 固定为 dark，避免跟随系统切到浅色而破坏整屏对比。
+
+**留白与层级。** 导航栏 100 px，内容区 24 px 外边距，表格行高 74 px。卡片的“悬浮感”
+来自低透明度、大模糊半径的阴影，而不是粗边框或高对比描边。
+
+**矢量图表。** Slint 1.18 还没有 `Canvas`。速度折线图因此用 `Path` 的 SVG `commands`
+绘制，坐标系归一化到 0..1，再通过 `ImageFit.fill` 拉伸到目标尺寸；分片网格、进度轨和
+背景流线同理。图标是单色描边 SVG 资源，由 `colorize` 在使用处着色，因此一套资源可以适配任意前景色角色。
+
+**虚拟化与命中测试。** 表格用 `ListView`，只实例化视口内的行；行背景的
+`TouchArea` 放在内容**之后**，这样行内按钮优先接收点击，而空白区域仍能打开详情抽屉。
+
+### 对 vendored 组件的改动
+
+`ui/material/` 来自 Slint 1.18.1 的 `widgets/{material,common,interfaces}`，做了几处
+小而局部的补丁，均保留上游版权头：
+
+| 文件 | 改动 |
+| --- | --- |
+| `styling.slint` | 品牌色板：`#6750A4` 及 Aether 深色 surface 阶梯 |
+| `color-scheme.slint` | 固定深色方案（上游从平台读取） |
+| `lineedit.slint` | 新增 `show-clear-button`，路径输入框不需要清除按钮 |
+| `scrollview.slint` | 1 px 描边滑块改为 6 px 实心圆角滑块，深色下更清晰 |
+| `switch.slint` | 选中态滑块改用 `control-foreground`，与深紫轨道拉开对比 |
+
+---
+
+## 范围与限制
+
+这是一个**界面原型**，不是可用的下载器：
+
+- 下载过程完全由 `engine.rs` 模拟，不发起网络请求、不写文件
+- 数据每次启动重新生成，没有持久化、断点续传或真实校验
+- 没有系统托盘、通知、剪贴板监听、协议关联与多语言
+- 窗口固定 1440×900，未做小屏自适应
+- 设置项只改变界面状态，不产生实际效果
+
+## 许可
+
+Aether 自有代码以 MIT 发布。`ui/material/` 为 Slint 上游 vendored 代码，版权归
+SixtyFPS GmbH 所有，保留原始许可头，采用三选一许可：GPL-3.0-only、
+Slint Royalty-free 2.0 或 Slint Software 3.0。再分发时请遵守相应条款。

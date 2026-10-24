@@ -1,0 +1,289 @@
+// Aether — "new download" modal dialog.
+
+import { LineEdit, ComboBox, Slider } from "std-widgets.slint";
+import { Aether } from "theme.slint";
+import { AetherIcons } from "icons.slint";
+import { AppButton, IconAction } from "widgets.slint";
+
+component FieldLabel inherits Text {
+    color: Aether.on-surface-variant;
+    font-size: Aether.text-caption;
+    font-weight: Aether.weight-medium;
+}
+
+export component NewDownloadDialog inherits Rectangle {
+    in property <bool> open: false;
+    in-out property <string> url: "";
+    in-out property <string> path: "/home/aether/Downloads";
+    in-out property <int> segments-index: 0;
+    in-out property <float> speed-limit: 0;
+    in-out property <string> note: "";
+
+    callback confirmed(string, string, int, float, string);
+    callback dismissed();
+
+    visible: root.open;
+
+    // ---- scrim -----------------------------------------------------------
+    Rectangle {
+        width: 100%;
+        height: 100%;
+        background: #000000.with-alpha(0.55);
+
+        TouchArea {
+            clicked => { root.dismissed(); }
+        }
+    }
+
+    // ---- dialog card -----------------------------------------------------
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: 560px;
+        height: 500px;
+        border-radius: Aether.radius-2xl;
+        background: Aether.surface-container-high;
+        border-width: 1px;
+        border-color: Aether.outline-faint;
+        drop-shadow-color: #000000.with-alpha(0.5);
+        drop-shadow-blur: 28px;
+        drop-shadow-offset-y: 8px;
+
+        // Swallow clicks that land on the card itself; without this they would
+        // fall through to the dismiss-on-click scrim behind the dialog.
+        TouchArea {}
+
+        VerticalLayout {
+            padding: 24px;
+            spacing: 18px;
+
+            // ---- header -----------------------------------------------
+            HorizontalLayout {
+                spacing: 12px;
+
+                Rectangle {
+                    width: 36px;
+                    height: 36px;
+                    border-radius: 10px;
+                    background: Aether.primary-soft;
+                    border-width: 1px;
+                    border-color: Aether.primary.with-alpha(0.22);
+                    cross-axis-self-alignment: center;
+
+                    Image {
+                        source: AetherIcons.download;
+                        width: 20px;
+                        height: 20px;
+                        colorize: Aether.primary-bright;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                    }
+                }
+
+                Text {
+                    text: "新建下载任务";
+                    color: Aether.on-surface;
+                    font-size: Aether.text-headline;
+                    font-weight: Aether.weight-medium;
+                    horizontal-stretch: 1;
+                    cross-axis-self-alignment: center;
+                }
+
+                IconAction {
+                    icon-source: AetherIcons.close;
+                    clicked => { root.dismissed(); }
+                }
+            }
+
+            // ---- url --------------------------------------------------
+            VerticalLayout {
+                spacing: 8px;
+
+                HorizontalLayout {
+                    spacing: 8px;
+
+                    FieldLabel { text: "下载地址"; horizontal-stretch: 1; }
+
+                    Text {
+                        text: "HTTP · HTTPS · FTP · BT";
+                        color: Aether.on-surface-muted;
+                        font-size: Aether.text-micro;
+                        cross-axis-self-alignment: center;
+                    }
+                }
+
+                LineEdit {
+                    width: 100%;
+                    placeholder-text: "https://example.com/archive.iso";
+                    text: root.url;
+                    edited => { root.url = self.text; }
+                }
+            }
+
+            // ---- save path --------------------------------------------
+            VerticalLayout {
+                spacing: 8px;
+
+                FieldLabel { text: "保存路径"; }
+
+                HorizontalLayout {
+                    spacing: 8px;
+
+                    LineEdit {
+                        horizontal-stretch: 1;
+                        text: root.path;
+                        show-clear-button: false;
+                        edited => { root.path = self.text; }
+                    }
+
+                    IconAction {
+                        icon-source: AetherIcons.folder;
+                        icon-color: Aether.on-surface-variant;
+                        clicked => { path-menu.visible = !path-menu.visible; }
+                    }
+                }
+
+            }
+
+            // ---- segments ---------------------------------------------
+            HorizontalLayout {
+                spacing: 20px;
+
+                VerticalLayout {
+                    spacing: 8px;
+
+                    FieldLabel { text: "分段数"; }
+
+                    ComboBox {
+                        model: ["自动", "1", "4", "8", "16", "32"];
+                        current-index: root.segments-index;
+                        min-width: 180px;
+                        max-width: 180px;
+                        selected => { root.segments-index = self.current-index; }
+                    }
+                }
+
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    spacing: 8px;
+
+                    FieldLabel { text: "单任务限速"; }
+
+                    HorizontalLayout {
+                        spacing: 12px;
+
+                        Slider {
+                            horizontal-stretch: 1;
+                            value: root.speed-limit;
+                            minimum: 0;
+                            maximum: 2048;
+                            step: 64;
+                            changed => { root.speed-limit = self.value; }
+                        }
+
+                        Text {
+                            text: root.speed-limit <= 0 ? "不限" : root.speed-limit + " KB/s";
+                            color: Aether.on-surface;
+                            font-size: Aether.text-caption;
+                            font-weight: Aether.weight-medium;
+                            min-width: 84px;
+                            horizontal-alignment: right;
+                            cross-axis-self-alignment: center;
+                        }
+                    }
+                }
+            }
+
+            // ---- note --------------------------------------------------
+            VerticalLayout {
+                spacing: 8px;
+
+                FieldLabel { text: "备注"; }
+
+                LineEdit {
+                    width: 100%;
+                    placeholder-text: "可选，用于标记此任务";
+                    text: root.note;
+                    edited => { root.note = self.text; }
+                }
+            }
+
+            // ---- footer -----------------------------------------------
+            HorizontalLayout {
+                alignment: end;
+                spacing: 10px;
+
+                Text {
+                    text: "确认后将立即开始下载";
+                    color: Aether.on-surface-muted;
+                    font-size: Aether.text-micro;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                }
+
+                AppButton {
+                    text: "取消";
+                    primary: false;
+                    min-width: 88px;
+                    clicked => { root.dismissed(); }
+                }
+
+                AppButton {
+                    text: "开始下载";
+                    primary: true;
+                    min-width: 128px;
+                    clicked => { root.confirmed(root.url, root.path, root.segments-index, root.speed-limit, root.note); }
+                }
+            }
+        }
+
+        path-menu := Rectangle {
+            visible: false;
+            x: 24px;
+            y: 272px;
+            width: parent.width - 96px;
+            height: path-menu.visible ? 148px : 0px;
+            border-radius: Aether.radius-md;
+            background: Aether.surface-container-highest;
+            border-width: 1px;
+            border-color: Aether.outline-variant;
+            drop-shadow-color: #000000.with-alpha(0.4);
+            drop-shadow-blur: 16px;
+            drop-shadow-offset-y: 4px;
+
+            VerticalLayout {
+                padding: 6px;
+                spacing: 2px;
+
+                for p in ["/home/aether/Downloads", "/home/aether/Videos", "/mnt/data/iso", "/home/aether/Documents"] : Rectangle {
+                    height: 32px;
+                    border-radius: Aether.radius-xs;
+
+                    background: hover.has-hover ? Aether.on-surface.with-alpha(0.06) : transparent;
+
+                    Text {
+                        text: p;
+                        color: p == root.path ? Aether.on-primary-container : Aether.on-surface-variant;
+                        font-size: Aether.text-caption;
+                        font-weight: p == root.path ? Aether.weight-medium : Aether.weight-regular;
+                        x: 10px;
+                        y: (parent.height - self.height) / 2;
+                    }
+
+                    if p == root.path: Image {
+                        source: AetherIcons.check;
+                        width: 14px;
+                        height: 14px;
+                        colorize: Aether.primary;
+                        x: parent.width - self.width - 10px;
+                        y: (parent.height - self.height) / 2;
+                    }
+
+                    hover := TouchArea {
+                        clicked => { root.path = p; path-menu.visible = false; }
+                    }
+                }
+            }
+        }
+    }
+}
