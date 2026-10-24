@@ -19,10 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-The Material 3 widget library under `ui/material/` is vendored from Slint
-1.18.1 and retains its upstream copyright headers and license terms
-(GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR
-LicenseRef-Slint-Software-3.0). It is not covered by the MIT license above.
