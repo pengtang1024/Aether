@@ -1,10 +1,10 @@
 // Aether — task detail side drawer.
 
-import { ScrollView } from "std-widgets.slint";
+import { IconButton, ScrollView } from "std-widgets.slint";
 import { Aether } from "theme.slint";
 import { AetherIcons } from "icons.slint";
 import { TaskDetail, PeerRow, LogRow } from "model.slint";
-import { ChunkGrid, FileBadge, IconAction, LogLine, SpeedChart, StatusChip } from "widgets.slint";
+import { ChunkGrid, FileBadge, LogLine, SpeedChart, StatusChip } from "widgets.slint";
 
 component SectionTitle inherits Text {
     color: Aether.on-surface-muted;
@@ -85,7 +85,7 @@ component PeerItem inherits Rectangle {
     }
 }
 
-export component TaskDrawer inherits Rectangle {
+export component TaskDrawer inherits FocusScope {
     in property <bool> open: false;
     in property <TaskDetail> detail;
     in property <[PeerRow]> peers: [];
@@ -95,6 +95,26 @@ export component TaskDrawer inherits Rectangle {
     callback closed();
 
     visible: root.open;
+
+    key-pressed(event) => {
+        if (event.text == Key.Escape) {
+            root.closed();
+            return accept;
+        }
+        return reject;
+    }
+
+    init => {
+        if (root.open) {
+            self.focus();
+        }
+    }
+
+    changed open => {
+        if (self.open) {
+            self.focus();
+        }
+    }
 
     // ---- scrim ------------------------------------------------------------
     Rectangle {
@@ -178,8 +198,8 @@ export component TaskDrawer inherits Rectangle {
                         }
                     }
 
-                    IconAction {
-                        icon-source: AetherIcons.close;
+                    IconButton {
+                        icon: AetherIcons.close;
                         cross-axis-self-alignment: center;
                         clicked => { root.closed(); }
                     }

@@ -1,9 +1,8 @@
 // Aether — "new download" modal dialog.
 
-import { LineEdit, ComboBox, Slider } from "std-widgets.slint";
+import { Button, ComboBox, IconButton, LineEdit, Slider, StateLayer, TextButton } from "std-widgets.slint";
 import { Aether } from "theme.slint";
 import { AetherIcons } from "icons.slint";
-import { AppButton, IconAction } from "widgets.slint";
 
 component FieldLabel inherits Text {
     color: Aether.on-surface-variant;
@@ -11,7 +10,7 @@ component FieldLabel inherits Text {
     font-weight: Aether.weight-medium;
 }
 
-export component NewDownloadDialog inherits Rectangle {
+export component NewDownloadDialog inherits FocusScope {
     in property <bool> open: false;
     in-out property <string> url: "";
     in-out property <string> path: "/home/aether/Downloads";
@@ -22,7 +21,39 @@ export component NewDownloadDialog inherits Rectangle {
     callback confirmed(string, string, int, float, string);
     callback dismissed();
 
+    function submit() {
+        if (root.url != "") {
+            root.confirmed(root.url, root.path, root.segments-index, root.speed-limit, root.note);
+        }
+    }
+
     visible: root.open;
+
+    key-pressed(event) => {
+        if (event.text == Key.Escape) {
+            if (path-menu.visible) {
+                path-menu.visible = false;
+                return accept;
+            }
+            root.dismissed();
+            return accept;
+        }
+        return reject;
+    }
+
+    // Focus the URL field as soon as the dialog opens, so the keyboard flow
+    // is: paste URL, Tab through options, Enter on the primary action.
+    init => {
+        if (root.open) {
+            url-field.focus();
+        }
+    }
+
+    changed open => {
+        if (self.open) {
+            url-field.focus();
+        }
+    }
 
     // ---- scrim -----------------------------------------------------------
     Rectangle {
@@ -40,7 +71,7 @@ export component NewDownloadDialog inherits Rectangle {
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
         width: 560px;
-        height: 500px;
+        height: 544px;
         border-radius: Aether.radius-2xl;
         background: Aether.surface-container-high;
         border-width: 1px;
@@ -89,8 +120,8 @@ export component NewDownloadDialog inherits Rectangle {
                     cross-axis-self-alignment: center;
                 }
 
-                IconAction {
-                    icon-source: AetherIcons.close;
+                IconButton {
+                    icon: AetherIcons.close;
                     clicked => { root.dismissed(); }
                 }
             }
@@ -112,11 +143,12 @@ export component NewDownloadDialog inherits Rectangle {
                     }
                 }
 
-                LineEdit {
+                url-field := LineEdit {
                     width: 100%;
                     placeholder-text: "https://example.com/archive.iso";
                     text: root.url;
                     edited => { root.url = self.text; }
+                    accepted => { root.submit(); }
                 }
             }
 
@@ -136,9 +168,8 @@ export component NewDownloadDialog inherits Rectangle {
                         edited => { root.path = self.text; }
                     }
 
-                    IconAction {
-                        icon-source: AetherIcons.folder;
-                        icon-color: Aether.on-surface-variant;
+                    IconButton {
+                        icon: AetherIcons.folder;
                         clicked => { path-menu.visible = !path-menu.visible; }
                     }
                 }
@@ -214,25 +245,25 @@ export component NewDownloadDialog inherits Rectangle {
                 spacing: 10px;
 
                 Text {
-                    text: "确认后将立即开始下载";
+                    text: root.url == "" ? "请输入下载地址后开始" : "确认后将立即开始下载";
                     color: Aether.on-surface-muted;
                     font-size: Aether.text-micro;
                     horizontal-stretch: 1;
                     vertical-alignment: center;
                 }
 
-                AppButton {
+                TextButton {
                     text: "取消";
-                    primary: false;
                     min-width: 88px;
                     clicked => { root.dismissed(); }
                 }
 
-                AppButton {
+                Button {
                     text: "开始下载";
                     primary: true;
                     min-width: 128px;
-                    clicked => { root.confirmed(root.url, root.path, root.segments-index, root.speed-limit, root.note); }
+                    enabled: root.url != "";
+                    clicked => { root.submit(); }
                 }
             }
         }
@@ -259,8 +290,6 @@ export component NewDownloadDialog inherits Rectangle {
                     height: 32px;
                     border-radius: Aether.radius-xs;
 
-                    background: hover.has-hover ? Aether.on-surface.with-alpha(0.06) : transparent;
-
                     Text {
                         text: p;
                         color: p == root.path ? Aether.on-primary-container : Aether.on-surface-variant;
@@ -279,7 +308,13 @@ export component NewDownloadDialog inherits Rectangle {
                         y: (parent.height - self.height) / 2;
                     }
 
-                    hover := TouchArea {
+                    StateLayer {
+                        width: 100%;
+                        height: 100%;
+                        border-radius: Aether.radius-xs;
+                        background: Aether.on-surface;
+                        ripple-color: Aether.on-surface;
+                        has-ripple: true;
                         clicked => { root.path = p; path-menu.visible = false; }
                     }
                 }

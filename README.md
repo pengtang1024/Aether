@@ -22,8 +22,8 @@ Rust 与 [Slint](https://slint.dev) 从零绘制：没有 Electron、没有 Chro
 
 ### 新建下载
 
-URL、保存路径（带下拉选择）、分片数、限速滑块与备注。确认后任务会立即插入列表并开始
-推进。
+URL、保存路径（带下拉选择）、分片数、限速滑块与备注。打开后自动聚焦地址栏，Enter
+提交、Esc 取消；URL 为空时主按钮保持 M3 禁用态。确认后任务会立即插入列表并开始推进。
 
 ![新建下载](docs/screenshots/dialog.png)
 
@@ -95,7 +95,7 @@ AETHER_VIEW=drawer ./scripts/shot.sh /tmp/drawer.png
 │   ├── app.slint            # 窗口外壳、导航栏、顶栏、筛选 chip、FAB、覆盖层
 │   ├── theme.slint          # Aether 设计令牌（surface / brand / 字号 / 圆角）
 │   ├── icons.slint          # SVG 图标注册表（33 个）
-│   ├── widgets.slint        # 自有组件：按钮、chip、速度图、分片网格、流线背景
+│   ├── widgets.slint        # 自有组件：chip、导航项、搜索框、速度图、分片网格、流线背景
 │   ├── model.slint          # 与 Rust 共享的结构体
 │   ├── pages/
 │   │   ├── downloads.slint  # 任务表与空状态
@@ -127,16 +127,26 @@ UI 不直接修改任务。暂停、继续、取消、新建、筛选和搜索�
 
 ## 设计说明
 
-**Material 3。** 直接使用 Slint 官方 Material 组件库，而不是手写一套仿 M3 控件。
-`build.rs` 通过 `with_style("material")` 把 vendored 库注册成样式，所有 `Button`、
-`Switch`、`LineEdit`、`ComboBox`、`Slider` 都来自上游实现。Aether 只做两件事：替换品牌
-色板，以及补充列表行、状态 chip、折线图这类业务组件。
+**Material 3。** 直接使用 Slint 官方 Material 3 组件库，而不是手写一套仿 M3 控件。
+`build.rs` 通过 `with_style("material")` 把 vendored 的 Slint 1.18.1 组件注册为样式；
+Aether 只替换品牌色板，并补充上游没有的桌面业务组件。设置项、对话框和详情抽屉中的
+按钮、开关、滑块、下拉框与单行输入框全部来自上游实现；自绘组件复用同一套 M3 令牌与官方
+`StateLayer`（涟漪、悬停、焦点）。
+
+| 层级 | 组件 | 来源 |
+| --- | --- | --- |
+| 上游 M3 | `Button`、`TextButton`、`IconButton`、`Switch`、`Slider`、`ComboBox`、`LineEdit`、`ScrollView`、`ListView`、`StateLayer` | `ui/material/`（Slint 1.18.1） |
+| 自绘业务组件 | 导航栏、筛选 chip、搜索框、FAB、状态标签、进度轨、速度图、分片网格、文件徽标、设置卡片 | 基于 Aether 令牌 / `StateLayer` |
+
+上游 Slint 目前没有 App Bar、Navigation Rail、Chip、FAB 这类模式组件，对应部分按 M3
+规范自绘；设置页、对话框、表格与抽屉中的按钮、下拉框、开关与滑块均来自上游实现，文本
+输入使用上游 M3 `LineEdit`（搜索框为自绘的胶囊组合）。
 
 **深色优先。** `MaterialPalette` 的深色角色被重定向到 Aether 的 surface 阶梯
 （`#141218` → `#211F26` → `#2B2930` → `#36343B`）。主色 `#6750A4` 驱动 accent 角色，
 `ColorSchemeSelector` 固定为 dark，避免跟随系统切到浅色而破坏整屏对比。
 
-**留白与层级。** 导航栏 100 px，内容区 24 px 外边距，表格行高 74 px。卡片的“悬浮感”
+**留白与层级。** 导航栏 100 px，内容区 24 px 外边距，表格行高 76 px。卡片的“悬浮感”
 来自低透明度、大模糊半径的阴影，而不是粗边框或高对比描边。
 
 **矢量图表。** Slint 1.18 还没有 `Canvas`。速度折线图因此用 `Path` 的 SVG `commands`
@@ -145,6 +155,9 @@ UI 不直接修改任务。暂停、继续、取消、新建、筛选和搜索�
 
 **虚拟化与命中测试。** 表格用 `ListView`，只实例化视口内的行；行背景的
 `TouchArea` 放在内容**之后**，这样行内按钮优先接收点击，而空白区域仍能打开详情抽屉。
+
+**键盘与空状态。** 新建对话框自动聚焦 URL，Enter 提交、Esc 关闭；详情抽屉也支持 Esc
+关闭。搜索或筛选无结果时，空状态提供“清除筛选条件”入口，一次恢复全部任务。
 
 ### 对 vendored 组件的改动
 

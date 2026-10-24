@@ -3,11 +3,11 @@
 // The table is virtualized: rows live in a `ListView`, and Slint only
 // instantiates the rows that are inside the viewport.
 
-import { ListView } from "std-widgets.slint";
+import { IconButton, ListView, TextButton } from "std-widgets.slint";
 import { Aether, FileTone } from "theme.slint";
 import { AetherIcons } from "icons.slint";
 import { TaskRow } from "model.slint";
-import { FileBadge, IconAction, ProgressTrack, StatusChip } from "widgets.slint";
+import { FileBadge, ProgressTrack, StatusChip } from "widgets.slint";
 
 component ColumnHeader inherits Rectangle {
     in property <string> text: "";
@@ -170,12 +170,11 @@ component TaskItem inherits Rectangle {
 
             // Completed rows reveal their file; failed rows retry; paused and
             // queued rows start again; everything else can pause.
-            IconAction {
-                icon-source: root.task.completed ? AetherIcons.folder
+            IconButton {
+                icon: root.task.completed ? AetherIcons.folder
                     : root.task.failed ? AetherIcons.refresh
                     : root.task.paused || root.task.status == 4 ? AetherIcons.play
                     : AetherIcons.pause;
-                icon-color: Aether.on-surface-variant;
                 clicked => {
                     root.task-action(root.task.id,
                         root.task.completed ? 3
@@ -184,9 +183,8 @@ component TaskItem inherits Rectangle {
                 }
             }
 
-            IconAction {
-                icon-source: AetherIcons.close;
-                icon-color: Aether.error;
+            IconButton {
+                icon: AetherIcons.close;
                 clicked => { root.task-action(root.task.id, 2); }
             }
         }
@@ -207,6 +205,7 @@ export component DownloadsPage inherits Rectangle {
     in property <string> empty-hint: "当前筛选条件下没有任务";
     callback task-action(int, int);
     callback open-detail(int);
+    callback reset-filters();
 
     VerticalLayout {
         spacing: 0;
@@ -311,6 +310,13 @@ export component DownloadsPage inherits Rectangle {
                         font-size: Aether.text-caption;
                         width: 100%;
                         horizontal-alignment: center;
+                    }
+
+                    Rectangle { height: 6px; background: transparent; }
+
+                    TextButton {
+                        text: "清除筛选条件";
+                        clicked => { root.reset-filters(); }
                     }
                 }
             }

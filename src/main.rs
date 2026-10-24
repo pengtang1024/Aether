@@ -433,6 +433,25 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
+    // ---- reset filters -----------------------------------------------------
+    {
+        let ui_handle = ui.as_weak();
+        let state = state.clone();
+        ui.on_reset_filters(move || {
+            let Some(ui) = ui_handle.upgrade() else {
+                return;
+            };
+            {
+                let mut st = state.borrow_mut();
+                st.filter = 0;
+                st.query.clear();
+            }
+            ui.set_active_filter(0);
+            ui.set_search_text("".into());
+            refresh_rows(&ui, &state);
+        });
+    }
+
     // ---- new download ------------------------------------------------------
     {
         let ui_handle = ui.as_weak();

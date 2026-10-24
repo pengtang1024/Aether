@@ -3,10 +3,11 @@
 // Fixed navigation rail on the left, main content on the right, an ambient
 // "ether" background behind everything.
 
+import { Button, StateLayer } from "std-widgets.slint";
 import { Aether } from "theme.slint";
 import { AetherIcons } from "icons.slint";
 import { TaskRow, TaskDetail, PeerRow, LogRow } from "model.slint";
-import { FlowBackground, NavRailItem, IconAction, AppButton, SearchField, FilterChip } from "widgets.slint";
+import { FlowBackground, NavRailItem, SearchField, FilterChip } from "widgets.slint";
 import { DownloadsPage } from "pages/downloads.slint";
 import { SettingsPage } from "pages/settings.slint";
 import { NewDownloadDialog } from "pages/new-download.slint";
@@ -66,6 +67,7 @@ export component AppWindow inherits Window {
     callback filter-changed(int, string);
     callback new-download(string, string, int, float, string);
     callback settings-changed(string, string);
+    callback reset-filters();
 
     width: 1440px;
     height: 900px;
@@ -188,6 +190,7 @@ export component AppWindow inherits Window {
                     VerticalLayout {
                         horizontal-stretch: 1;
                         spacing: 3px;
+                        cross-axis-self-alignment: center;
 
                         Text {
                             text: root.page == 1 ? "设置" : root.page-title;
@@ -205,20 +208,21 @@ export component AppWindow inherits Window {
 
                     SearchField {
                         width: 320px;
+                        cross-axis-self-alignment: center;
                         visible: root.page == 0;
-                        text: root.search-text;
+                        text <=> root.search-text;
                         placeholder: "搜索任务名称或地址";
-                        edited(t) => {
-                            root.search-text = t;
-                            root.filter-changed(root.active-filter, t);
-                        }
+                        edited(t) => { root.filter-changed(root.active-filter, t); }
                     }
 
-                    AppButton {
+                    Button {
                         text: "新建下载";
-                        icon-source: AetherIcons.add;
+                        icon: AetherIcons.add;
+                        icon-size: 18px;
+                        colorize-icon: true;
                         primary: true;
                         min-width: 132px;
+                        cross-axis-self-alignment: center;
                         visible: root.page == 0;
                         clicked => { root.dialog-open = true; }
                     }
@@ -247,31 +251,37 @@ export component AppWindow inherits Window {
                     FilterChip {
                         text: "全部";
                         selected: root.active-filter == 0;
+                        cross-axis-self-alignment: center;
                         clicked => { root.active-filter = 0; root.filter-changed(0, root.search-text); }
                     }
                     FilterChip {
                         text: "下载中";
                         selected: root.active-filter == 1;
+                        cross-axis-self-alignment: center;
                         clicked => { root.active-filter = 1; root.filter-changed(1, root.search-text); }
                     }
                     FilterChip {
                         text: "已完成";
                         selected: root.active-filter == 2;
+                        cross-axis-self-alignment: center;
                         clicked => { root.active-filter = 2; root.filter-changed(2, root.search-text); }
                     }
                     FilterChip {
                         text: "已暂停";
                         selected: root.active-filter == 3;
+                        cross-axis-self-alignment: center;
                         clicked => { root.active-filter = 3; root.filter-changed(3, root.search-text); }
                     }
                     FilterChip {
                         text: "失败";
                         selected: root.active-filter == 4;
+                        cross-axis-self-alignment: center;
                         clicked => { root.active-filter = 4; root.filter-changed(4, root.search-text); }
                     }
                     FilterChip {
                         text: "种子";
                         selected: root.active-filter == 5;
+                        cross-axis-self-alignment: center;
                         clicked => { root.active-filter = 5; root.filter-changed(5, root.search-text); }
                     }
 
@@ -280,6 +290,7 @@ export component AppWindow inherits Window {
                     // aggregate stats
                     HorizontalLayout {
                         spacing: 20px;
+                        cross-axis-self-alignment: center;
 
                         Rectangle {
                             width: 6px;
@@ -327,6 +338,7 @@ export component AppWindow inherits Window {
                 tasks: root.tasks;
                 task-action(id, action) => { root.task-action(id, action); }
                 open-detail(id) => { root.open-detail(id); }
+                reset-filters => { root.reset-filters(); }
             }
         }
     }
@@ -355,7 +367,13 @@ export component AppWindow inherits Window {
             y: (parent.height - self.height) / 2;
         }
 
-        TouchArea {
+        StateLayer {
+            width: 100%;
+            height: 100%;
+            border-radius: Aether.radius-lg;
+            background: Aether.on-primary;
+            ripple-color: Aether.on-primary;
+            has-ripple: true;
             clicked => { root.dialog-open = true; }
         }
     }
