@@ -14,7 +14,7 @@ component ColumnHeader inherits Rectangle {
     in property <length> column-width: 0px;
     in property <bool> flex: false;
 
-    height: 40px;
+    height: 34px;
 
     Text {
         text: root.text;
@@ -33,7 +33,7 @@ component TaskItem inherits Rectangle {
     callback task-action(int, int);
     callback open-detail(int);
 
-    height: 76px;
+    height: 60px;
 
     background: root.task.selected ? Aether.primary.with-alpha(0.10)
         : hover-area.has-hover ? Aether.on-surface.with-alpha(0.035)
@@ -57,14 +57,14 @@ component TaskItem inherits Rectangle {
     }
 
     HorizontalLayout {
-        padding-left: 24px;
-        padding-right: 24px;
-        spacing: 16px;
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 12px;
 
         // --- name + source ---------------------------------------------
         HorizontalLayout {
             horizontal-stretch: 1;
-            spacing: 12px;
+            spacing: 10px;
 
             FileBadge {
                 kind: root.task.kind;
@@ -74,7 +74,7 @@ component TaskItem inherits Rectangle {
 
             VerticalLayout {
                 horizontal-stretch: 1;
-                spacing: 4px;
+                spacing: 3px;
                 cross-axis-self-alignment: center;
 
                 Text {
@@ -96,9 +96,9 @@ component TaskItem inherits Rectangle {
 
         // --- progress ---------------------------------------------------
         VerticalLayout {
-            min-width: 220px;
-            max-width: 220px;
-            spacing: 7px;
+            min-width: 190px;
+            max-width: 190px;
+            spacing: 5px;
             cross-axis-self-alignment: center;
 
             HorizontalLayout {
@@ -133,9 +133,9 @@ component TaskItem inherits Rectangle {
 
         // --- speed ------------------------------------------------------
         VerticalLayout {
-            min-width: 104px;
-            max-width: 104px;
-            spacing: 2px;
+            min-width: 92px;
+            max-width: 92px;
+            spacing: 1px;
             cross-axis-self-alignment: center;
 
             Text {
@@ -156,16 +156,16 @@ component TaskItem inherits Rectangle {
         StatusChip {
             kind: root.task.status;
             text: root.task.status-text;
-            min-width: 86px;
-            max-width: 86px;
+            min-width: 78px;
+            max-width: 78px;
             cross-axis-self-alignment: center;
         }
 
         // --- actions ----------------------------------------------------
         HorizontalLayout {
-            min-width: 88px;
-            max-width: 88px;
-            spacing: 2px;
+            min-width: 80px;
+            max-width: 80px;
+            spacing: 0px;
             cross-axis-self-alignment: center;
 
             // Completed rows reveal their file; failed rows retry; paused and
@@ -191,9 +191,9 @@ component TaskItem inherits Rectangle {
     }
 
     Rectangle {
-        x: 24px;
+        x: 16px;
         y: parent.height - self.height;
-        width: parent.width - 48px;
+        width: parent.width - 32px;
         height: 1px;
         background: Aether.outline-faint.with-alpha(0.6);
     }
@@ -212,26 +212,26 @@ export component DownloadsPage inherits Rectangle {
 
         // ---- column header ---------------------------------------------
         Rectangle {
-            height: 40px;
+            height: 34px;
 
             // The ListView reserves 12px on the right for its scrollbar, so the
             // header compensates to keep every column aligned with the rows.
             HorizontalLayout {
-                padding-left: 24px;
-                padding-right: 36px;
-                spacing: 16px;
+                padding-left: 16px;
+                padding-right: 28px;
+                spacing: 12px;
 
                 ColumnHeader { text: "任务"; flex: true; horizontal-stretch: 1; }
-                ColumnHeader { text: "进度"; column-width: 220px; min-width: 220px; max-width: 220px; }
-                ColumnHeader { text: "速度"; column-width: 104px; min-width: 104px; max-width: 104px; }
-                ColumnHeader { text: "状态"; column-width: 86px; min-width: 86px; max-width: 86px; }
-                ColumnHeader { text: "操作"; column-width: 88px; min-width: 88px; max-width: 88px; }
+                ColumnHeader { text: "进度"; column-width: 190px; min-width: 190px; max-width: 190px; }
+                ColumnHeader { text: "速度"; column-width: 92px; min-width: 92px; max-width: 92px; }
+                ColumnHeader { text: "状态"; column-width: 78px; min-width: 78px; max-width: 78px; }
+                ColumnHeader { text: "操作"; column-width: 80px; min-width: 80px; max-width: 80px; }
             }
 
             Rectangle {
-                x: 24px;
+                x: 16px;
                 y: parent.height - self.height;
-                width: parent.width - 60px;
+                width: parent.width - 44px;
                 height: 1px;
                 background: Aether.outline-variant.with-alpha(0.7);
             }
@@ -242,30 +242,31 @@ export component DownloadsPage inherits Rectangle {
             vertical-stretch: 1;
             background: transparent;
 
-            ListView {
+            // The list gets its own clipped viewport that stops above the FAB.
+            // Without the inner clip, ScrollView content paints past its
+            // bounds and rows show up underneath the button.
+            Rectangle {
+                y: 0;
                 width: 100%;
-                height: 100%;
+                height: parent.height - 72px;
+                clip: true;
 
-                for task in root.tasks: TaskItem {
-                    task: task;
-                    task-action(id, action) => { root.task-action(id, action); }
-                    open-detail(id) => { root.open-detail(id); }
+                ListView {
+                    width: 100%;
+                    height: 100%;
+
+                    for task in root.tasks: TaskItem {
+                        task: task;
+                        task-action(id, action) => { root.task-action(id, action); }
+                        open-detail(id) => { root.open-detail(id); }
+                    }
                 }
             }
 
-            // Rows fade out under the floating action button instead of being
-            // cut by a hard edge. The gradient is not interactive.
-            Rectangle {
-                y: parent.height - self.height;
-                width: parent.width - 14px;
-                height: 84px;
-                visible: root.tasks.length > 0;
-                background: @linear-gradient(180deg, transparent 0%, Aether.surface 94%);
-            }
-
             if root.tasks.length == 0: Rectangle {
+                y: 0;
                 width: 100%;
-                height: 100%;
+                height: parent.height - 72px;
 
                 VerticalLayout {
                     width: 100%;

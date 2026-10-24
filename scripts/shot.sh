@@ -6,8 +6,8 @@ set -euo pipefail
 
 OUT="${1:-/tmp/opencode/aether.png}"
 WAIT="${2:-6}"
-W="${3:-1600}"
-H="${4:-1000}"
+W="${3:-1040}"
+H="${4:-700}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DISP="${AETHER_DISPLAY:-:97}"
 

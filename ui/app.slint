@@ -69,10 +69,13 @@ export component AppWindow inherits Window {
     callback settings-changed(string, string);
     callback reset-filters();
 
-    width: 1440px;
-    height: 900px;
+    preferred-width: 1040px;
+    preferred-height: 700px;
+    min-width: 900px;
+    min-height: 600px;
     background: Aether.surface;
-    title: "Aether — 下载管理器";
+    // ASCII only: the GNOME title bar font stack has no CJK fallback here.
+    title: "Aether";
 
     // ======================================================================
     // Background
@@ -92,7 +95,7 @@ export component AppWindow inherits Window {
         // Navigation rail
         // ---------------------------------------------------------
         Rectangle {
-            width: 100px;
+            width: 84px;
             background: Aether.surface-dim;
 
             Rectangle {
@@ -103,20 +106,20 @@ export component AppWindow inherits Window {
             }
 
             VerticalLayout {
-                padding: 14px;
-                spacing: 6px;
+                padding: 10px;
+                spacing: 4px;
 
                 // brand mark
                 Rectangle {
-                    width: 44px;
-                    height: 44px;
+                    width: 40px;
+                    height: 40px;
                     border-radius: Aether.radius-md;
                     background: Aether.primary;
 
                     Image {
                         source: AetherIcons.download;
-                        width: 22px;
-                        height: 22px;
+                        width: 20px;
+                        height: 20px;
                         colorize: Aether.on-primary;
                         x: (parent.width - self.width) / 2;
                         y: (parent.height - self.height) / 2;
@@ -124,7 +127,7 @@ export component AppWindow inherits Window {
                 }
 
                 Rectangle {
-                    height: 10px;
+                    height: 8px;
                     background: transparent;
                 }
 
@@ -179,17 +182,17 @@ export component AppWindow inherits Window {
 
             // ---- top app bar -------------------------------------
             Rectangle {
-                height: 76px;
+                height: 64px;
                 background: Aether.surface;
 
                 HorizontalLayout {
-                    padding-left: 28px;
-                    padding-right: 28px;
-                    spacing: 18px;
+                    padding-left: 20px;
+                    padding-right: 20px;
+                    spacing: 12px;
 
                     VerticalLayout {
                         horizontal-stretch: 1;
-                        spacing: 3px;
+                        spacing: 1px;
                         cross-axis-self-alignment: center;
 
                         Text {
@@ -207,7 +210,7 @@ export component AppWindow inherits Window {
                     }
 
                     SearchField {
-                        width: 320px;
+                        width: 280px;
                         cross-axis-self-alignment: center;
                         visible: root.page == 0;
                         text <=> root.search-text;
@@ -218,10 +221,10 @@ export component AppWindow inherits Window {
                     Button {
                         text: "新建下载";
                         icon: AetherIcons.add;
-                        icon-size: 18px;
+                        icon-size: 16px;
                         colorize-icon: true;
                         primary: true;
-                        min-width: 132px;
+                        min-width: 120px;
                         cross-axis-self-alignment: center;
                         visible: root.page == 0;
                         clicked => { root.dialog-open = true; }
@@ -239,14 +242,14 @@ export component AppWindow inherits Window {
 
             // ---- filter bar --------------------------------------
             Rectangle {
-                height: root.page == 0 ? 58px : 0px;
+                height: root.page == 0 ? 48px : 0px;
                 visible: root.page == 0;
                 background: Aether.surface;
 
                 HorizontalLayout {
-                    padding-left: 28px;
-                    padding-right: 28px;
-                    spacing: 8px;
+                    padding-left: 20px;
+                    padding-right: 20px;
+                    spacing: 6px;
 
                     FilterChip {
                         text: "全部";
@@ -289,7 +292,7 @@ export component AppWindow inherits Window {
 
                     // aggregate stats
                     HorizontalLayout {
-                        spacing: 20px;
+                        spacing: 14px;
                         cross-axis-self-alignment: center;
 
                         Rectangle {
@@ -347,10 +350,10 @@ export component AppWindow inherits Window {
     // Floating action button
     // ======================================================================
     Rectangle {
-        x: parent.width - self.width - 28px;
-        y: parent.height - self.height - 28px;
-        width: 56px;
-        height: 56px;
+        x: parent.width - self.width - 16px;
+        y: parent.height - self.height - 16px;
+        width: 48px;
+        height: 48px;
         visible: root.page == 0 && !root.dialog-open && !root.drawer-open;
         border-radius: Aether.radius-lg;
         background: Aether.primary;
@@ -360,8 +363,8 @@ export component AppWindow inherits Window {
 
         Image {
             source: AetherIcons.add;
-            width: 24px;
-            height: 24px;
+            width: 20px;
+            height: 20px;
             colorize: Aether.on-primary;
             x: (parent.width - self.width) / 2;
             y: (parent.height - self.height) / 2;
@@ -383,9 +386,9 @@ export component AppWindow inherits Window {
     // ======================================================================
     Rectangle {
         x: (parent.width - self.width) / 2;
-        y: parent.height - self.height - 28px;
-        width: 380px;
-        height: 48px;
+        y: parent.height - self.height - 16px;
+        width: 340px;
+        height: 44px;
         border-radius: Aether.radius-md;
         background: Aether.surface-container-highest;
         border-width: 1px;

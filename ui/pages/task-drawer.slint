@@ -17,16 +17,16 @@ component InfoRow inherits Rectangle {
     in property <string> label: "";
     in property <string> value: "";
 
-    height: 34px;
+    height: 30px;
 
     HorizontalLayout {
-        spacing: 16px;
+        spacing: 14px;
 
         Text {
             text: root.label;
             color: Aether.on-surface-muted;
             font-size: Aether.text-caption;
-            min-width: 68px;
+            min-width: 62px;
             cross-axis-self-alignment: center;
         }
 
@@ -54,7 +54,7 @@ component LegendDot inherits Rectangle {
 component PeerItem inherits Rectangle {
     in property <PeerRow> peer;
 
-    height: 38px;
+    height: 34px;
 
     HorizontalLayout {
         spacing: 10px;
@@ -125,7 +125,7 @@ export component TaskDrawer inherits FocusScope {
         // Only the exposed strip is interactive; the sheet keeps its own
         // pointer handling underneath.
         TouchArea {
-            width: root.width - 420px;
+            width: root.width - 380px;
             height: 100%;
             clicked => { root.closed(); }
         }
@@ -134,7 +134,7 @@ export component TaskDrawer inherits FocusScope {
     // ---- drawer surface ---------------------------------------------------
     Rectangle {
         x: parent.width - self.width;
-        width: 420px;
+        width: 380px;
         height: 100%;
         background: Aether.surface-container;
         border-width: 1px;
@@ -151,12 +151,12 @@ export component TaskDrawer inherits FocusScope {
 
             // ---- header -----------------------------------------------
             Rectangle {
-                height: 92px;
+                height: 80px;
                 HorizontalLayout {
                     height: 100%;
-                    padding-left: 20px;
-                    padding-right: 14px;
-                    spacing: 12px;
+                    padding-left: 16px;
+                    padding-right: 12px;
+                    spacing: 10px;
 
                     FileBadge {
                         kind: root.detail.kind;
@@ -166,7 +166,7 @@ export component TaskDrawer inherits FocusScope {
 
                     VerticalLayout {
                         horizontal-stretch: 1;
-                        spacing: 8px;
+                        spacing: 6px;
                         alignment: center;
 
                         Text {
@@ -183,8 +183,8 @@ export component TaskDrawer inherits FocusScope {
                             StatusChip {
                                 kind: root.detail.status;
                                 text: root.detail.status-text;
-                                min-width: 84px;
-                                max-width: 84px;
+                                min-width: 78px;
+                                max-width: 78px;
                             }
 
                             Text {
@@ -232,11 +232,11 @@ export component TaskDrawer inherits FocusScope {
                     height: 100%;
 
                     VerticalLayout {
-                        padding-left: 20px;
-                        padding-right: 20px;
-                        padding-top: 20px;
-                        padding-bottom: 28px;
-                        spacing: 24px;
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        padding-top: 16px;
+                        padding-bottom: 22px;
+                        spacing: 18px;
 
 
                         // ---- speed chart -------------------------------------
@@ -262,12 +262,12 @@ export component TaskDrawer inherits FocusScope {
                                 border-color: Aether.outline-faint;
 
                                 VerticalLayout {
-                                    padding: 12px;
+                                    padding: 10px;
                                     padding-bottom: 8px;
 
                                     SpeedChart {
                                         width: 100%;
-                                        height: 108px;
+                                        height: 96px;
                                         line-path: root.detail.line-path;
                                         area-path: root.detail.area-path;
                                         latest: root.detail.sample;

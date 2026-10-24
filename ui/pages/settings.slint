@@ -18,7 +18,7 @@ component ValueSlider inherits Rectangle {
     in-out property <float> slider-value <=> inner.value;
     callback changed(float);
 
-    height: 40px;
+    height: 36px;
 
     HorizontalLayout {
         spacing: 12px;
@@ -27,7 +27,7 @@ component ValueSlider inherits Rectangle {
             text: root.label;
             color: Aether.on-surface-variant;
             font-size: Aether.text-caption;
-            min-width: 92px;
+            min-width: 84px;
             cross-axis-self-alignment: center;
         }
 
@@ -44,7 +44,7 @@ component ValueSlider inherits Rectangle {
             color: Aether.on-surface;
             font-size: Aether.text-caption;
             font-weight: Aether.weight-medium;
-            min-width: 76px;
+            min-width: 72px;
             horizontal-alignment: right;
             cross-axis-self-alignment: center;
         }
@@ -63,11 +63,11 @@ export component SettingsPage inherits Rectangle {
 
     scroller := ScrollView {
         VerticalLayout {
-            padding-top: 28px;
-            padding-bottom: 28px;
-            padding-left: max(28px, (scroller.visible-width - 980px) / 2);
-            padding-right: max(28px, (scroller.visible-width - 980px) / 2);
-            spacing: 20px;
+            padding-top: 20px;
+            padding-bottom: 20px;
+            padding-left: max(20px, (scroller.visible-width - 900px) / 2);
+            padding-right: max(20px, (scroller.visible-width - 900px) / 2);
+            spacing: 14px;
 
                 // ---------------------------------------------------------
                 // 通用
