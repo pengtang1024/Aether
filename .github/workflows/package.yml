@@ -256,3 +256,11 @@ jobs:
           prerelease: false
           files: artifacts/*
           fail_on_unmatched_files: true
+
+      # The release action reliably attaches files, but existing drafts have
+      # been observed to keep an empty body; apply the notes explicitly.
+      - name: Apply release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: gh release edit "v${VERSION}" --notes-file release-body.md
