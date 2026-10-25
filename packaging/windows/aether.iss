@@ -5,6 +5,9 @@
 #ifndef RepoRoot
   #define RepoRoot "..\.."
 #endif
+#ifndef AppArch
+  #define AppArch "x86_64"
+#endif
 
 [Setup]
 AppId={{3D57F103-CF54-49E2-B1A6-38AB828872D8}
@@ -22,7 +25,7 @@ PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir={#RepoRoot}\dist
-OutputBaseFilename=aether_{#AppVersion}_windows_x86_64_setup
+OutputBaseFilename=aether_{#AppVersion}_windows_{#AppArch}_setup
 SetupIconFile={#RepoRoot}\assets\logo.ico
 UninstallDisplayIcon={app}\logo.ico
 Compression=lzma2

@@ -35,9 +35,19 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
   linux:
-    name: Linux .deb + AppImage
+    name: Linux ${{ matrix.arch }} .deb + AppImage
     needs: version
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+            deb_arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+            deb_arch: arm64
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.92.0
@@ -55,11 +65,14 @@ jobs:
         run: make check
 
       - name: Build .deb
+        env:
+          ARCH: ${{ matrix.deb_arch }}
         run: make deb
 
       - name: Build AppImage
         env:
           VERSION: ${{ needs.version.outputs.version }}
+          APPIMAGE_ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
           rm -rf AppDir
@@ -80,23 +93,31 @@ jobs:
           RUN
           chmod +x AppDir/AppRun
           curl -fL -o /tmp/appimagetool \
-            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+            "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${APPIMAGE_ARCH}.AppImage"
           chmod +x /tmp/appimagetool
-          ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 /tmp/appimagetool \
-            AppDir "dist/aether-${VERSION}-linux-x86_64.AppImage"
+          ARCH="${APPIMAGE_ARCH}" APPIMAGE_EXTRACT_AND_RUN=1 /tmp/appimagetool \
+            AppDir "dist/aether-${VERSION}-linux-${APPIMAGE_ARCH}.AppImage"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: aether-${{ needs.version.outputs.version }}-linux-x86_64
+          name: aether-${{ needs.version.outputs.version }}-linux-${{ matrix.arch }}
           path: |
-            dist/aether_${{ needs.version.outputs.version }}_amd64.deb
-            dist/aether-${{ needs.version.outputs.version }}-linux-x86_64.AppImage
+            dist/aether_${{ needs.version.outputs.version }}_${{ matrix.deb_arch }}.deb
+            dist/aether-${{ needs.version.outputs.version }}-linux-${{ matrix.arch }}.AppImage
           if-no-files-found: error
 
   windows:
-    name: Windows installer
+    name: Windows ${{ matrix.arch }} installer
     needs: version
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            arch: x86_64
+          - runner: windows-11-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.92.0
@@ -117,7 +138,7 @@ jobs:
             "README.md"
           )
           Compress-Archive -Force -Path $files `
-            -DestinationPath "dist/aether-${{ needs.version.outputs.version }}-windows-x86_64.zip"
+            -DestinationPath "dist/aether-${{ needs.version.outputs.version }}-windows-${{ matrix.arch }}.zip"
 
       - name: Install Inno Setup
         shell: pwsh
@@ -133,12 +154,13 @@ jobs:
           }
           if (-not $iscc) { throw "ISCC.exe not found" }
           & $iscc "/DAppVersion=${{ needs.version.outputs.version }}" `
+                  "/DAppArch=${{ matrix.arch }}" `
                   "/DRepoRoot=${{ github.workspace }}" `
                   "packaging\windows\aether.iss"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: aether-${{ needs.version.outputs.version }}-windows-x86_64
+          name: aether-${{ needs.version.outputs.version }}-windows-${{ matrix.arch }}
           path: |
             dist/*.exe
             dist/*.zip

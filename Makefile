@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 VERSION := $(shell sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-ARCH := amd64
+ARCH ?= $(shell dpkg --print-architecture 2>/dev/null || echo amd64)
 STAGE := build/deb
 DIST := dist
 GLIBC := $(shell objdump -T target/release/aether 2>/dev/null | grep -o 'GLIBC_[0-9.]*' | sort -V | tail -1 | sed 's/GLIBC_//')
@@ -30,6 +30,7 @@ deb: release
 	install -Dm644 THIRD_PARTY_NOTICES.md "$(STAGE)/usr/share/doc/aether/THIRD_PARTY_NOTICES.md"
 	mkdir -p "$(STAGE)/DEBIAN" "$(DIST)"
 	sed -e "s/@VERSION@/$(VERSION)/" \
+	    -e "s/@ARCH@/$(ARCH)/" \
 	    -e "s/@LIBC@/$(GLIBC)/" \
 	    -e "s/@SIZE@/$$(du -sk "$(STAGE)/usr" | cut -f1)/" \
 	    packaging/debian/control.in > "$(STAGE)/DEBIAN/control"

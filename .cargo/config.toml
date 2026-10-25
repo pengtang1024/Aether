@@ -1,0 +1,7 @@
+# Static MSVC runtime for Windows packages: the application does not require
+# the Microsoft Visual C++ Redistributable to be installed.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

@@ -1,6 +1,6 @@
 Package: aether
 Version: @VERSION@
-Architecture: amd64
+Architecture: @ARCH@
 Maintainer: pengtang1024 <pengtang1024@qq.com>
 Installed-Size: @SIZE@
 Depends: libc6 (>= @LIBC@), libfontconfig1, libfreetype6, libxkbcommon0, libwayland-client0, libwayland-cursor0, libwayland-egl1, libx11-6, libx11-xcb1, libxcb1, libxkbcommon-x11-0, libgl1, libegl1, hicolor-icon-theme, desktop-file-utils
