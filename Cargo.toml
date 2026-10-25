@@ -2,7 +2,7 @@
 name = "aether"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.88"
+rust-version = "1.92"
 description = "Aether — a native Material 3 download manager (Rust + Slint, no WebView)"
 license = "MIT"
 readme = "README.md"
