@@ -8,8 +8,8 @@ targets are deliberately out of scope for now; the UI is still optimized for a
 
 | Platform | Architecture | Package | Minimum target |
 | --- | --- | --- | --- |
-| Linux | x86_64 | `.deb`, `.AppImage` | Ubuntu 24.04+ / glibc 2.39+ |
-| Linux | arm64 | `.deb`, `.AppImage` | Ubuntu 24.04 arm64+ / glibc 2.39+ |
+| Linux | x86_64 | `.deb`, `.AppImage` | Ubuntu 22.04+ / Debian 12+ / glibc 2.35+ |
+| Linux | arm64 | `.deb`, `.AppImage` | Ubuntu 22.04 arm64+ / Raspberry Pi OS Bookworm / glibc 2.35+ |
 | Windows | x86_64 | `setup.exe`, portable `.zip` | Windows 10/11 |
 | Windows | arm64 | `setup.exe`, portable `.zip` | Windows 11 on Arm |
 | macOS | universal | `.dmg` | macOS 11+ (Apple Silicon + Intel) |
@@ -43,7 +43,7 @@ publish packages.
 - macOS builds are **ad-hoc signed but not notarized**. Gatekeeper may require
   right-click → Open, or clearing the quarantine attribute.
 - Windows installers are **not code-signed**; SmartScreen may show a warning.
-- Linux `.deb` requires glibc 2.39+ (built on Ubuntu 24.04). The AppImage has
+- Linux `.deb` requires glibc 2.35+ (built on Ubuntu 22.04). The AppImage has
   the same glibc baseline. Older distros need a Flatpak or a rebuild on an older
   base image; Flatpak is not part of the current matrix.
 - macOS Intel support is provided by the universal binary. There is no 32-bit
@@ -53,8 +53,8 @@ publish packages.
 
 The GitHub Actions workflow is `.github/workflows/package.yml`:
 
-- Linux x86_64: `ubuntu-24.04`
-- Linux arm64: `ubuntu-24.04-arm`
+- Linux x86_64: `ubuntu-22.04`
+- Linux arm64: `ubuntu-22.04-arm`
 - Windows x86_64: `windows-latest`
 - Windows arm64: `windows-11-arm`
 - macOS universal: `macos-14`
