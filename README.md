@@ -92,11 +92,18 @@ git switch -c release/0.1.0
 git push -u origin release/0.1.0
 ```
 
-Actions 在 `ubuntu-24.04` 上构建系统级 `.deb`，并作为 artifact 上传。包内包含
-`/usr/bin/aether`、`.desktop`、`hicolor` 图标和 AppStream metainfo；不需要用户目录安装脚本，
-GNOME / KDE 等桌面环境会直接从系统目录读取。
+同一套源码在 CI 中构建全平台产物：
 
-本地验证：
+| 平台 | 产物 | 说明 |
+| --- | --- | --- |
+| Linux x86_64 | `.deb` + `.AppImage` | `.deb` 安装到 `/usr`；AppImage 可移动 |
+| Windows x86_64 | `setup.exe` + portable `.zip` | 安装器含开始菜单/桌面快捷方式 |
+| macOS universal | `.dmg` | Apple Silicon + Intel；未签名，需右键打开 |
+
+所有产物会附加到一个 **draft GitHub Release**（tag `v<version>`），确认后发布即可。构建只在
+release 分支进行，`main`/feature 提交不会产生包。
+
+Linux 本地验证：
 
 ```bash
 make check   # desktop-file-validate + AppStream 校验
@@ -104,8 +111,8 @@ make deb     # dist/aether_0.1.0_amd64.deb
 sudo apt install ./dist/aether_0.1.0_amd64.deb
 ```
 
-`.deb` 面向 Ubuntu / Debian（CI 使用 24.04，要求 glibc 2.39+）。跨发行版分发可在此
-基础上增加 Flatpak/AppImage；当前先把系统级安装链路跑通。
+`.deb` 在 Ubuntu 24.04 上构建，要求 glibc 2.39+；macOS 包为 universal（arm64 + x86_64），
+但未做 Apple notarization。Windows 安装器由 Inno Setup 生成，便携版解压即用。
 
 ### 应用图标规范
 
@@ -148,8 +155,9 @@ sudo apt install ./dist/aether_0.1.0_amd64.deb
 │   ├── logo-transparent-128.png # 导航栏使用（去背景）
 │   ├── logo-transparent-512.png # 去背景高分辨率版本
 │   ├── logo-icon-*.png          # hicolor 32–512 图标（半透明磨砂底）
-├── packaging/                # desktop / AppStream / Debian control
-├── .github/workflows/        # release 分支打包
+│   ├── logo.ico                 # Windows 安装器/快捷方式图标
+├── packaging/                # desktop / AppStream / Debian / Windows / macOS
+├── .github/workflows/        # release 分支全平台打包
 ├── Makefile                  # make check / make deb
 ├── docs/screenshots/
 └── scripts/shot.sh

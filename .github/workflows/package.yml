@@ -6,19 +6,23 @@ on:
       - 'release/**'
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: package-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
-  deb:
-    name: Build Debian package
+  version:
+    name: Resolve release version
     runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
-
       - name: Check release branch version
         id: version
         run: |
@@ -30,6 +34,12 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
+  linux:
+    name: Linux .deb + AppImage
+    needs: version
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.92.0
       - uses: Swatinem/rust-cache@v2
 
@@ -39,21 +49,168 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             libfontconfig1-dev libfreetype6-dev libxkbcommon-dev libwayland-dev \
             libx11-dev libxcb1-dev libgl1-mesa-dev libegl1-mesa-dev \
-            desktop-file-utils appstream dpkg-dev make
+            desktop-file-utils appstream dpkg-dev make curl
 
       - name: Validate desktop entries and metadata
         run: make check
 
-      - name: Build package
+      - name: Build .deb
         run: make deb
 
-      - name: Show package
+      - name: Build AppImage
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
-          dpkg-deb --info "dist/aether_${{ steps.version.outputs.version }}_amd64.deb"
-          dpkg-deb --contents "dist/aether_${{ steps.version.outputs.version }}_amd64.deb"
+          set -euo pipefail
+          rm -rf AppDir
+          mkdir -p AppDir/usr/bin AppDir/usr/share/applications \
+                   AppDir/usr/share/metainfo \
+                   AppDir/usr/share/icons/hicolor/256x256/apps
+          install -m755 target/release/aether AppDir/usr/bin/aether
+          install -m644 packaging/aether.desktop AppDir/usr/share/applications/aether.desktop
+          install -m644 packaging/aether.metainfo.xml \
+            AppDir/usr/share/metainfo/io.github.pengtang1024.Aether.metainfo.xml
+          install -m644 assets/logo-icon-256.png \
+            AppDir/usr/share/icons/hicolor/256x256/apps/aether.png
+          cp packaging/aether.desktop AppDir/aether.desktop
+          cp assets/logo-icon-256.png AppDir/aether.png
+          cat > AppDir/AppRun <<'RUN'
+          #!/bin/sh
+          exec "${APPDIR}/usr/bin/aether" "$@"
+          RUN
+          chmod +x AppDir/AppRun
+          curl -fL -o /tmp/appimagetool \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x /tmp/appimagetool
+          ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 /tmp/appimagetool \
+            AppDir "dist/aether-${VERSION}-linux-x86_64.AppImage"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: aether-${{ steps.version.outputs.version }}-linux-amd64
-          path: dist/aether_${{ steps.version.outputs.version }}_amd64.deb
+          name: aether-${{ needs.version.outputs.version }}-linux-x86_64
+          path: |
+            dist/aether_${{ needs.version.outputs.version }}_amd64.deb
+            dist/aether-${{ needs.version.outputs.version }}-linux-x86_64.AppImage
           if-no-files-found: error
+
+  windows:
+    name: Windows installer
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.92.0
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Create portable ZIP
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $files = @(
+            "target/release/aether.exe",
+            "assets/logo.ico",
+            "LICENSE",
+            "THIRD_PARTY_NOTICES.md",
+            "README.md"
+          )
+          Compress-Archive -Force -Path $files `
+            -DestinationPath "dist/aether-${{ needs.version.outputs.version }}-windows-x86_64.zip"
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup -y --no-progress
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $iscc = (Get-Command iscc.exe -ErrorAction SilentlyContinue).Source
+          if (-not $iscc) {
+            $iscc = (Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup*\ISCC.exe" |
+              Select-Object -First 1).FullName
+          }
+          if (-not $iscc) { throw "ISCC.exe not found" }
+          & $iscc "/DAppVersion=${{ needs.version.outputs.version }}" `
+                  "/DRepoRoot=${{ github.workspace }}" `
+                  "packaging\windows\aether.iss"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aether-${{ needs.version.outputs.version }}-windows-x86_64
+          path: |
+            dist/*.exe
+            dist/*.zip
+          if-no-files-found: error
+
+  macos:
+    name: macOS universal DMG
+    needs: version
+    runs-on: macos-14
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.92.0
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build universal app bundle
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          cargo build --release --target aarch64-apple-darwin
+          cargo build --release --target x86_64-apple-darwin
+
+          rm -rf Aether.app Aether.iconset dist
+          mkdir -p Aether.app/Contents/MacOS Aether.app/Contents/Resources Aether.iconset dist
+          lipo -create \
+            target/aarch64-apple-darwin/release/aether \
+            target/x86_64-apple-darwin/release/aether \
+            -output Aether.app/Contents/MacOS/aether
+          chmod +x Aether.app/Contents/MacOS/aether
+          sed "s/@VERSION@/${VERSION}/g" packaging/macos/Info.plist \
+            > Aether.app/Contents/Info.plist
+
+          for size in 16 32 128 256 512; do
+            sips -z "$size" "$size" assets/logo-icon-512.png \
+              --out "Aether.iconset/icon_${size}x${size}.png" >/dev/null
+            double=$((size * 2))
+            sips -z "$double" "$double" assets/logo-icon-512.png \
+              --out "Aether.iconset/icon_${size}x${size}@2x.png" >/dev/null
+          done
+          iconutil -c icns Aether.iconset \
+            -o Aether.app/Contents/Resources/aether.icns
+
+          codesign --force --deep --sign - Aether.app
+          hdiutil create -volname "Aether" -srcfolder Aether.app \
+            -ov -format UDZO "dist/aether-${VERSION}-macos-universal.dmg"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aether-${{ needs.version.outputs.version }}-macos-universal
+          path: dist/*.dmg
+          if-no-files-found: error
+
+  publish:
+    name: Draft GitHub release
+    needs: [version, linux, windows, macos]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: aether-*
+          merge-multiple: true
+          path: artifacts
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.version.outputs.version }}
+          name: Aether ${{ needs.version.outputs.version }}
+          draft: true
+          prerelease: false
+          files: artifacts/*
+          fail_on_unmatched_files: true

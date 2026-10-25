@@ -3,6 +3,8 @@
 //! Rust drives a small simulated download engine; Slint renders everything with
 //! its own Material 3 widget set. There is no WebView anywhere in the stack.
 
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+
 mod engine;
 mod model;
 
@@ -328,7 +330,7 @@ fn main() -> Result<(), slint::PlatformError> {
 
     // Bind the window to aether.desktop so the dock / task switcher uses the
     // app icon instead of a generic fallback. This must run before `run()`.
-    slint::set_xdg_app_id("aether").expect("failed to set XDG application id");
+    let _ = slint::set_xdg_app_id("aether");
 
     let state = Rc::new(RefCell::new(State::new()));
 
