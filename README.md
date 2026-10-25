@@ -89,8 +89,18 @@ cargo build
 ./scripts/install-desktop.sh
 ```
 
-脚本会把 `Aether.desktop` 写入应用菜单和桌面，图标使用 `assets/logo-icon-256.png`
-（浅色半透明磨砂底）。如果需要重新生成图标或移动了项目目录，重跑一次即可。
+脚本会把 `Aether.desktop` 写入应用菜单和桌面，并把图标安装到 hicolor。如果需要重新
+生成图标或移动了项目目录，重跑一次即可。
+
+### 应用图标规范
+
+- 画布：GNOME HIG 的 128×128 名义尺寸；仓库导出 32/48/64/128/256/512，安装到 hicolor。
+- 底板：Ubuntu Yaru 方形图标按 224/256（87.5%）绘制，256 画布外缘 2px 描边；对应 512
+  画布即 448px 底板、4px 描边。100% 铺满会明显大于其他 Dock 图标，75% 又会偏小。
+- Dock 使用 48px 资产；桌面、Dock 和窗口图标使用浅色半透明磨砂底，导航栏使用去底版本。
+- 图标名与 `.desktop` 的 `Icon` 都使用 app id `aether`，并安装到 `hicolor/{32,48,64,128,256,512}x…/apps/`。
+- GNOME HIG 通用模板更保守（104/128 底板）；Ubuntu Yaru 的方形底板更大，本应用在 Ubuntu
+  Dock 中按 Yaru 的比例对齐。
 
 ---
 
@@ -120,9 +130,7 @@ cargo build
 │   ├── logo.png                 # 原始 logo（带浅色底板）
 │   ├── logo-transparent-128.png # 导航栏使用（去背景）
 │   ├── logo-transparent-512.png # 去背景高分辨率版本
-│   ├── logo-icon-128.png        # README 小图标
-│   ├── logo-icon-256.png        # 桌面 / 窗口图标（半透明磨砂底）
-│   └── logo-icon-512.png        # 高分辨率应用图标
+│   ├── logo-icon-*.png          # hicolor 32–512 图标（半透明磨砂底）
 ├── docs/screenshots/
 └── scripts/shot.sh
 ```

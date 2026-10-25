@@ -18,7 +18,7 @@ if [[ ! -x "$BIN" ]]; then
     exit 1
 fi
 
-for size in 128 256 512; do
+for size in 32 48 64 128 256 512; do
     install -Dm644 "$ROOT/assets/logo-icon-$size.png" \
         "$ICON_THEME/${size}x${size}/apps/$ICON_NAME.png"
 done
