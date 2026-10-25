@@ -1,4 +1,4 @@
-<p align="center"><img src="assets/logo-128.png" width="64" alt="Aether logo"></p>
+<p align="center"><img src="assets/logo-transparent-128.png" width="64" alt="Aether logo"></p>
 
 # Aether
 
@@ -107,8 +107,9 @@ AETHER_VIEW=drawer ./scripts/shot.sh /tmp/drawer.png
 │   └── material/            # vendored Slint 1.18.1 Material 3 组件库
 ├── assets/
 │   ├── icons/               # 单色描边 SVG（33 个），使用时 colorize
-│   ├── logo.png             # 品牌 logo 源文件（2048×2048）
-│   └── logo-128.png         # 导航栏与窗口图标使用的小尺寸版本
+│   ├── logo.png                 # 原始 logo（带浅色底板）
+│   ├── logo-transparent-128.png # 导航栏 / 窗口图标（去背景）
+│   └── logo-transparent-512.png # 去背景高分辨率版本
 ├── docs/screenshots/
 └── scripts/shot.sh
 ```
