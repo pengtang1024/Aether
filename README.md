@@ -82,15 +82,30 @@ AETHER_VIEW=drawer ./scripts/shot.sh /tmp/drawer.png
 依赖 `Xvfb` 与 ImageMagick 的 `import`。窗口默认 1040×700，可在 900×600 以上自由缩放；
 脚本默认画布与窗口一致。
 
-### 桌面快捷方式
+### 打包与安装
+
+发布包由 GitHub Actions 生成，**只有 `release/*` 分支会触发打包**；分支名必须与
+`Cargo.toml` 的版本一致。
 
 ```bash
-cargo build
-./scripts/install-desktop.sh
+git switch -c release/0.1.0
+git push -u origin release/0.1.0
 ```
 
-脚本会把 `Aether.desktop` 写入应用菜单和桌面，并把图标安装到 hicolor。如果需要重新
-生成图标或移动了项目目录，重跑一次即可。
+Actions 在 `ubuntu-24.04` 上构建系统级 `.deb`，并作为 artifact 上传。包内包含
+`/usr/bin/aether`、`.desktop`、`hicolor` 图标和 AppStream metainfo；不需要用户目录安装脚本，
+GNOME / KDE 等桌面环境会直接从系统目录读取。
+
+本地验证：
+
+```bash
+make check   # desktop-file-validate + AppStream 校验
+make deb     # dist/aether_0.1.0_amd64.deb
+sudo apt install ./dist/aether_0.1.0_amd64.deb
+```
+
+`.deb` 面向 Ubuntu / Debian（CI 使用 24.04，要求 glibc 2.39+）。跨发行版分发可在此
+基础上增加 Flatpak/AppImage；当前先把系统级安装链路跑通。
 
 ### 应用图标规范
 
@@ -99,6 +114,8 @@ cargo build
   画布即 448px 底板、4px 描边。100% 铺满会明显大于其他 Dock 图标，75% 又会偏小。
 - Dock 使用 48px 资产；桌面、Dock 和窗口图标使用浅色半透明磨砂底，导航栏使用去底版本。
 - 图标名与 `.desktop` 的 `Icon` 都使用 app id `aether`，并安装到 `hicolor/{32,48,64,128,256,512}x…/apps/`。
+- 发布包由 `.deb` 安装到 `/usr`；AppStream 组件 ID 使用反向域名
+  `io.github.pengtang1024.Aether`。
 - GNOME HIG 通用模板更保守（104/128 底板）；Ubuntu Yaru 的方形底板更大，本应用在 Ubuntu
   Dock 中按 Yaru 的比例对齐。
 
@@ -131,6 +148,9 @@ cargo build
 │   ├── logo-transparent-128.png # 导航栏使用（去背景）
 │   ├── logo-transparent-512.png # 去背景高分辨率版本
 │   ├── logo-icon-*.png          # hicolor 32–512 图标（半透明磨砂底）
+├── packaging/                # desktop / AppStream / Debian control
+├── .github/workflows/        # release 分支打包
+├── Makefile                  # make check / make deb
 ├── docs/screenshots/
 └── scripts/shot.sh
 ```

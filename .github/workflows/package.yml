@@ -1,0 +1,59 @@
+name: Package release
+
+on:
+  push:
+    branches:
+      - 'release/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: package-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deb:
+    name: Build Debian package
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check release branch version
+        id: version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          branch="${GITHUB_REF_NAME#release/}"
+          if [ -z "$version" ] || [ "$version" != "$branch" ]; then
+            echo "release branch must be named release/$version (got $GITHUB_REF_NAME)" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libfontconfig1-dev libfreetype6-dev libxkbcommon-dev libwayland-dev \
+            libx11-dev libxcb1-dev libgl1-mesa-dev libegl1-mesa-dev \
+            desktop-file-utils appstream dpkg-dev make
+
+      - name: Validate desktop entries and metadata
+        run: make check
+
+      - name: Build package
+        run: make deb
+
+      - name: Show package
+        run: |
+          dpkg-deb --info "dist/aether_${{ steps.version.outputs.version }}_amd64.deb"
+          dpkg-deb --contents "dist/aether_${{ steps.version.outputs.version }}_amd64.deb"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aether-${{ steps.version.outputs.version }}-linux-amd64
+          path: dist/aether_${{ steps.version.outputs.version }}_amd64.deb
+          if-no-files-found: error

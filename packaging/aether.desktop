@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Aether
+Comment=Native Material 3 download manager mockup
+Exec=aether
+Icon=aether
+Terminal=false
+Categories=Network;FileTransfer;
+Keywords=download;torrent;http;
+StartupWMClass=aether
