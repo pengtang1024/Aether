@@ -325,6 +325,11 @@ fn show_toast(ui: &AppWindow, state: &Rc<RefCell<State>>, message: &str) {
 
 fn main() -> Result<(), slint::PlatformError> {
     let ui = AppWindow::new()?;
+
+    // Bind the window to aether.desktop so the dock / task switcher uses the
+    // app icon instead of a generic fallback. This must run before `run()`.
+    slint::set_xdg_app_id("aether").expect("failed to set XDG application id");
+
     let state = Rc::new(RefCell::new(State::new()));
 
     // Initial data.
