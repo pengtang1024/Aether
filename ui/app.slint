@@ -76,6 +76,7 @@ export component AppWindow inherits Window {
     background: Aether.surface;
     // ASCII only: the GNOME title bar font stack has no CJK fallback here.
     title: "Aether";
+    icon: @image-url("../assets/logo-128.png");
 
     // ======================================================================
     // Background
@@ -109,20 +110,16 @@ export component AppWindow inherits Window {
                 padding: 10px;
                 spacing: 4px;
 
-                // brand mark
-                Rectangle {
-                    width: 40px;
-                    height: 40px;
-                    border-radius: Aether.radius-md;
-                    background: Aether.primary;
+                // Brand mark. The logo is 44px wide and centered over the
+                // 64px navigation items (both share the 42px rail centre).
+                HorizontalLayout {
+                    height: 44px;
+                    alignment: center;
 
                     Image {
-                        source: AetherIcons.download;
-                        width: 20px;
-                        height: 20px;
-                        colorize: Aether.on-primary;
-                        x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
+                        source: @image-url("../assets/logo-128.png");
+                        width: 44px;
+                        height: 44px;
                     }
                 }
 

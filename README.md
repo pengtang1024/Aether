@@ -1,10 +1,12 @@
+<p align="center"><img src="assets/logo-128.png" width="64" alt="Aether logo"></p>
+
 # Aether
 
 **原生 Material 3 下载管理器 · Rust + Slint · 无 WebView**
 
 Aether 是一个桌面下载管理器的界面原型（UI mockup），交互与视觉参考 Motrix，但完全用
-Rust 与 [Slint](https://slint.dev) 从零绘制：没有 Electron、没有 Chromium、没有一张位图
-贴图。窗口里的每个像素——包括图标、进度条、折线图和背景流线——都是矢量渲染。
+Rust 与 [Slint](https://slint.dev) 绘制：没有 Electron、没有 Chromium。除品牌 logo 外，
+窗口里的图标、进度条、折线图和背景流线全部是矢量渲染。
 
 界面严格遵循 Material 3：深色主题、`#6750A4` 品牌主色、M3 形状与字号阶梯、柔和的环境
 阴影，以及适合桌面工具的紧凑留白。
@@ -103,7 +105,10 @@ AETHER_VIEW=drawer ./scripts/shot.sh /tmp/drawer.png
 │   │   ├── new-download.slint
 │   │   └── task-drawer.slint
 │   └── material/            # vendored Slint 1.18.1 Material 3 组件库
-├── assets/icons/            # 单色描边 SVG（33 个），使用时 colorize
+├── assets/
+│   ├── icons/               # 单色描边 SVG（33 个），使用时 colorize
+│   ├── logo.png             # 品牌 logo 源文件（2048×2048）
+│   └── logo-128.png         # 导航栏与窗口图标使用的小尺寸版本
 ├── docs/screenshots/
 └── scripts/shot.sh
 ```
