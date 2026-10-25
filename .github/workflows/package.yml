@@ -228,16 +228,30 @@ jobs:
     needs: [version, linux, windows, macos]
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           pattern: aether-*
           merge-multiple: true
           path: artifacts
 
+      - name: Prepare release notes and checksums
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          notes="docs/releases/${VERSION}.md"
+          if [ ! -f "$notes" ]; then
+            echo "Missing release notes: $notes" >&2
+            exit 1
+          fi
+          cp "$notes" release-body.md
+          (cd artifacts && sha256sum * > SHA256SUMS)
+
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.version.outputs.version }}
           name: Aether ${{ needs.version.outputs.version }}
+          body_path: release-body.md
           draft: true
           prerelease: false
           files: artifacts/*
