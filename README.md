@@ -1,4 +1,4 @@
-<p align="center"><img src="assets/logo-transparent-128.png" width="64" alt="Aether logo"></p>
+<p align="center"><img src="assets/logo-icon-128.png" width="64" alt="Aether logo"></p>
 
 # Aether
 
@@ -82,6 +82,16 @@ AETHER_VIEW=drawer ./scripts/shot.sh /tmp/drawer.png
 依赖 `Xvfb` 与 ImageMagick 的 `import`。窗口默认 1040×700，可在 900×600 以上自由缩放；
 脚本默认画布与窗口一致。
 
+### 桌面快捷方式
+
+```bash
+cargo build
+./scripts/install-desktop.sh
+```
+
+脚本会把 `Aether.desktop` 写入应用菜单和桌面，图标使用 `assets/logo-icon-256.png`
+（浅色半透明磨砂底）。如果需要重新生成图标或移动了项目目录，重跑一次即可。
+
 ---
 
 ## 项目结构
@@ -108,8 +118,11 @@ AETHER_VIEW=drawer ./scripts/shot.sh /tmp/drawer.png
 ├── assets/
 │   ├── icons/               # 单色描边 SVG（33 个），使用时 colorize
 │   ├── logo.png                 # 原始 logo（带浅色底板）
-│   ├── logo-transparent-128.png # 导航栏 / 窗口图标（去背景）
-│   └── logo-transparent-512.png # 去背景高分辨率版本
+│   ├── logo-transparent-128.png # 导航栏使用（去背景）
+│   ├── logo-transparent-512.png # 去背景高分辨率版本
+│   ├── logo-icon-128.png        # README 小图标
+│   ├── logo-icon-256.png        # 桌面 / 窗口图标（半透明磨砂底）
+│   └── logo-icon-512.png        # 高分辨率应用图标
 ├── docs/screenshots/
 └── scripts/shot.sh
 ```
