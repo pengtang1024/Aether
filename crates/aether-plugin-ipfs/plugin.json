@@ -1,0 +1,20 @@
+{
+  "id": "ipfs",
+  "name": "IPFS / IPNS Downloader",
+  "version": "0.1.0",
+  "api": 1,
+  "min_host": "0.2.0",
+  "protocols": ["ipfs", "ipns"],
+  "capabilities": ["network", "filesystem:task"],
+  "executable": {
+    "linux-x86_64": "bin/aether-plugin-ipfs-linux-x86_64",
+    "linux-aarch64": "bin/aether-plugin-ipfs-linux-aarch64",
+    "windows-x86_64": "bin/aether-plugin-ipfs-windows-x86_64.exe",
+    "windows-arm64": "bin/aether-plugin-ipfs-windows-arm64.exe",
+    "macos-universal": "bin/aether-plugin-ipfs-macos-universal"
+  },
+  "settings_schema": {
+    "sections": [{ "title": "IPFS", "fields": [{ "key": "gateway", "type": "string", "default": "https://ipfs.io" }] }]
+  },
+  "detail_schema": { "sections": [{ "type": "metrics", "items": ["speed", "size"] }] }
+}

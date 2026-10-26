@@ -1,0 +1,21 @@
+[package]
+name = "aether-plugin-thunder"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.92"
+description = "thunder:// link decoder plugin for Aether"
+license = "MIT"
+publish = false
+
+[[bin]]
+name = "aether-plugin-thunder"
+path = "src/main.rs"
+
+[dependencies]
+aether-plugin-http = { path = "../aether-plugin-http" }
+aether-plugin-sdk = { path = "../aether-plugin-sdk" }
+base64 = "0.22"
+url = "2"
+
+[dev-dependencies]
+serde_json = "1"

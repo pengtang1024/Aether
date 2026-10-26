@@ -1,0 +1,21 @@
+[package]
+name = "aether-plugin-ipfs"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.92"
+description = "IPFS/IPNS gateway download plugin for Aether"
+license = "MIT"
+publish = false
+
+[[bin]]
+name = "aether-plugin-ipfs"
+path = "src/main.rs"
+
+[dependencies]
+aether-plugin-http = { path = "../aether-plugin-http" }
+aether-plugin-sdk = { path = "../aether-plugin-sdk" }
+serde_json = "1"
+url = "2"
+
+[dev-dependencies]
+serde_json = "1"

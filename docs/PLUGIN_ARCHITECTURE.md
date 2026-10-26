@@ -357,8 +357,12 @@ Host 的“插件”页面（后续 UI）展示：
 | `metalink` | 可选 | P4（HTTP 内置） | v3/v4 解析、优先级选源、SHA-256 |
 | `extractor` | 可选 | P5（已实现） | yt-dlp 子进程、进度解析、staging 落盘 |
 | `sftp` / `webdav` / `s3` | 可选 | P5（已实现基础） | SFTP 密码、WebDAV Basic、S3 SigV4 GET |
-| `ed2k` / `thunder` / `ipfs` / `rtmp` | 否 | P5+ | 独立签名插件，默认不装 |
-| `gdrive` / `onedrive` / `dropbox` / `baidupan` / `aliyunpan` | 否 | P6（最后） | OAuth/官方 API；见 CLOUD_PLUGINS.md |
+| `thunder` | 否 | P5（已实现） | thunder:// 解码后交给 HTTP |
+| `ipfs` | 否 | P5（已实现） | IPFS/IPNS HTTP gateway |
+| `rtmp` | 否 | P5（已实现） | RTMP/RTSP 通过 ffmpeg 子进程 |
+| `ed2k` | 否 | P5+ | eDonkey 内核未实现 |
+| `gdrive` / `onedrive` / `dropbox` | 否 | P6（已实现共享链接） | 公开分享链接转直链；OAuth 私有文件待补 |
+| `baidupan` / `aliyunpan` | 否 | P6（最后） | 需要官方 API/OAuth 应用；不做绕过 |
 
 默认安装只保证 HTTP 可用；BT/媒体等即使随包携带也不启动，用户首次使用或启用时
 才加载。所有插件均为第一方开发、签名、版本化，不是第三方市场。
@@ -375,7 +379,11 @@ Host 的“插件”页面（后续 UI）展示：
 - `crates/aether-plugin-ftp`：FTP/FTPS、REST 续传。
 - `crates/aether-plugin-media`：HLS/DASH 点播、AES-128、SegmentTemplate/List。
 - `crates/aether-plugin-webdav` / `-s3` / `-sftp` / `-extractor`：WebDAV、SigV4 S3、SFTP、yt-dlp 适配。
-- 8 个真实插件均未接 Host UI；接下来：云盘（P6）、ED2K/thunder/IPFS/RTMP，以及 Host 调度/PAC。
+- `crates/aether-plugin-thunder`：thunder:// 解码 + HTTP。
+- `crates/aether-plugin-ipfs`：IPFS/IPNS gateway + HTTP。
+- `crates/aether-plugin-rtmp`：ffmpeg RTMP/RTSP 捕获。
+- `crates/aether-plugin-cloud`：Google Drive / OneDrive / Dropbox 公开分享链接。
+- 以上 14 个真实插件均未接 Host UI；剩余：百度/阿里官方 API、ED2K，以及 Host 调度/PAC。
 
 ## 20. 结论
 

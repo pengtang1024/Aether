@@ -1,0 +1,31 @@
+[package]
+name = "aether-plugin-cloud"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.92"
+description = "Cloud-drive shared-link plugins for Aether"
+license = "MIT"
+publish = false
+
+[lib]
+name = "aether_plugin_cloud"
+path = "src/lib.rs"
+
+[[bin]]
+name = "aether-plugin-gdrive"
+path = "src/bin/gdrive.rs"
+
+[[bin]]
+name = "aether-plugin-onedrive"
+path = "src/bin/onedrive.rs"
+
+[[bin]]
+name = "aether-plugin-dropbox"
+path = "src/bin/dropbox.rs"
+
+[dependencies]
+aether-plugin-http = { path = "../aether-plugin-http" }
+aether-plugin-sdk = { path = "../aether-plugin-sdk" }
+base64 = "0.22"
+serde_json = "1"
+url = "2"

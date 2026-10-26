@@ -31,10 +31,10 @@
 | BitTorrent v1 / hybrid | bt | Optional（随包懒启动） | **已实现（基础）** | librqbit、magnet/.torrent、initial peers；做种/DHT 压测待补 |
 | BitTorrent v2 / pure v2 | bt | Optional | P3 待验证 | 依赖 BT 内核能力；不支持则明确报错 |
 | WebTorrent / WebRTC | — | Not planned | — | 浏览器 P2P 不在核心 |
-| ED2K / Kad | ed2k | Optional | P5+ | eMule 网络；独立插件 |
-| thunder:// / QQdl:// / FlashGet | decoder | Optional | P5+ | 仅 URL 解码；不提供 Xunlei 私有加速/离线 |
-| IPFS / IPNS | ipfs | Optional | P5+ | 优先 HTTP gateway；不内置完整 Kubo |
-| RTMP / RTSP | rtmp | Optional | P5+ | 通过 ffmpeg 子进程；不写实时流核心 |
+| ED2K / Kad | ed2k | Optional | P5+（未实现） | 需要 eDonkey 内核；当前不做 |
+| thunder:// / QQdl:// / FlashGet | decoder | Optional | **thunder 已实现** | 仅 URL 解码后走 HTTP；不提供私有加速/离线 |
+| IPFS / IPNS | ipfs | Optional | **已实现** | HTTP gateway；不内置完整 Kubo |
+| RTMP / RTSP | rtmp | Optional | **已实现** | 通过 ffmpeg 子进程；不写实时流核心 |
 | Usenet / NNTP | — | Not planned | — | 不在路线图 |
 | TFTP / Gopher / SCP | — | Not planned | — | 不在路线图 |
 | WebSocket / 长连接消息 | — | Not planned | — | 不是文件下载协议 |
@@ -50,8 +50,8 @@
 | HLS 直播 | media | Optional | 滚动 playlist、窗口计算 |
 | DASH 点播 | media | Optional | **已实现插件** | SegmentTemplate/List/BaseURL、首个 Period；直播待补 |
 | YouTube/Bilibili 等站点 | extractor | External | **已实现插件** | yt-dlp 子进程；站点覆盖取决于 yt-dlp，不保证 |
-| Google Drive / OneDrive / Dropbox | gdrive / onedrive | Optional | P6（最后） | OAuth2 + 官方 API；需要开发者应用审批 |
-| 百度网盘 / 阿里云盘等 | baidupan / aliyunpan | Optional | P6（最后） | 官方/私有 API 取决于开放程度；不做绕过风控 |
+| Google Drive / OneDrive / Dropbox | gdrive / onedrive / dropbox | Optional | **已实现共享链接** | 公开链接转直链；OAuth 私有文件待补 |
+| 百度网盘 / 阿里云盘等 | baidupan / aliyunpan | Optional | P6（未实现） | 需要官方 API/OAuth 应用；不做绕过风控 |
 | 浏览器正在下载的文件 | browser-extension | Optional | P5 | 扩展 + Native Messaging；用户显式授权 |
 | RSS / 自动追番 | Host 功能 | Optional | P5 | 后续 Host 功能，不是协议插件 |
 | 剪贴板监听 | Host 功能 | Optional | P5 | 平台集成层，默认关闭 |

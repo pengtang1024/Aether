@@ -1,0 +1,17 @@
+[package]
+name = "aether-plugin-rtmp"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.92"
+description = "RTMP/RTSP capture plugin using ffmpeg for Aether"
+license = "MIT"
+publish = false
+
+[[bin]]
+name = "aether-plugin-rtmp"
+path = "src/main.rs"
+
+[dependencies]
+aether-plugin-sdk = { path = "../aether-plugin-sdk" }
+serde_json = "1"
+thiserror = "2"

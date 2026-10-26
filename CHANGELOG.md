@@ -19,6 +19,8 @@ versioning; this is a UI mockup, so 0.x versions may change visual structure.
   SHA-256 from the metalink).
 - FTP/FTPS (REST resume), HLS/DASH VOD (AES-128, SegmentTemplate/List), BT
   (librqbit), WebDAV, S3 SigV4, SFTP and yt-dlp extractor plugins.
+- thunder:// decoder, IPFS/IPNS gateway, RTMP/RTSP via ffmpeg, and Google
+  Drive / OneDrive / Dropbox public-share links.
 
 ### Changed
 

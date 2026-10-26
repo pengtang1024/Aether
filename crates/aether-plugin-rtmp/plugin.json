@@ -1,0 +1,20 @@
+{
+  "id": "rtmp",
+  "name": "RTMP / RTSP Capture",
+  "version": "0.1.0",
+  "api": 1,
+  "min_host": "0.2.0",
+  "protocols": ["rtmp", "rtmps", "rtsp"],
+  "capabilities": ["network", "filesystem:task", "external-process"],
+  "executable": {
+    "linux-x86_64": "bin/aether-plugin-rtmp-linux-x86_64",
+    "linux-aarch64": "bin/aether-plugin-rtmp-linux-aarch64",
+    "windows-x86_64": "bin/aether-plugin-rtmp-windows-x86_64.exe",
+    "windows-arm64": "bin/aether-plugin-rtmp-windows-arm64.exe",
+    "macos-universal": "bin/aether-plugin-rtmp-macos-universal"
+  },
+  "settings_schema": {
+    "sections": [{ "title": "ffmpeg", "fields": [{ "key": "ffmpeg_path", "type": "path", "default": "ffmpeg" }] }]
+  },
+  "detail_schema": { "sections": [{ "type": "logs", "max_lines": 200 }] }
+}

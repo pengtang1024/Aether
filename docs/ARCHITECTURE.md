@@ -142,7 +142,7 @@ PluginRow {
 | Host UI（Slint） | 已有 mockup；隔壁会话正在重做视觉 |
 | 模拟引擎 `src/engine.rs` | 仅演示；不是真实下载 |
 | 插件管理器 / SDK / IPC | P0 骨架已实现（`crates/aether-plugin-sdk`）；尚未接 Host UI |
-| 协议插件 | HTTP、BT、FTP/FTPS、HLS/DASH、WebDAV、S3、SFTP、yt-dlp 共 8 个（均未接 UI）+ fake 测试插件；云盘/ED2K 等见 SUPPORT_MATRIX.md |
+| 协议插件 | HTTP、BT、FTP/FTPS、HLS/DASH、WebDAV、S3、SFTP、yt-dlp、thunder、IPFS、RTMP/RTSP、Google Drive/OneDrive/Dropbox 共 14 个（均未接 UI）+ fake；百度/阿里/ED2K 见 SUPPORT_MATRIX.md |
 | 打包/CI/图标/发布 | 已实现；Linux 优先；插件二进制尚未进安装包 |
 | v0.1.0 Release | 已发布；内容仍是 UI mockup |
 

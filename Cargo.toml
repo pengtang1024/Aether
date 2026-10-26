@@ -10,6 +10,10 @@ members = [
     "crates/aether-plugin-extractor",
     "crates/aether-plugin-s3",
     "crates/aether-plugin-sftp",
+    "crates/aether-plugin-thunder",
+    "crates/aether-plugin-ipfs",
+    "crates/aether-plugin-rtmp",
+    "crates/aether-plugin-cloud",
 ]
 default-members = ["."]
 resolver = "2"

@@ -1,0 +1,18 @@
+{
+  "id": "gdrive",
+  "name": "Google Drive Shared Links",
+  "version": "0.1.0",
+  "api": 1,
+  "min_host": "0.2.0",
+  "protocols": ["gdrive"],
+  "capabilities": ["network", "filesystem:task"],
+  "executable": {
+    "linux-x86_64": "bin/aether-plugin-gdrive-linux-x86_64",
+    "linux-aarch64": "bin/aether-plugin-gdrive-linux-aarch64",
+    "windows-x86_64": "bin/aether-plugin-gdrive-windows-x86_64.exe",
+    "windows-arm64": "bin/aether-plugin-gdrive-windows-arm64.exe",
+    "macos-universal": "bin/aether-plugin-gdrive-macos-universal"
+  },
+  "settings_schema": { "sections": [] },
+  "detail_schema": { "sections": [{ "type": "metrics", "items": ["speed", "size"] }] }
+}

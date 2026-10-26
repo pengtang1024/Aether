@@ -58,6 +58,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "aether-plugin-cloud"
+version = "0.1.0"
+dependencies = [
+ "aether-plugin-http",
+ "aether-plugin-sdk",
+ "base64 0.22.1",
+ "serde_json",
+ "url",
+]
+
+[[package]]
 name = "aether-plugin-extractor"
 version = "0.1.0"
 dependencies = [
@@ -104,6 +115,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "aether-plugin-ipfs"
+version = "0.1.0"
+dependencies = [
+ "aether-plugin-http",
+ "aether-plugin-sdk",
+ "serde_json",
+ "url",
+]
+
+[[package]]
 name = "aether-plugin-media"
 version = "0.1.0"
 dependencies = [
@@ -117,6 +138,15 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "url",
+]
+
+[[package]]
+name = "aether-plugin-rtmp"
+version = "0.1.0"
+dependencies = [
+ "aether-plugin-sdk",
+ "serde_json",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -155,6 +185,17 @@ dependencies = [
  "serde_json",
  "ssh2",
  "thiserror 2.0.21",
+ "url",
+]
+
+[[package]]
+name = "aether-plugin-thunder"
+version = "0.1.0"
+dependencies = [
+ "aether-plugin-http",
+ "aether-plugin-sdk",
+ "base64 0.22.1",
+ "serde_json",
  "url",
 ]
 
