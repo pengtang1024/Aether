@@ -116,8 +116,8 @@
 
 | 能力 | 外部条件 | 计划 |
 | --- | --- | --- |
-| Windows 代码签名 | Authenticode 证书（OV/EV）或 Azure Trusted Signing；CI secrets | P1.5（HTTP 插件完成后即可接入） |
-| macOS 公证 | Apple Developer Program、Developer ID 证书、App Store Connect 凭据 | P1.5 |
+| Windows 代码签名 | SignPath Foundation 免费 OSS 证书（需确认 Slint 许可/项目资历）或 Certum/自有证书；CI secrets | P1.5（HTTP 插件完成后即可接入） |
+| macOS 公证 | Apple Developer Program（$99/年）、Developer ID、notarytool；无免费公证 | P1.5（需赞助/组织账号） |
 | 浏览器集成 | Chrome/Edge/Firefox 扩展商店账号；本地扩展可先侧载 | P5 |
 | Google Drive / OneDrive | OAuth 应用注册/审核、API 配额 | P6（最后） |
 | 百度网盘 / 阿里云盘 | 开放平台/API 权限；遵守 ToS | P6（最后） |

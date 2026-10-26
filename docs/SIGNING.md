@@ -1,8 +1,49 @@
 # 代码签名与 macOS 公证
 
 > 目标：Windows 安装包不再触发 SmartScreen 的“未知发布者”，macOS 通过 Gatekeeper/公证。
-> **两者都需要外部凭据**，没有证书/Apple 账号时只能产出未签名/adhoc 包；v0.1.0 目前就是
-> 这种状态。本文给出流水线与 secrets，凭据到位即可接入。
+> **Windows 有免费 OSS 路径；macOS 公证没有免费方案**。没有证书/Apple 账号时只能产出
+> 未签名/adhoc 包；v0.1.0 目前就是这种状态。本文给出免费/低成本路径、流水线与 secrets。
+
+## 0. 开源项目的现实路径（先看这里）
+
+### Windows
+
+| 方案 | 成本 | 说明 |
+| --- | --- | --- |
+| **SignPath Foundation** | 免费 | 证书签发给 SignPath Foundation，按 OSS 条件审核；需公开代码、OSI 许可、维护记录、代码签名政策/隐私页；publisher 显示为 SignPath Foundation |
+| Certum Open Source | 约 €70–100 + 硬件/运费 | 低成本的 OSS 证书；不是免费；需身份验证 |
+| Microsoft Store | 开发者账号费用 | 商店会为 MSIX 包签名；需审核；不是“直接下载 exe” |
+| 未签名 + SHA256/winget | 免费 | 仍可能触发 SmartScreen；提供哈希、源码和构建说明 |
+| 自签名证书 | 免费 | 不能解决 SmartScreen；只适合内部测试 |
+
+**SignPath 的坑**：其 OSS 条件要求所有组件使用 OSI 许可且没有商业双许可。Slint 1.18.1 是
+GPL-3.0 / Royalty-free 2.0 / 商业三选一；Aether 目前选择 Royalty-free 2.0（非 OSI），
+可能不符合 SignPath Foundation 的免费证书条件。申请前应先向 SignPath 确认，或改走
+Certum/Microsoft Store/自有证书/未签名路径。不要为了签名擅自把 Slint 改成 GPL 而忽略
+整个项目的许可证影响。
+
+### macOS
+
+| 方案 | 成本 | 说明 |
+| --- | --- | --- |
+| Apple Developer Program + Developer ID + notarytool | **$99/年** | 真正公证的唯一正规路径；没有免费替代 |
+| ad-hoc 签名（`codesign -s -`） | 免费 | Apple Silicon 必需；**不等于公证**，Gatekeeper 仍会拦截 |
+| 源码构建 / Homebrew 本地编译 | 免费 | 用户本地构建，通常不带 quarantine；体验较差 |
+| 非营利/教育/政府费用豁免 | 视资格 | Apple 对特定组织提供费用豁免；个人 OSS 通常不符合 |
+| 赞助方/基金会代签 | 赞助 | 有 Apple Developer 账号的组织可代为签名/提交公证；需信任与合规安排 |
+| Mac Admins Open Source（MAOS） | 免费 | 面向 Mac 管理工具；Aether 这种通用下载器通常不符合范围 |
+
+**没有“免费公证”的公共 CA 或服务**。macOS 的 notarization 绑定 Apple Developer
+身份；不接受“像 Windows 一样找个 OSS 证书”的路径。
+
+### Aether 的建议
+
+- Windows：先申请 SignPath Foundation；若因 Slint 许可/项目资历被拒，保持未签名 +
+  SHA256 + winget，或使用低成本 Certum；不买 EV。
+- macOS：保持 ad-hoc 签名 + 明确 Gatekeeper 指引；等赞助/组织账号再做公证。
+- 不要声称“已签名/已公证”，除非 secrets 真实产生并通过 `signtool verify` / `spctl`。
+
+
 
 ## 1. Windows Authenticode
 
@@ -115,5 +156,7 @@ spctl --assess --type execute --verbose Aether.app
 ## 5. 当前状态
 
 - v0.1.0 Windows：未签名。
-- v0.1.0 macOS：adhoc 签名、未公证。
-- 签名/公证流水线目标：P1.5（HTTP 插件完成后即可接入）。
+- v0.1.0 macOS：adhoc 签名、未公证；较新 macOS 上右键 Open 可能不再足够，
+  需“系统设置 → 隐私与安全性 → 仍要打开”，或从源码构建。
+- 签名/公证流水线目标：P1.5；Windows 优先走 SignPath Foundation 免费 OSS 路径，
+  macOS 需赞助/组织账号后再接公证。

@@ -43,10 +43,12 @@ publish packages.
 ## Packaging caveats
 
 - macOS builds are currently **ad-hoc signed and not notarized**. Developer ID
-  signing + notarization is planned (P1.5) and requires an Apple Developer
-  account; see [SIGNING.md](SIGNING.md).
-- Windows installers are currently **not code-signed**; Authenticode signing is
-  planned (P1.5) and requires a code-signing certificate/HSM.
+  signing + notarization requires a paid Apple Developer account (no free
+  notarization path); see [SIGNING.md](SIGNING.md). On recent macOS, use
+  System Settings → Privacy & Security → Open Anyway, or build from source.
+- Windows installers are currently **not code-signed**. Free OSS signing may be
+  available through SignPath Foundation, subject to eligibility; otherwise use
+  SHA256/winget or a low-cost certificate.
 - Linux `.deb` requires glibc 2.35+ (built on Ubuntu 22.04). The AppImage has
   the same glibc baseline. Older distros need a Flatpak or a rebuild on an older
   base image; Flatpak is not part of the current matrix.

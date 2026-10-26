@@ -12,12 +12,14 @@
   不再只有 release 分支才跑构建。
 - **安全披露**：新增 `SECURITY.md`。
 - **依赖更新**：新增 Dependabot（cargo + GitHub Actions）。
+- **SignPath/隐私页**：新增 `CODE_SIGNING_POLICY.md` 与 `PRIVACY.md`，为免费 Windows OSS
+  签名申请和正式隐私说明做准备；macOS 公证仍无免费路径。
 
 ## 1. 高优先级盲区
 
 | # | 盲区 | 影响 | 建议 |
 | --- | --- | --- | --- |
-| 1 | **Slint/第三方许可合规** | 法律风险，可能违反 Royalty-free 署名条件 | 发布页保留 badge / AboutSlint；补全 third-party notices；正式发布前法务 review；ffmpeg/yt-dlp/云 API 的许可单独审 |
+| 1 | **Slint/第三方许可合规** | 法律风险，可能违反 Royalty-free 署名条件；也可能影响 SignPath 免费签名资格 | 发布页保留 badge / AboutSlint；补全 notices；正式发布前法务 review；向 SignPath 确认 Slint 三许可是否符合条件 |
 | 2 | **自动更新** | 用户长期停留在旧版；签名/安全修复无法下发 | 签名更新元数据、增量/全量包、分阶段发布、失败回滚；Windows/macOS/Flatpak 各自通道 |
 | 3 | **单实例 / 托盘 / 后台 / 开机自启** | 下载管理器必须能在后台跑；当前 UI 只有窗口 | 单实例锁、关闭到托盘、托盘菜单、开机启动、系统关机/休眠处理、唤醒续传 |
 | 4 | **PR CI 与测试** | 没有质量门禁，协议/插件改动容易回归 | 已有基础 CI；继续补 HTTP range/ETag、断点、路径安全、插件 IPC、崩溃恢复测试 |
@@ -96,8 +98,8 @@
 
 | 事项 | 需要什么 |
 | --- | --- |
-| Windows 签名 | 代码签名证书/HSM + GitHub secrets |
-| macOS 公证 | Apple Developer Program + Developer ID + notary 凭据 |
+| Windows 签名 | SignPath Foundation 免费 OSS 证书（需审核/确认 Slint 许可）或自有证书；GitHub secrets |
+| macOS 公证 | Apple Developer Program（$99/年）+ Developer ID + notary 凭据；无免费替代 |
 | 浏览器扩展上架 | Chrome/Edge/Firefox 开发者账号 + 审核 |
 | 云盘 OAuth | 各厂商开发者应用/API 权限/审核 |
 | 自动更新服务器 | 更新元数据签名 key、托管/CDN、灰度策略 |
