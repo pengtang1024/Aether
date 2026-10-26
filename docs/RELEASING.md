@@ -30,8 +30,11 @@
   publish job runs after all builds finish, but only requires `version` and
   `linux` to succeed; Windows/macOS assets are attached when those builds pass.
   If one fails, note the missing platform in the release notes.
-- The `.deb`, AppImage, ZIP, installer and DMG must include `LICENSE`,
-  `THIRD_PARTY_NOTICES.md` and `LICENSES/Slint-Royalty-free-2.0.md`.
+- The `.deb` and AppImage include `LICENSE`, `THIRD_PARTY_NOTICES.md`,
+  `LICENSES/Slint-Royalty-free-2.0.md` and all staged plugins under
+  `/usr/lib/aether/plugins` (`make plugins`).
+- Windows/macOS packages currently contain the Host only; plugin packaging for
+  those platforms is pending.
 
 ## License-bundle gate
 

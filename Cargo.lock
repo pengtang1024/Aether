@@ -44,6 +44,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "aether-cli"
+version = "0.1.0"
+dependencies = [
+ "aether-host",
+ "aether-plugin-sdk",
+ "serde_json",
+]
+
+[[package]]
+name = "aether-host"
+version = "0.1.0"
+dependencies = [
+ "aether-plugin-sdk",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "aether-plugin-bt"
 version = "0.1.0"
 dependencies = [

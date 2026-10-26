@@ -94,6 +94,8 @@ jobs:
             AppDir/usr/share/doc/aether/
           install -m644 LICENSES/Slint-Royalty-free-2.0.md \
             AppDir/usr/share/doc/aether/
+          install -d AppDir/usr/lib/aether/plugins
+          cp -a build/plugins/. AppDir/usr/lib/aether/plugins/
           cp packaging/aether.desktop AppDir/aether.desktop
           cp assets/logo-icon-256.png AppDir/aether.png
           cat > AppDir/AppRun <<'RUN'

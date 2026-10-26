@@ -8,10 +8,13 @@ ifeq ($(GLIBC),)
 GLIBC := 2.39
 endif
 
-.PHONY: release check check-licenses deb clean
+.PHONY: release plugins check check-licenses deb clean
 
 release:
-	cargo build --release
+	cargo build --release --workspace
+
+plugins: release
+	python3 scripts/stage-plugins.py --target-dir target/release --out build/plugins
 
 check: release
 	desktop-file-validate packaging/aether.desktop
@@ -23,7 +26,7 @@ check-licenses:
 		python3 scripts/check-license-bundles.py "$(DIST)"/aether_*.deb; \
 	fi
 
-deb: release
+deb: release plugins
 	rm -rf "$(STAGE)"
 	install -Dm755 target/release/aether "$(STAGE)/usr/bin/aether"
 	install -Dm644 packaging/aether.desktop "$(STAGE)/usr/share/applications/aether.desktop"
@@ -36,6 +39,8 @@ deb: release
 	install -Dm644 THIRD_PARTY_NOTICES.md "$(STAGE)/usr/share/doc/aether/THIRD_PARTY_NOTICES.md"
 	install -Dm644 LICENSES/Slint-Royalty-free-2.0.md \
 		"$(STAGE)/usr/share/doc/aether/Slint-Royalty-free-2.0.md"
+	install -d "$(STAGE)/usr/lib/aether/plugins"
+	cp -a build/plugins/. "$(STAGE)/usr/lib/aether/plugins/"
 	mkdir -p "$(STAGE)/DEBIAN" "$(DIST)"
 	sed -e "s/@VERSION@/$(VERSION)/" \
 	    -e "s/@ARCH@/$(ARCH)/" \

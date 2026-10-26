@@ -14,6 +14,8 @@ members = [
     "crates/aether-plugin-ipfs",
     "crates/aether-plugin-rtmp",
     "crates/aether-plugin-cloud",
+    "crates/aether-host",
+    "crates/aether-cli",
 ]
 default-members = ["."]
 resolver = "2"

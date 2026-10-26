@@ -24,6 +24,7 @@
 - [BROWSER_INTEGRATION.md](BROWSER_INTEGRATION.md)：浏览器扩展 + Native Messaging。
 - [CLOUD_PLUGINS.md](CLOUD_PLUGINS.md)：Google Drive/OneDrive/百度/阿里等网盘插件（P6）。
 - [LICENSING.md](LICENSING.md)：MIT 与 Slint 许可的边界、署名义务、各分发场景。
+- [HOST_RUNTIME.md](HOST_RUNTIME.md)：Host 插件发现/监督/Probe 路由/最终落盘与 CLI。
 
 ## 2. 固定决策
 
@@ -141,9 +142,9 @@ PluginRow {
 | --- | --- |
 | Host UI（Slint） | 已有 mockup；隔壁会话正在重做视觉 |
 | 模拟引擎 `src/engine.rs` | 仅演示；不是真实下载 |
-| 插件管理器 / SDK / IPC | P0 骨架已实现（`crates/aether-plugin-sdk`）；尚未接 Host UI |
+| 插件管理器 / SDK / IPC | 已实现：`aether-plugin-sdk` + `aether-host` + `aether-cli`；尚未接 Slint UI |
 | 协议插件 | HTTP、BT、FTP/FTPS、HLS/DASH、WebDAV、S3、SFTP、yt-dlp、thunder、IPFS、RTMP/RTSP、Google Drive/OneDrive/Dropbox 共 14 个（均未接 UI）+ fake；百度/阿里/ED2K 见 SUPPORT_MATRIX.md |
-| 打包/CI/图标/发布 | 已实现；Linux 优先；插件二进制尚未进安装包 |
+| 打包/CI/图标/发布 | Linux `.deb`/AppImage 已包含 14 个插件；Windows/macOS 仍只打包 Host |
 | v0.1.0 Release | 已发布；内容仍是 UI mockup |
 
 ## 5. 实施顺序

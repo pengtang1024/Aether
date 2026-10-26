@@ -21,6 +21,11 @@ versioning; this is a UI mockup, so 0.x versions may change visual structure.
   (librqbit), WebDAV, S3 SigV4, SFTP and yt-dlp extractor plugins.
 - thunder:// decoder, IPFS/IPNS gateway, RTMP/RTSP via ffmpeg, and Google
   Drive / OneDrive / Dropbox public-share links.
+- Host runtime (`aether-host`) with plugin discovery, lazy process startup,
+  probe routing, event dispatch and safe finalization; headless `aether-cli`
+  with list/probe/download.
+- Linux packages now stage and install all plugin packages under
+  `/usr/lib/aether/plugins`.
 
 ### Changed
 

@@ -1,0 +1,17 @@
+[package]
+name = "aether-cli"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.92"
+description = "Headless Aether plugin host CLI"
+license = "MIT"
+publish = false
+
+[[bin]]
+name = "aether-cli"
+path = "src/main.rs"
+
+[dependencies]
+aether-host = { path = "../aether-host" }
+aether-plugin-sdk = { path = "../aether-plugin-sdk" }
+serde_json = "1"

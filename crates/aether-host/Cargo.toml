@@ -1,0 +1,16 @@
+[package]
+name = "aether-host"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.92"
+description = "Host-side plugin discovery, supervision, probing and finalization"
+license = "MIT"
+publish = false
+
+[dependencies]
+aether-plugin-sdk = { path = "../aether-plugin-sdk" }
+serde_json = "1"
+thiserror = "2"
+
+[dev-dependencies]
+serde_json = "1"

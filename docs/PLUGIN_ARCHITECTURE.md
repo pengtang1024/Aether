@@ -335,7 +335,7 @@ Host 的“插件”页面（后续 UI）展示：
 
 | Phase | 内容 | 验收 |
 | --- | --- | --- |
-| P0 | Host/PluginSupervisor/SDK/IPC/fake 插件 | SDK/IPC/fake + 契约测试已完成；UI 接线待重设计 |
+| P0 | Host/PluginSupervisor/SDK/IPC/fake 插件 | SDK/CLI/Host runtime 已完成；UI 接线待重设计 |
 | P1 | HTTP 插件（单流+分段+续传+校验） | 核心已实现（512 KiB/4 连接测试、100 字节续传）；1 GB soak 待补 |
 | P2 | PAC/调度/限速 + 插件管理页 | PAC/预算/插件启停生效 |
 | P3 | BitTorrent 插件 | 本地 seed/leech 已通；DHT/多文件/做种/崩溃恢复待补 |
@@ -383,7 +383,8 @@ Host 的“插件”页面（后续 UI）展示：
 - `crates/aether-plugin-ipfs`：IPFS/IPNS gateway + HTTP。
 - `crates/aether-plugin-rtmp`：ffmpeg RTMP/RTSP 捕获。
 - `crates/aether-plugin-cloud`：Google Drive / OneDrive / Dropbox 公开分享链接。
-- 以上 14 个真实插件均未接 Host UI；剩余：百度/阿里官方 API、ED2K，以及 Host 调度/PAC。
+- `crates/aether-host` + `crates/aether-cli`：插件发现、按需启动、Probe 路由、事件分发、最终落盘；CLI 已用真实 HTTP 插件跑通 256 KiB 下载。
+- 14 个真实插件均未接 Slint UI；剩余：百度/阿里官方 API、ED2K，以及 UI 接线/调度/PAC。
 
 ## 20. 结论
 
