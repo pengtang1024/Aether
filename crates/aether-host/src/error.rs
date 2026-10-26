@@ -5,6 +5,9 @@ pub enum HostError {
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 
+    #[error("store error: {0}")]
+    Store(#[from] crate::store::StoreError),
+
     #[error("manifest error: {0}")]
     Manifest(#[from] aether_plugin_sdk::ManifestError),
 

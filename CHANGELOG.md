@@ -26,6 +26,9 @@ versioning; this is a UI mockup, so 0.x versions may change visual structure.
 - Host runtime (`aether-host`) with plugin discovery, lazy process startup,
   probe routing, event dispatch and safe finalization; headless `aether-cli`
   with list/probe/download.
+- SQLite task store (`tasks`, `task_files`, `plugin_settings`, `task_logs`)
+  with schema v1 migration, recovery query, `aether-cli tasks` and
+  `aether-cli resume`.
 - Linux packages now stage and install all plugin packages under
   `/usr/lib/aether/plugins`.
 

@@ -4,11 +4,13 @@ pub mod error;
 pub mod finalize;
 pub mod manager;
 pub mod registry;
+pub mod store;
 
 pub use error::HostError;
 pub use finalize::finalize_task;
 pub use manager::{PluginEventEnvelope, PluginManager, ProbeOutcome};
 pub use registry::{PluginEntry, PluginRegistry};
+pub use store::{NewTask, StoredFile, StoredTask, TaskState, TaskStore};
 
 /// First existing plugin directory in the usual locations.
 pub fn default_plugins_dir() -> std::path::PathBuf {

@@ -70,12 +70,48 @@ aether-cli download https://example.com/file.bin \
 # 强制指定插件
 aether-cli download magnet:?xt=... --dir ./downloads \
   --plugins build/plugins --plugin bt
+
+# 查看持久化任务 / 继续未完成任务
+aether-cli tasks --dir ./downloads
+aether-cli resume <task-id> --dir ./downloads --plugins build/plugins
 ```
 
 已验证：用本地 HTTP 服务器和 `build/plugins/http` 下载 256 KiB 文件，CLI 输出最终路径，
 `cmp` 与源文件一致。
 
-## 6. 打包
+## 6. SQLite 持久化
+
+`aether_host::TaskStore` 使用 bundled SQLite，默认库：
+
+```text
+<output>/.aether/aether.db
+```
+
+表：
+
+| 表 | 内容 |
+| --- | --- |
+| `tasks` | URL、插件、状态、进度、错误、settings/plugin_state、时间戳 |
+| `task_files` | 完成文件清单、大小、SHA-256 |
+| `plugin_settings` | 每个插件的设置 JSON |
+| `task_logs` | 任务结构化日志 |
+
+- `PRAGMA user_version` 做迁移；当前 schema v1。
+- 状态：`queued/running/paused/completed/failed/canceled`。
+- `recoverable_tasks()` 返回 queued/running/paused，供 Host 重启恢复。
+- 完成时写入文件清单并把进度置为 100%。
+
+CLI：
+
+```bash
+aether-cli tasks --dir ./downloads
+aether-cli resume <task-id> --dir ./downloads --plugins build/plugins
+```
+
+`resume` 重新启动同一插件；HTTP/FTP/HLS 等利用 staging 中的状态文件或文件长度续传，
+BT 目前会重新检查种子数据。
+
+## 7. 打包
 
 Linux `.deb` 安装插件到：
 
@@ -88,10 +124,10 @@ Linux `.deb` 安装插件到：
 `make plugins` 用 `scripts/stage-plugins.py` 按当前平台 staging（当前 16 个）；`make deb` 自动包含。
 AppImage 也把 `build/plugins` 放进 `usr/lib/aether/plugins`。
 
-## 7. 尚未实现
+## 8. 尚未实现
 
 - Slint UI 接线（等隔壁 UI 重设计完成）。
-- SQLite 任务持久化、队列/调度/PAC、崩溃恢复。
+- 队列/调度/限速/PAC、完整崩溃恢复策略。
 - 插件签名验证、更新/回滚、Linux 沙箱。
 - Windows/macOS 安装包携带插件（Linux 优先，当前只保证 Linux 包）。
 - 百度/阿里共享链接 OAuth、ED2K 内核。
