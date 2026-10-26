@@ -1,5 +1,9 @@
 [workspace]
-members = ["crates/aether-plugin-sdk", "crates/aether-plugin-fake"]
+members = [
+    "crates/aether-plugin-sdk",
+    "crates/aether-plugin-fake",
+    "crates/aether-plugin-http",
+]
 default-members = ["."]
 resolver = "2"
 

@@ -1,21 +1,49 @@
 //! Plugin-side runner: handshake plus a typed command loop.
 
 use std::io::{Read, Write};
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::error::SdkError;
 use crate::ipc;
 use crate::protocol::{Capability, HostCommand, Init, LogLevel, PluginEvent, API_VERSION};
 
+/// Cloneable event sender. Workers can hold one while the plugin keeps the
+/// main context, so progress does not need to flow back through the command
+/// loop.
+#[derive(Clone)]
+pub struct PluginSender {
+    output: Arc<Mutex<Box<dyn Write + Send>>>,
+}
+
+impl PluginSender {
+    pub fn new(output: Box<dyn Write + Send>) -> Self {
+        Self {
+            output: Arc::new(Mutex::new(output)),
+        }
+    }
+
+    pub fn send(&self, event: &PluginEvent) -> Result<(), SdkError> {
+        let mut output = self
+            .output
+            .lock()
+            .map_err(|_| SdkError::Protocol("plugin output lock poisoned".into()))?;
+        ipc::write_frame(&mut *output, event).map_err(SdkError::from)
+    }
+}
+
 /// Mutable context passed to plugin handlers.
 pub struct PluginContext {
-    output: Box<dyn Write + Send>,
+    sender: PluginSender,
     init: Option<Init>,
 }
 
 impl PluginContext {
     pub fn new(output: Box<dyn Write + Send>) -> Self {
-        Self { output, init: None }
+        Self {
+            sender: PluginSender::new(output),
+            init: None,
+        }
     }
 
     /// Host configuration received during the handshake.
@@ -23,8 +51,13 @@ impl PluginContext {
         self.init.as_ref()
     }
 
+    /// Cloneable sender for background workers.
+    pub fn sender(&self) -> PluginSender {
+        self.sender.clone()
+    }
+
     pub fn send(&mut self, event: &PluginEvent) -> Result<(), SdkError> {
-        ipc::write_frame(&mut self.output, event).map_err(SdkError::from)
+        self.sender.send(event)
     }
 }
 

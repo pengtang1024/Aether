@@ -336,7 +336,7 @@ Host 的“插件”页面（后续 UI）展示：
 | Phase | 内容 | 验收 |
 | --- | --- | --- |
 | P0 | Host/PluginSupervisor/SDK/IPC/fake 插件 | SDK/IPC/fake + 契约测试已完成；UI 接线待重设计 |
-| P1 | HTTP 插件（单流+分段+续传+校验） | 1 GB 文件 8 连接；kill 后恢复 |
+| P1 | HTTP 插件（单流+分段+续传+校验） | 核心已实现（512 KiB/4 连接测试、100 字节续传）；1 GB soak 待补 |
 | P2 | PAC/调度/限速 + 插件管理页 | PAC/预算/插件启停生效 |
 | P3 | BitTorrent 插件 | magnet/多文件/DHT/做种；进程崩溃不影响 Host |
 | P4 | FTP/FTPS、HLS/DASH、Metalink 插件 | 各协议完成/续传/校验 |
@@ -350,7 +350,7 @@ Host 的“插件”页面（后续 UI）展示：
 
 | 插件 | 默认携带 | 阶段 | 说明 |
 | --- | --- | --- | --- |
-| `http` | 是 | P1 | HTTP/HTTPS/Metalink/多镜像 |
+| `http` | 是 | P1（已实现） | HTTP/HTTPS、Range、续传、SHA-256；Metalink 后续 |
 | `bt` | 是（懒启动） | P3 | BitTorrent/Magnet |
 | `ftp` | 可选 | P4 | FTP/FTPS |
 | `media` | 可选 | P4 | HLS/DASH |
@@ -370,7 +370,8 @@ Host 的“插件”页面（后续 UI）展示：
 - `crates/aether-plugin-sdk`：manifest、MessagePack IPC、协议类型、插件 runner、Host 侧 supervisor。
 - `crates/aether-plugin-fake`：fake 插件 + 真实进程契约测试（握手、Probe、Start、Progress、Completed、id 不匹配拒绝）。
 - Host UI 仍由 `src/engine.rs` 提供模拟数据；接线要等隔壁 UI 重设计完成，避免冲突。
-- 真实协议插件仍是 0 个；下一个是 P1 HTTP 插件。
+- `crates/aether-plugin-http`：P1 HTTP/HTTPS 插件，支持 Range 分段、续传、暂停/恢复/取消、SHA-256。
+- 真实插件 1 个（HTTP）；Host UI 仍未接线。接下来：FTP、Metalink、HLS/DASH、BitTorrent 等。
 
 ## 20. 结论
 

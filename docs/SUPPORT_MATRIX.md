@@ -3,7 +3,7 @@
 > 结论先说：**不能声称覆盖“所有下载情况”。** 插件架构解决的是可扩展性，不等于覆盖率。
 > 本文是唯一支持范围来源；矩阵之外视为未支持，新增场景必须通过新插件实现，Host 不改。
 >
-> 当前 0.1.0：**0 个协议插件**，连 HTTP 真实下载都未实现。下表是目标/计划，不是现状。
+> 当前：**HTTP 插件已实现（P1，尚未接 Host UI）**，fake 测试插件 1 个；其余协议仍是目标/计划。
 
 ## 1. 支持分级
 
@@ -20,7 +20,7 @@
 
 | 场景 | 插件 | 级别 | 阶段 | 备注 |
 | --- | --- | --- | --- | --- |
-| HTTP/HTTPS 1.1 | http | Core | P1 | Range、分段、续传、重定向、代理、鉴权 |
+| HTTP/HTTPS 1.1 | http | Core | **已实现** | Range、分段、续传、重定向、代理；鉴权后续 |
 | HTTP/2 | http | Core | P1 | 多路复用 Range |
 | HTTP/3 / QUIC | http | Core | P1/P2 | 可选；UDP 失败回退 h2 |
 | FTP / FTPS | ftp | Optional | P4 | REST/SIZE/MDTM/TLS |
@@ -43,7 +43,7 @@
 
 | 场景 | 方案 | 级别 | 备注 |
 | --- | --- | --- | --- |
-| 普通文件 URL | http | Core | 文件名/大小/校验 |
+| 普通文件 URL | http | Core（已实现插件） | 文件名/大小/校验 |
 | 多镜像 / Metalink | metalink/http | Optional | 源评分、分段分配 |
 | 种子 / magnet | bt | Optional | 多文件、做种、顺序模式 |
 | HLS 点播 | media | Optional | AES-128、init/media segments、合并 |

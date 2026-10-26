@@ -12,6 +12,9 @@ versioning; this is a UI mockup, so 0.x versions may change visual structure.
   `aether-plugin-fake` (real-process contract tests for handshake, probe,
   progress and completion).
 - Workspace test/CI coverage for the plugin crates.
+- P1 HTTP plugin: segmented Range downloads, resume state, pause/resume/cancel,
+  filename/ETag handling and SHA-256 verification, with a local Range server
+  contract test.
 
 ### Changed
 

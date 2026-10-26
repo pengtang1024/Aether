@@ -1,0 +1,21 @@
+[package]
+name = "aether-plugin-http"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.92"
+description = "HTTP/HTTPS download plugin for Aether"
+license = "MIT"
+publish = false
+
+[[bin]]
+name = "aether-plugin-http"
+path = "src/main.rs"
+
+[dependencies]
+aether-plugin-sdk = { path = "../aether-plugin-sdk" }
+percent-encoding = "2"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "gzip"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
