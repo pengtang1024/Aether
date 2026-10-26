@@ -1,12 +1,15 @@
 # Aether 下载引擎技术方案
 
 > 目标：在 Rust + Slint 的桌面壳之下，做一个**低资源、跨平台、协议覆盖广**的下载核心。
-> 本文是引擎设计蓝图；当前 `src/engine.rs` 仍只是模拟器，按本文的 Phase 路线逐层替换。
+> 项目形态是 **管理面板（Host）+ 第一方协议插件**；Host/Plugin 契约、IPC、清单、
+> 权限、生命周期与打包见 [PLUGIN_ARCHITECTURE.md](PLUGIN_ARCHITECTURE.md)。
+> 本文第 5–8 节描述的是**协议插件内部**的实现细节，Host 不包含协议代码。
+> 当前 `src/engine.rs` 仍只是模拟器，按本文的 Phase 路线逐层替换。
 
 ## 0. 当前支持状态（先看这里）
 
-**Aether 0.1.0 仍然是 UI mockup，不是可用的下载器。** 文档里写的是目标能力，不是
-已经实现的能力。
+**Aether 0.1.0 只有 Host UI mockup，没有任何协议插件。** 文档里写的是目标能力，不是
+已经实现的能力；真实下载从 Host/Plugin P0 + HTTP 插件 P1 开始。
 
 | 能力 | 0.1.0 现状 | 设计目标 |
 | --- | --- | --- |
@@ -20,6 +23,8 @@
 | Metalink/多镜像 | ❌ 未实现 | Phase 2 |
 | SFTP/WebDAV/S3 | ❌ 未实现 | Phase 5 插件 |
 | yt-dlp/站点提取器 | ❌ 未实现 | Phase 5 插件 |
+| 协议插件（HTTP/BT/FTP/媒体） | ❌ 未实现 | P0–P4 |
+| Host 插件管理/SDK/IPC | ❌ 未实现 | P0 |
 | UI 壳、图标、打包、CI | ✅ 已实现 | 持续 |
 
 ### 0.1 不在当前设计内的协议/能力
@@ -71,52 +76,44 @@
 
 ## 2. 总体架构
 
+完整的 Host/Plugin 职责边界、IPC、manifest、生命周期、权限和打包见
+[PLUGIN_ARCHITECTURE.md](PLUGIN_ARCHITECTURE.md)。
+
 ```
-┌─────────────────────────────────────────────────────────────┐
-│ Slint UI (main thread)                                      │
-│  TaskRow / TaskDetail / Settings                            │
-└───────────────▲──────────────────────────┬──────────────────┘
-                │ EngineEvent (coalesced)  │ Command
-┌───────────────┴──────────────────────────▼──────────────────┐
-│ EngineHandle (facade, bounded mpsc)                         │
-│  add / pause / resume / cancel / retry / limits / snapshot  │
-└───────────────▲──────────────────────────┬──────────────────┘
-                │                          │
-┌───────────────┴──────────────┐  ┌────────▼──────────────────┐
-│ Event bus / stats aggregator │  │ Scheduler actor            │
-│ 10 Hz snapshots, speed EMA   │  │ priority queue, fairness   │
-└───────────────▲──────────────┘  └────────┬──────────────────┘
-                │                          │ spawn/cancel
-┌───────────────┴──────────────────────────▼──────────────────┐
-│ Task supervisor (one per task)                              │
-│  state machine · retry · checkpoint · cancellation          │
-├───────────────┬───────────────────┬─────────────────────────┤
-│ HTTP engine   │ BitTorrent engine │ FTP / HLS / DASH / ...  │
-│ segments      │ pieces / peers    │ protocol adapters       │
-├───────────────┴───────────────────┴─────────────────────────┤
-│ Storage layer: positioned file, sparse/prealloc, checksum   │
-│ Persistence: SQLite WAL + per-task checkpoint files         │
-│ Network: reqwest/hyper/rustls, quinn, hickory, proxy, rate  │
-└─────────────────────────────────────────────────────────────┘
+Slint UI (Host)
+   ↕ Command / EngineEvent
+EngineHandle · Scheduler · Task DB · PluginSupervisor · EventBus
+   ↕ stdio MessagePack（命令/事件；文件字节不走 IPC）
+Plugins
+   ├── aether-plugin-http
+   ├── aether-plugin-bt
+   ├── aether-plugin-ftp
+   ├── aether-plugin-media
+   └── aether-plugin-metalink / extractor ...
 ```
+
+- Host 只负责管理面板、任务生命周期、调度、持久化、路径授权、最终校验和 UI；
+  **不链接 reqwest/librqbit/suppaftp 等协议库**。
+- 每个插件是独立进程、独立版本、独立权限；一个插件进程可并行处理多个任务。
+- `aether-plugin-sdk` 提供 IPC、网络、存储、限速、校验与日志的公共实现；
+  协议逻辑仍在插件内。
+- 插件默认按需启动：先 HTTP，BT/媒体/FTP 首次使用或启用时才加载；空闲可卸载。
 
 ### 2.1 Crate 拆分
 
 ```
 crates/
-├── aether-core/          # 纯引擎，不依赖 Slint
-│   ├── engine/           # scheduler, task actor, snapshot, commands
-│   ├── protocol/         # http, ftp, bt, hls, dash, metalink
-│   ├── storage/          # positioned file, segment writer, path safety
-│   ├── persist/          # SQLite schema, migrations, checkpoints
-│   ├── net/              # client builder, proxy, DNS, rate limiting
-│   └── event.rs
-├── aether-app/           # 当前 Slint 壳，只依赖 aether-core 的 facade
-└── aether-cli/           # 可选：无 UI 的引擎验证工具
+├── aether-host/              # Slint UI + 任务库 + 调度器 + PluginSupervisor
+├── aether-plugin-sdk/        # IPC、NetClient、StorageWriter、RateLimiter、Checksum
+├── aether-plugin-http/
+├── aether-plugin-bt/
+├── aether-plugin-ftp/
+├── aether-plugin-media/      # HLS/DASH
+├── aether-plugin-metalink/
+└── aether-plugin-extractor/  # yt-dlp 等（可选）
 ```
 
-先保持单 crate 也能做 Phase 1；当协议层开始膨胀时再拆 workspace。核心约束是
-**UI 不直接持有网络/文件句柄，引擎不依赖 Slint 类型**。
+Host 与插件通过版本化 IPC 通信；任何新增协议都不修改 Host 核心。
 
 ## 3. 核心对象与状态机
 
@@ -125,8 +122,11 @@ crates/
 ```rust
 struct Task {
     id: TaskId,                 // UUID v7，按时间可排序
+    plugin_id: PluginId,        // 处理该任务的插件
+    plugin_version: String,     // 用于迁移/恢复
+    plugin_state: Vec<u8>,      // 插件私有 opaque 恢复数据
     url: String,
-    kind: TaskKind,             // Http | Ftp | Torrent | Hls | Dash | Metalink
+    kind: TaskKind,             // 由插件能力/探测决定
     state: TaskState,
     dir: PathBuf,
     filename: Option<String>,
@@ -208,7 +208,7 @@ Seeding（BT 完成后，可选）──► Completed / Paused
 - 可在设置中开启“仅 Wi-Fi/有线”或“电池供电时暂停”（平台能力探测后）。
 - 事件合并到 10 Hz，避免每个 chunk 触发 UI 重绘。
 
-## 5. HTTP/HTTPS 引擎
+## 5. HTTP/HTTPS 插件
 
 ### 5.1 探测
 
@@ -271,7 +271,7 @@ Accept-Encoding: identity
 - 镜像全部失败时回到主 URL；不无限重试。
 - 同一 segment 不允许并发写同一偏移；以 segment lease 保证。
 
-## 6. BitTorrent 引擎
+## 6. BitTorrent 插件
 
 ### 6.1 实现策略
 
@@ -305,7 +305,7 @@ BT 内核接口用 trait 隔离，避免 UI/引擎绑死某个库。
 - 顺序模式用于边下边播；非顺序模式优先稀有 piece。
 - 磁盘缓存有上限；写放大通过合并写与对齐 piece 边界控制。
 
-## 7. FTP / FTPS / SFTP
+## 7. FTP / FTPS / SFTP 插件
 
 ### 7.1 FTP/FTPS
 
@@ -321,7 +321,7 @@ BT 内核接口用 trait 隔离，避免 UI/引擎绑死某个库。
 - 断点续传按 offset；权限 0600；主机密钥严格校验。
 - 与 HTTP 共用 task/segment/checksum 抽象。
 
-## 8. HLS / DASH
+## 8. HLS / DASH 插件
 
 ### 8.1 HLS
 
@@ -344,6 +344,9 @@ BT 内核接口用 trait 隔离，避免 UI/引擎绑死某个库。
 - DRM（Widevine/PlayReady/FairPlay）不在范围内。
 
 ## 9. 存储层
+
+> Host 负责创建任务目录、授予 `TaskPaths`、校验路径并在完成后原子落盘；
+> 插件只能在授权的 `staging/` 内写文件。详见 PLUGIN_ARCHITECTURE.md 第 11 节。
 
 ### 9.1 文件布局
 
@@ -385,7 +388,8 @@ BT 内核接口用 trait 隔离，避免 UI/引擎绑死某个库。
 
 ```sql
 CREATE TABLE tasks (
-  id TEXT PRIMARY KEY, url TEXT NOT NULL, kind INTEGER NOT NULL,
+  id TEXT PRIMARY KEY, plugin_id TEXT NOT NULL, plugin_version TEXT NOT NULL,
+  plugin_state BLOB, url TEXT NOT NULL, kind INTEGER NOT NULL,
   state INTEGER NOT NULL, dir TEXT NOT NULL, filename TEXT,
   total_bytes INTEGER, downloaded_bytes INTEGER NOT NULL DEFAULT 0,
   priority INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL,
@@ -447,7 +451,7 @@ enum ErrorKind {
 
 ## 13. UI 桥接
 
-当前 Slint 层已有 `TaskRow` / `TaskDetail` / `VecModel`。接入真实引擎后：
+当前 Slint 层已有 `TaskRow` / `TaskDetail` / `VecModel`。接入插件 Host 后：
 
 - `EngineHandle` 暴露 `send(Command)` 与 `subscribe()`。
 - 引擎在 Tokio runtime 运行；不阻塞 Slint 主线程。
@@ -457,6 +461,8 @@ enum ErrorKind {
 - 速度图用固定长度 ring buffer（60 个样本），引擎侧计算 EMA/峰值，UI 只画路径。
 - 命令：`AddTask`、`Pause`、`Resume`、`Cancel`、`Retry`、`Remove`、`SetLimits`、`Reorder`、
   `OpenFolder`；事件：`TaskUpdated`、`TaskRemoved`、`GlobalStats`、`Log`、`Toast`。
+- 插件管理页、插件设置 schema、任务详情 schema 由 Host 渲染；协议插件不写 Slint，
+  详见 PLUGIN_ARCHITECTURE.md 第 8–9、13 节。
 
 ## 14. 安全
 
@@ -516,6 +522,9 @@ enum ErrorKind {
 
 ## 18. 依赖选型（候选）
 
+> Host 只依赖 UI、任务库、调度、IPC 与持久化相关 crate；下表的协议库属于
+> `aether-plugin-sdk` / 各协议插件，不进入 Host 二进制。
+
 | 能力 | 选型 | 备注 |
 | --- | --- | --- |
 | async runtime | tokio | 多线程；限流/取消/信号量 |
@@ -540,41 +549,44 @@ enum ErrorKind {
 
 ## 19. 分阶段路线图
 
-### Phase 0：核心骨架（1–2 周）
+### Phase 0：Host/Plugin 骨架（1–2 周）
 
-- `aether-core` crate、Command/Event、任务状态机、SQLite schema、路径安全。
-- 用现有模拟引擎适配新接口，UI 行为不变。
-- 验收：1000 个任务快照无阻塞；重启恢复空任务。
+- `aether-host` + `aether-plugin-sdk` + PluginSupervisor + stdio IPC + fake plugin。
+- 任务状态机、SQLite schema、路径授权、最终校验接口。
+- 用 fake plugin 走通“添加→探测→进度→完成/失败”；UI 行为不变。
+- 验收：1000 个任务快照无阻塞；插件崩溃不影响 Host；重启恢复任务。
 
-### Phase 1：HTTP 单流 + 分段 + 续传（2–3 周）
+### Phase 1：HTTP 插件（2–3 周）
 
-- Range 探测、分段 worker、checkpoint、SHA-256/BLAKE3、原子 finalize。
+- `aether-plugin-http`：Range 探测、分段 worker、checkpoint、SHA-256/BLAKE3、原子 finalize。
 - 本地测试服务器覆盖 Range/ETag/重定向/429。
-- UI 接入真实进度、速度、ETA。
+- Host 接入真实进度、速度、ETA；插件通过 IPC 上报。
 - 验收：1 GB 文件 8 连接下载；kill -9 后恢复；ETag 变化正确重启；校验失败可重试。
 
-### Phase 2：调度/限速/代理/镜像（2 周）
+### Phase 2：调度/限速/代理/插件管理（2 周）
 
-- 全局/per-host/per-task 限制、优先级 aging、token bucket、代理、鉴权、Metalink 多源。
-- 验收：多任务公平；限速误差 < 5%；代理/镜像切换不丢进度。
+- Host 全局/per-host/per-task 限制、优先级 aging、token bucket、代理、鉴权；
+  插件预算/管理页/设置 schema。
+- Metalink 作为插件接入。
+- 验收：多任务公平；限速误差 < 5%；插件启停/设置生效；镜像切换不丢进度。
 
-### Phase 3：BitTorrent（3–4 周）
+### Phase 3：BitTorrent 插件（3–4 周）
 
-- 接入 BT 内核；magnet/多文件/DHT/Tracker/做种/端口映射/路径安全。
-- UI 的 peers/chunks 使用真实数据。
-- 验收：公开种子下载/做种；私有种子禁用 DHT；重启校验；多文件路径安全。
+- `aether-plugin-bt` 接入 BT 内核；magnet/多文件/DHT/Tracker/做种/端口映射/路径安全。
+- Host 的 peers/chunks 使用插件 detail schema 的真实数据。
+- 验收：公开种子下载/做种；私有种子禁用 DHT；崩溃后 Host 不受影响；重启校验。
 
-### Phase 4：FTP/HLS/DASH（2–3 周）
+### Phase 4：FTP/HLS/DASH 插件（2–3 周）
 
-- FTP/FTPS 续传；HLS/DASH 点播 + AES-128；直播窗口；可选 ffmpeg remux。
-- 验收：点播分片合并可播放；直播停止/恢复；FTP REST 续传。
+- FTP/FTPS 插件续传；HLS/DASH 插件点播 + AES-128；直播窗口；可选 ffmpeg remux。
+- 验收：点播分片合并可播放；直播停止/恢复；FTP REST 续传；插件独立升级。
 
-### Phase 5：插件与高级能力（持续）
+### Phase 5：可选插件与高级能力（持续）
 
-- SFTP/WebDAV/S3、yt-dlp 插件、浏览器集成、通知、计划任务、代理 PAC。
+- SFTP/WebDAV/S3、yt-dlp、浏览器集成、通知、计划任务、代理 PAC。
 - ED2K/Kad、thunder/QQdl/FlashGet URL 解码、IPFS gateway、RTMP/RTSP via ffmpeg
-  作为独立插件，不进入核心。
-- 验收：插件崩溃不影响核心；外部工具超时/输出限制。
+  作为独立签名插件，默认不装。
+- 验收：插件独立安装/更新/回滚；崩溃不影响核心；外部工具超时/输出限制。
 
 ### Phase 6：硬化（持续）
 
@@ -593,7 +605,9 @@ enum ErrorKind {
 | UI 被高频事件拖慢 | 10 Hz 合并 + 行 diff + 详情模型稳定 |
 | 签名/分发限制 | macOS 未公证/Windows 未签名在 release notes 明示 |
 
-## 21. Rust API 草图
+## 21. Host/Plugin API 草图
+
+完整 IPC 与 manifest 见 [PLUGIN_ARCHITECTURE.md](PLUGIN_ARCHITECTURE.md) 第 3–5 节。
 
 ```rust
 pub struct EngineHandle { tx: mpsc::Sender<Command> }
@@ -619,17 +633,17 @@ pub enum EngineEvent {
 }
 ```
 
-`TaskSnapshot` 是 UI 的只读投影，不暴露 socket/file/peer 内部句柄；这样 Slint 层
-可以安全地在主线程消费，也方便未来做 CLI/daemon。
+`TaskSnapshot` 是 UI 的只读投影，不暴露 socket/file/peer 内部句柄；协议插件通过
+`Progress/Metadata/Detail/Log/Completed/Failed` 事件上报，Host 负责持久化与 UI 投影。
 
 ## 22. 结论
 
-“技术全能”不等于首版把所有协议写完。正确的顺序是：
+项目形态是 **管理面板 Host + 第一方协议插件**，不是单体全能引擎：
 
-1. 先把 **任务状态机、调度、存储、续传、校验、UI 桥接** 做扎实；
-2. HTTP 分段是核心中的核心，先做到生产级；
-3. BT 用成熟内核 + 适配层，避免重写协议；
-4. FTP/HLS/DASH/Metalink 作为独立协议适配器逐步接入；
-5. 插件和外部提取器放最后，保持核心轻量。
+1. Host 先把**任务状态机、调度、存储授权、校验、UI/插件管理**做扎实；
+2. HTTP 插件先做到生产级（分段/续传/校验）；
+3. BT 插件用成熟内核 + 适配层，避免重写协议；
+4. FTP/HLS/DASH/Metalink 各自独立插件，独立崩溃域和版本；
+5. 可选的 SFTP/WebDAV/S3、yt-dlp、ED2K、thunder、IPFS、RTMP 默认不装，保持低资源。
 
 这样既能覆盖主流下载场景，又能维持 Aether 的低资源、原生、跨平台定位。
