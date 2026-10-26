@@ -362,7 +362,7 @@ Host 的“插件”页面（后续 UI）展示：
 | `rtmp` | 否 | P5（已实现） | RTMP/RTSP 通过 ffmpeg 子进程 |
 | `ed2k` | 否 | P5+ | eDonkey 内核未实现 |
 | `gdrive` / `onedrive` / `dropbox` | 否 | P6（已实现共享链接） | 公开分享链接转直链；OAuth 私有文件待补 |
-| `baidupan` / `aliyunpan` | 否 | P6（最后） | 需要官方 API/OAuth 应用；不做绕过 |
+| `baidupan` / `aliyunpan` | 否 | P6（官方 API 基础） | `baidupan://<fs_id>` / `aliyunpan://<drive>/<file>` + access_token；共享链接 OAuth 待补 |
 
 默认安装只保证 HTTP 可用；BT/媒体等即使随包携带也不启动，用户首次使用或启用时
 才加载。所有插件均为第一方开发、签名、版本化，不是第三方市场。
@@ -384,7 +384,7 @@ Host 的“插件”页面（后续 UI）展示：
 - `crates/aether-plugin-rtmp`：ffmpeg RTMP/RTSP 捕获。
 - `crates/aether-plugin-cloud`：Google Drive / OneDrive / Dropbox 公开分享链接。
 - `crates/aether-host` + `crates/aether-cli`：插件发现、按需启动、Probe 路由、事件分发、最终落盘；CLI 已用真实 HTTP 插件跑通 256 KiB 下载。
-- 14 个真实插件均未接 Slint UI；剩余：百度/阿里官方 API、ED2K，以及 UI 接线/调度/PAC。
+- 16 个真实插件均未接 Slint UI；剩余：ED2K，以及 UI 接线/调度/PAC。
 
 ## 20. 结论
 

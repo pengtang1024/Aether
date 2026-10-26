@@ -34,6 +34,8 @@ PLUGINS = [
     ("crates/aether-plugin-cloud/plugins/gdrive/plugin.json", "aether-plugin-gdrive"),
     ("crates/aether-plugin-cloud/plugins/onedrive/plugin.json", "aether-plugin-onedrive"),
     ("crates/aether-plugin-cloud/plugins/dropbox/plugin.json", "aether-plugin-dropbox"),
+    ("crates/aether-plugin-baidupan/plugin.json", "aether-plugin-baidupan"),
+    ("crates/aether-plugin-aliyunpan/plugin.json", "aether-plugin-aliyunpan"),
 ]
 
 

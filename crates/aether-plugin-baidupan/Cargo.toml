@@ -1,0 +1,20 @@
+[package]
+name = "aether-plugin-baidupan"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.92"
+description = "Baidu Netdisk official API download plugin for Aether"
+license = "MIT"
+publish = false
+
+[[bin]]
+name = "aether-plugin-baidupan"
+path = "src/main.rs"
+
+[dependencies]
+aether-plugin-http = { path = "../aether-plugin-http" }
+aether-plugin-sdk = { path = "../aether-plugin-sdk" }
+percent-encoding = "2"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "json"] }
+serde_json = "1"
+url = "2"

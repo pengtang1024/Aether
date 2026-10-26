@@ -21,6 +21,8 @@ versioning; this is a UI mockup, so 0.x versions may change visual structure.
   (librqbit), WebDAV, S3 SigV4, SFTP and yt-dlp extractor plugins.
 - thunder:// decoder, IPFS/IPNS gateway, RTMP/RTSP via ffmpeg, and Google
   Drive / OneDrive / Dropbox public-share links.
+- Baidu Netdisk and Aliyun Drive official-API adapters (`baidupan://<fs_id>`,
+  `aliyunpan://<drive>/<file>` with access tokens); shared-link OAuth is pending.
 - Host runtime (`aether-host`) with plugin discovery, lazy process startup,
   probe routing, event dispatch and safe finalization; headless `aether-cli`
   with list/probe/download.

@@ -51,7 +51,7 @@
 | DASH 点播 | media | Optional | **已实现插件** | SegmentTemplate/List/BaseURL、首个 Period；直播待补 |
 | YouTube/Bilibili 等站点 | extractor | External | **已实现插件** | yt-dlp 子进程；站点覆盖取决于 yt-dlp，不保证 |
 | Google Drive / OneDrive / Dropbox | gdrive / onedrive / dropbox | Optional | **已实现共享链接** | 公开链接转直链；OAuth 私有文件待补 |
-| 百度网盘 / 阿里云盘等 | baidupan / aliyunpan | Optional | P6（未实现） | 需要官方 API/OAuth 应用；不做绕过风控 |
+| 百度网盘 / 阿里云盘等 | baidupan / aliyunpan | Optional | **官方 API 基础** | 文件 ID + access_token；共享链接 OAuth 待补；不做绕过 |
 | 浏览器正在下载的文件 | browser-extension | Optional | P5 | 扩展 + Native Messaging；用户显式授权 |
 | RSS / 自动追番 | Host 功能 | Optional | P5 | 后续 Host 功能，不是协议插件 |
 | 剪贴板监听 | Host 功能 | Optional | P5 | 平台集成层，默认关闭 |

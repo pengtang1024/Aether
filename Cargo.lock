@@ -62,6 +62,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "aether-plugin-aliyunpan"
+version = "0.1.0"
+dependencies = [
+ "aether-plugin-http",
+ "aether-plugin-sdk",
+ "reqwest",
+ "serde_json",
+ "url",
+]
+
+[[package]]
+name = "aether-plugin-baidupan"
+version = "0.1.0"
+dependencies = [
+ "aether-plugin-http",
+ "aether-plugin-sdk",
+ "percent-encoding",
+ "reqwest",
+ "serde_json",
+ "url",
+]
+
+[[package]]
 name = "aether-plugin-bt"
 version = "0.1.0"
 dependencies = [

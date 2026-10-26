@@ -1,0 +1,20 @@
+{
+  "id": "aliyunpan",
+  "name": "Aliyun Drive (Official API)",
+  "version": "0.1.0",
+  "api": 1,
+  "min_host": "0.2.0",
+  "protocols": ["aliyunpan"],
+  "capabilities": ["network", "filesystem:task"],
+  "executable": {
+    "linux-x86_64": "bin/aether-plugin-aliyunpan-linux-x86_64",
+    "linux-aarch64": "bin/aether-plugin-aliyunpan-linux-aarch64",
+    "windows-x86_64": "bin/aether-plugin-aliyunpan-windows-x86_64.exe",
+    "windows-arm64": "bin/aether-plugin-aliyunpan-windows-arm64.exe",
+    "macos-universal": "bin/aether-plugin-aliyunpan-macos-universal"
+  },
+  "settings_schema": {
+    "sections": [{ "title": "Aliyun", "fields": [{"key": "access_token", "type": "secret"}] }]
+  },
+  "detail_schema": { "sections": [{ "type": "metrics", "items": ["speed", "size"] }] }
+}

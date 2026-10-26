@@ -85,7 +85,7 @@ Linux `.deb` 安装插件到：
 /usr/lib/aether/plugins/<id>/LICENSE
 ```
 
-`make plugins` 用 `scripts/stage-plugins.py` 按当前平台 staging；`make deb` 自动包含。
+`make plugins` 用 `scripts/stage-plugins.py` 按当前平台 staging（当前 16 个）；`make deb` 自动包含。
 AppImage 也把 `build/plugins` 放进 `usr/lib/aether/plugins`。
 
 ## 7. 尚未实现
@@ -94,4 +94,4 @@ AppImage 也把 `build/plugins` 放进 `usr/lib/aether/plugins`。
 - SQLite 任务持久化、队列/调度/PAC、崩溃恢复。
 - 插件签名验证、更新/回滚、Linux 沙箱。
 - Windows/macOS 安装包携带插件（Linux 优先，当前只保证 Linux 包）。
-- 百度网盘/阿里云盘官方 API、ED2K 内核。
+- 百度/阿里共享链接 OAuth、ED2K 内核。

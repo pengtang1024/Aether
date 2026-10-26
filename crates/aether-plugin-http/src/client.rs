@@ -59,6 +59,15 @@ pub fn build_client_with_auth(
     init: &Init,
     auth: Option<(&str, &str)>,
 ) -> Result<Client, ClientError> {
+    build_client_custom(init, None, auth)
+}
+
+/// Build a client with a custom User-Agent and optional Basic auth.
+pub fn build_client_custom(
+    init: &Init,
+    user_agent: Option<&str>,
+    auth: Option<(&str, &str)>,
+) -> Result<Client, ClientError> {
     let mut headers = reqwest::header::HeaderMap::new();
     if let Some((username, password)) = auth {
         let encoded = base64_encode(format!("{username}:{password}").as_bytes());
@@ -70,10 +79,12 @@ pub fn build_client_with_auth(
     let mut builder = Client::builder()
         .connect_timeout(Duration::from_secs(15))
         .default_headers(headers)
-        .user_agent(format!(
-            "Aether/{} (+https://github.com/pengtang1024/Aether)",
-            init.host_version
-        ));
+        .user_agent(user_agent.map(ToOwned::to_owned).unwrap_or_else(|| {
+            format!(
+                "Aether/{} (+https://github.com/pengtang1024/Aether)",
+                init.host_version
+            )
+        }));
 
     if let Some(proxy) = &init.proxy {
         match proxy.mode {
