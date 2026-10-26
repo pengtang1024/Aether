@@ -1,0 +1,34 @@
+{
+  "id": "bt",
+  "name": "BitTorrent Downloader",
+  "version": "0.1.0",
+  "api": 1,
+  "min_host": "0.2.0",
+  "protocols": ["bt", "magnet"],
+  "capabilities": ["network", "filesystem:task"],
+  "executable": {
+    "linux-x86_64": "bin/aether-plugin-bt-linux-x86_64",
+    "linux-aarch64": "bin/aether-plugin-bt-linux-aarch64",
+    "windows-x86_64": "bin/aether-plugin-bt-windows-x86_64.exe",
+    "windows-arm64": "bin/aether-plugin-bt-windows-arm64.exe",
+    "macos-universal": "bin/aether-plugin-bt-macos-universal"
+  },
+  "settings_schema": {
+    "sections": [
+      {
+        "title": "BitTorrent",
+        "fields": [
+          { "key": "seed_after_complete", "type": "bool", "default": true },
+          { "key": "max_peers", "type": "int", "min": 10, "max": 500, "default": 100 }
+        ]
+      }
+    ]
+  },
+  "detail_schema": {
+    "sections": [
+      { "type": "metrics", "items": ["speed", "eta", "size"] },
+      { "type": "peers", "columns": ["address", "speed", "kind"] },
+      { "type": "logs", "max_lines": 200 }
+    ]
+  }
+}
