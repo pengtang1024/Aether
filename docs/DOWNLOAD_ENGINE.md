@@ -3,6 +3,39 @@
 > 目标：在 Rust + Slint 的桌面壳之下，做一个**低资源、跨平台、协议覆盖广**的下载核心。
 > 本文是引擎设计蓝图；当前 `src/engine.rs` 仍只是模拟器，按本文的 Phase 路线逐层替换。
 
+## 0. 当前支持状态（先看这里）
+
+**Aether 0.1.0 仍然是 UI mockup，不是可用的下载器。** 文档里写的是目标能力，不是
+已经实现的能力。
+
+| 能力 | 0.1.0 现状 | 设计目标 |
+| --- | --- | --- |
+| 真实 HTTP/HTTPS 下载 | ❌ 未实现（模拟） | Phase 1 |
+| 分段/多连接/断点续传 | ❌ 未实现 | Phase 1 |
+| 文件校验/原子落盘 | ❌ 未实现 | Phase 1 |
+| 真实任务调度/限速/代理 | ❌ 未实现 | Phase 2 |
+| BitTorrent / Magnet | ❌ 未实现 | Phase 3 |
+| FTP/FTPS | ❌ 未实现 | Phase 4 |
+| HLS/DASH | ❌ 未实现 | Phase 4 |
+| Metalink/多镜像 | ❌ 未实现 | Phase 2 |
+| SFTP/WebDAV/S3 | ❌ 未实现 | Phase 5 插件 |
+| yt-dlp/站点提取器 | ❌ 未实现 | Phase 5 插件 |
+| UI 壳、图标、打包、CI | ✅ 已实现 | 持续 |
+
+### 0.1 不在当前设计内的协议/能力
+
+这些不是“忘了写”，而是明确不纳入首版核心，避免把“全能”做成不可维护的清单：
+
+- ED2K / Kad（eMule 网络）；如需要，做独立插件，不进入核心调度。
+- `thunder://`、`QQdl://`、FlashGet 等下载链接封装格式：本质是 URL 解码插件，
+  不是传输协议。
+- IPFS / IPNS：优先走 HTTP gateway 插件；嵌入式 Kubo 作为后续可选后端。
+- RTMP / RTSP 等实时流：通过 ffmpeg 插件处理，不写进核心 HTTP 引擎。
+- 各站点的私有 API、登录、验证码、反爬：只做通用插件接口，不做绕过。
+- DRM（Widevine/PlayReady/FairPlay）、付费墙：明确不做。
+- 浏览器扩展、协议关联、剪贴板监听、自动更新：平台集成层，Phase 5+。
+- Android / iOS / Web：按当前决策不做；移动端需要独立响应式 UI 和签名体系。
+
 ## 1. 范围与边界
 
 ### 1.1 目标协议
@@ -16,6 +49,10 @@
 | HLS / DASH | P2 | 点播与直播、AES-128、分片合并 |
 | SFTP / WebDAV / S3 | P3 | 通过协议插件扩展 |
 | yt-dlp 等外部提取器 | P3 | 插件调用，不进入核心协议层 |
+| ED2K / Kad | P4 | 独立插件，不进入核心 |
+| thunder:// / QQdl:// / FlashGet | P4 | URL 解码插件 |
+| IPFS / IPNS | P4 | HTTP gateway 或可选 Kubo |
+| RTMP / RTSP | P4 | ffmpeg 插件，不做实时流核心 |
 
 ### 1.2 非目标
 
@@ -535,6 +572,8 @@ enum ErrorKind {
 ### Phase 5：插件与高级能力（持续）
 
 - SFTP/WebDAV/S3、yt-dlp 插件、浏览器集成、通知、计划任务、代理 PAC。
+- ED2K/Kad、thunder/QQdl/FlashGet URL 解码、IPFS gateway、RTMP/RTSP via ffmpeg
+  作为独立插件，不进入核心。
 - 验收：插件崩溃不影响核心；外部工具超时/输出限制。
 
 ### Phase 6：硬化（持续）
