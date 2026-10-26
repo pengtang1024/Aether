@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aether Download Helper</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { font: 14px/1.5 system-ui, sans-serif; margin: 0; background: #141218; color: #e6e0e9; }
+    main { max-width: 680px; margin: 48px auto; padding: 0 24px; }
+    h1 { font-weight: 500; color: #d0bcff; }
+    .card { background: #1d1b20; border-radius: 16px; padding: 20px; margin: 16px 0; }
+    label { display: flex; align-items: center; gap: 12px; margin: 12px 0; }
+    button { background: #6750a4; color: white; border: 0; border-radius: 20px; padding: 10px 20px; cursor: pointer; }
+    pre { white-space: pre-wrap; color: #cac4d0; }
+    a { color: #d0bcff; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Aether Download Helper</h1>
+  <div class="card">
+    <label><input type="checkbox" id="intercept"> Intercept browser downloads</label>
+    <label><input type="checkbox" id="notify"> Show notifications</label>
+    <p>Right-click a link, video or audio element and choose “Download with Aether”.</p>
+    <button id="ping">Test native host</button>
+    <pre id="status"></pre>
+  </div>
+  <div class="card">
+    <p>Native host manifest must be installed for this extension ID. See
+      <code>browser-extension/README.md</code> and
+      <code>docs/BROWSER_INTEGRATION.md</code>.</p>
+  </div>
+</main>
+<script src="options.js"></script>
+</body>
+</html>

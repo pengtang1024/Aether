@@ -74,8 +74,18 @@ impl Client {
         dir: Option<&Path>,
         plugin: Option<&str>,
     ) -> Result<Value, DaemonError> {
+        self.add_with_settings(url, dir, plugin, json!({}))
+    }
+
+    pub fn add_with_settings(
+        &mut self,
+        url: &str,
+        dir: Option<&Path>,
+        plugin: Option<&str>,
+        settings: Value,
+    ) -> Result<Value, DaemonError> {
         let dir = dir.map(|path| path.to_string_lossy().into_owned());
-        self.call("add", Some(url), plugin, dir.as_deref(), None, json!({}))
+        self.call("add", Some(url), plugin, dir.as_deref(), None, settings)
     }
 
     pub fn list(&mut self) -> Result<Value, DaemonError> {

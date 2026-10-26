@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Aether Download
+Comment=Send a link or protocol URL to Aether
+Exec=aether-native-host --url %u
+Icon=aether
+Terminal=false
+NoDisplay=true
+MimeType=x-scheme-handler/aether;x-scheme-handler/magnet;x-scheme-handler/ed2k;x-scheme-handler/thunder;
+Categories=Network;FileTransfer;

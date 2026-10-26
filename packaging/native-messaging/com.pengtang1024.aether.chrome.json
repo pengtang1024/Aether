@@ -1,0 +1,7 @@
+{
+  "name": "com.pengtang1024.aether",
+  "description": "Aether native messaging host",
+  "path": "@HOST_PATH@",
+  "type": "stdio",
+  "allowed_origins": ["chrome-extension://@EXTENSION_ID@/"]
+}

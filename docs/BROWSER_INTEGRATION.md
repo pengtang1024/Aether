@@ -1,7 +1,30 @@
 # 浏览器集成方案
 
 > 目标：让浏览器下载可以交给 Aether 管理，同时保持本地、显式授权、不做 Cookie/密码窃取。
-> 计划阶段：P5。
+> **状态：P5 基础已实现**（native host、MV3 扩展骨架、URL handler、daemon 转发）；
+> 商店上架、Windows named pipe、站点过滤/Cookie 实际使用仍待补。
+
+## 0. 当前实现
+
+| 组件 | 位置 | 状态 |
+| --- | --- | --- |
+| Native Messaging host | `crates/aether-native-host` | 已实现，4 字节 native-endian + JSON，最大 1 MiB |
+| 浏览器扩展 | `browser-extension/` | MV3 骨架，右键发送/可选接管/选项页 |
+| 桌面 URL handler | `packaging/aether-url-handler.desktop` | `aether/magnet/ed2k/thunder` |
+| daemon 连接 | `aether_daemon::Client` | 未运行时自动启动 `aether-daemon` |
+| 安装脚本 | `scripts/install-native-messaging.sh` | Chrome/Edge/Chromium/Brave/Firefox |
+
+本地安装：
+
+```bash
+# 1. 构建/安装 Aether 后
+# 2. 浏览器加载 browser-extension/，复制扩展 ID
+aether-install-native-messaging <extension-id> /usr/bin/aether-native-host
+# 3. 扩展选项页点击“Test native host”
+```
+
+限制：扩展尚未上架商店；native manifest 需要扩展 ID；Windows named pipe 未实现；
+Cookie/Headers 只透传，HTTP 插件尚未使用；站点白名单/询问模式未实现。
 
 ## 1. 组成
 

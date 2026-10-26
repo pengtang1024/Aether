@@ -79,6 +79,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "aether-native-host"
+version = "0.1.0"
+dependencies = [
+ "aether-daemon",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "aether-plugin-abi"
 version = "0.1.0"
 dependencies = [

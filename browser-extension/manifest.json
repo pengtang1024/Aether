@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Aether Download Helper",
+  "version": "0.1.0",
+  "description": "Send downloads to the local Aether daemon.",
+  "permissions": ["contextMenus", "downloads", "storage", "nativeMessaging", "notifications"],
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "Aether" },
+  "options_ui": { "page": "options.html", "open_in_tab": true },
+  "icons": { "48": "icons/icon48.png", "128": "icons/icon128.png" },
+  "browser_specific_settings": {
+    "gecko": { "id": "aether@pengtang1024.github.io", "strict_min_version": "115.0" }
+  }
+}

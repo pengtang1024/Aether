@@ -31,6 +31,14 @@ deb: release plugins
 	install -Dm755 target/release/aether "$(STAGE)/usr/bin/aether"
 	install -Dm755 target/release/aether-cli "$(STAGE)/usr/bin/aether-cli"
 	install -Dm755 target/release/aether-daemon "$(STAGE)/usr/bin/aether-daemon"
+	install -Dm755 target/release/aether-native-host "$(STAGE)/usr/bin/aether-native-host"
+	install -Dm644 packaging/aether-url-handler.desktop \
+		"$(STAGE)/usr/share/applications/aether-url-handler.desktop"
+	install -d "$(STAGE)/usr/share/aether/native-messaging"
+	install -m644 packaging/native-messaging/*.json \
+		"$(STAGE)/usr/share/aether/native-messaging/"
+	install -Dm755 scripts/install-native-messaging.sh \
+		"$(STAGE)/usr/bin/aether-install-native-messaging"
 	install -Dm644 packaging/aether-daemon.service \
 		"$(STAGE)/usr/lib/systemd/user/aether-daemon.service"
 	install -Dm644 packaging/aether.desktop "$(STAGE)/usr/share/applications/aether.desktop"
