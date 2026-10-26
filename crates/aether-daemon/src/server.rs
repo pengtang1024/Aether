@@ -53,6 +53,7 @@ impl Default for DaemonConfig {
 struct Command {
     request: Request,
     respond: Sender<Response>,
+    subscriber: Option<Sender<serde_json::Value>>,
 }
 
 struct State {
@@ -61,6 +62,7 @@ struct State {
     download_dir: PathBuf,
     active: HashSet<String>,
     update: Option<Arc<Mutex<serde_json::Value>>>,
+    subscribers: Vec<Sender<serde_json::Value>>,
 }
 
 pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
@@ -115,6 +117,7 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
         download_dir: config.download_dir.clone(),
         active: HashSet::new(),
         update: update_status,
+        subscribers: Vec::new(),
     };
 
     recover_tasks(&mut state);
@@ -231,12 +234,25 @@ fn spawn_update_loop(
 fn dispatch(state: &mut State, command: Command) -> bool {
     let id = command.request.id;
     let method = command.request.method.clone();
+    if method == "subscribe" {
+        if let Some(tx) = command.subscriber {
+            state.subscribers.push(tx);
+        }
+        let _ = command.respond.send(Response::ok(id, json!({"ok": true})));
+        return false;
+    }
     let response = match handle_request(state, command.request) {
         Ok(value) => Response::ok(id, value),
         Err(error) => Response::err(id, error.to_string()),
     };
     let _ = command.respond.send(response);
     method == "shutdown"
+}
+
+fn broadcast(state: &mut State, event: Value) {
+    state
+        .subscribers
+        .retain(|subscriber| subscriber.send(event.clone()).is_ok());
 }
 
 fn accept_loop(listener: UnixListener, commands: Sender<Command>) {
@@ -257,34 +273,67 @@ fn client_loop(stream: UnixStream, commands: Sender<Command>) {
     let mut line = String::new();
 
     while reader.read_line(&mut line).unwrap_or(0) > 0 {
-        let response = match serde_json::from_str::<Request>(&line) {
-            Ok(request) => {
-                let (respond_tx, respond_rx) = mpsc::channel();
-                if commands
-                    .send(Command {
-                        request,
-                        respond: respond_tx,
-                    })
-                    .is_err()
-                {
+        let request = match serde_json::from_str::<Request>(&line) {
+            Ok(request) => request,
+            Err(error) => {
+                let response = Response::err(0, format!("invalid request: {error}"));
+                if write_response(&mut writer, &response).is_err() {
                     break;
                 }
-                match respond_rx.recv_timeout(Duration::from_secs(300)) {
-                    Ok(response) => response,
-                    Err(_) => Response::err(0, "daemon request timed out"),
+                line.clear();
+                continue;
+            }
+        };
+        let subscribe = request.method == "subscribe";
+        let (respond_tx, respond_rx) = mpsc::channel();
+        let (event_tx, event_rx) = mpsc::channel();
+        if commands
+            .send(Command {
+                request,
+                respond: respond_tx,
+                subscriber: subscribe.then_some(event_tx),
+            })
+            .is_err()
+        {
+            break;
+        }
+        let response = match respond_rx.recv_timeout(Duration::from_secs(300)) {
+            Ok(response) => response,
+            Err(_) => Response::err(0, "daemon request timed out"),
+        };
+        let accepted = response.ok;
+        if write_response(&mut writer, &response).is_err() {
+            break;
+        }
+        if subscribe {
+            if !accepted {
+                break;
+            }
+            loop {
+                match event_rx.recv_timeout(Duration::from_secs(30)) {
+                    Ok(event) => {
+                        if serde_json::to_writer(&mut writer, &event).is_err()
+                            || writer.write_all(b"\n").is_err()
+                            || writer.flush().is_err()
+                        {
+                            break;
+                        }
+                    }
+                    Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
                 }
             }
-            Err(error) => Response::err(0, format!("invalid request: {error}")),
-        };
-        if serde_json::to_writer(&mut writer, &response).is_err()
-            || writer.write_all(b"\n").is_err()
-            || writer.flush().is_err()
-        {
             break;
         }
         line.clear();
     }
     let _ = writer.shutdown(Shutdown::Both);
+}
+
+fn write_response(writer: &mut UnixStream, response: &Response) -> std::io::Result<()> {
+    serde_json::to_writer(&mut *writer, response).map_err(std::io::Error::other)?;
+    writer.write_all(b"\n")?;
+    writer.flush()
 }
 
 fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonError> {
@@ -360,6 +409,10 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
                     state.active.remove(&task_id);
                 }
             }
+            broadcast(
+                state,
+                json!({"event": "task_state", "task_id": task_id, "state": next.as_str()}),
+            );
             Ok(json!({"task_id": task_id, "state": next}))
         }
         "update_status" => Ok(state.update.as_ref().map_or_else(
@@ -448,6 +501,9 @@ fn add_task(state: &mut State, request: Request) -> Result<Value, DaemonError> {
     }
     state.store.set_state(&task_id, TaskState::Running)?;
     state.active.insert(task_id.clone());
+    if let Ok(Some(task)) = state.store.task(&task_id) {
+        broadcast(state, json!({"event": "task_added", "task": task}));
+    }
 
     Ok(json!({"task_id": task_id, "plugin_id": plugin_id}))
 }
@@ -464,6 +520,16 @@ fn handle_event(state: &mut State, envelope: PluginEventEnvelope) {
             let _ = state
                 .store
                 .update_progress(&task_id, downloaded, total, speed_bps);
+            broadcast(
+                state,
+                json!({
+                    "event": "progress",
+                    "task_id": task_id,
+                    "downloaded": downloaded,
+                    "total": total,
+                    "speed_bps": speed_bps,
+                }),
+            );
         }
         PluginEvent::Completed { task_id, files, .. } => {
             state.active.remove(&task_id);
@@ -488,6 +554,10 @@ fn handle_event(state: &mut State, envelope: PluginEventEnvelope) {
                 &format!("{:?}", error.kind).to_ascii_lowercase(),
                 &error.message,
                 error.retryable,
+            );
+            broadcast(
+                state,
+                json!({"event": "failed", "task_id": task_id, "error": error}),
             );
         }
         _ => {}

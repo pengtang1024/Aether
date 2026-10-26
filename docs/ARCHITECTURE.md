@@ -28,6 +28,7 @@
 - [DAEMON.md](DAEMON.md)：常驻 daemon、Unix socket 协议、systemd 与系统接管路径。
 - [PLUGIN_ABI.md](PLUGIN_ABI.md)：可选 cdylib ABI、加载器与安全边界。
 - [UPDATE.md](UPDATE.md)：签名更新清单、daemon 检查/下载/AppImage 回滚。
+- [UI_INTEGRATION.md](UI_INTEGRATION.md)：Slint 如何接 daemon（订阅/操作/线程模型）。
 
 ## 2. 固定决策
 

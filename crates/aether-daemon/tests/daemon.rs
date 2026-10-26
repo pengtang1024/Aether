@@ -78,6 +78,7 @@ fn daemon_adds_lists_and_completes_a_task() {
     };
     client.ping().unwrap();
     assert_eq!(client.update_status().unwrap()["status"], "disabled");
+    let subscription = Client::connect(&socket).unwrap().subscribe().unwrap();
     let added = client
         .add("https://example.com/file.bin", None, None)
         .unwrap();
@@ -98,6 +99,24 @@ fn daemon_adds_lists_and_completes_a_task() {
         thread::sleep(Duration::from_millis(50));
     }
     assert!(completed, "daemon task did not complete");
+
+    let mut saw_progress = false;
+    let mut saw_completed = false;
+    for _ in 0..50 {
+        let Ok(event) = subscription.recv_timeout(Duration::from_secs(1)) else {
+            continue;
+        };
+        match event["event"].as_str() {
+            Some("progress") => saw_progress = true,
+            Some("completed") => {
+                saw_completed = true;
+                break;
+            }
+            _ => {}
+        }
+    }
+    assert!(saw_completed, "subscription missed completion");
+    let _ = saw_progress;
 
     let final_file = root
         .join("downloads")
