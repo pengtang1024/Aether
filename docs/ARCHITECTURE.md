@@ -19,6 +19,7 @@
 - [PLUGIN_ARCHITECTURE.md](PLUGIN_ARCHITECTURE.md)：Host/Plugin 职责、进程模型、IPC、
   manifest、生命周期、权限、设置/详情 schema、打包。
 - [DOWNLOAD_ENGINE.md](DOWNLOAD_ENGINE.md)：各协议插件内部的算法与实现细节。
+- [SUPPORT_MATRIX.md](SUPPORT_MATRIX.md)：支持分级、已覆盖/计划/不做的场景；矩阵外视为未支持。
 
 ## 2. 固定决策
 
@@ -123,7 +124,7 @@ PluginRow {
 | Host UI（Slint） | 已有 mockup；隔壁会话正在重做视觉 |
 | 模拟引擎 `src/engine.rs` | 仅演示；不是真实下载 |
 | 插件管理器 / SDK / IPC | 未实现 |
-| 协议插件 | 未实现（0 个） |
+| 协议插件 | 未实现（0 个）；覆盖范围见 SUPPORT_MATRIX.md |
 | 打包/CI/图标/发布 | 已实现，当前只打包 Host UI |
 | v0.1.0 Release | 已发布；内容仍是 UI mockup |
 

@@ -1,0 +1,128 @@
+# Aether 支持矩阵
+
+> 结论先说：**不能声称覆盖“所有下载情况”。** 插件架构解决的是可扩展性，不等于覆盖率。
+> 本文是唯一支持范围来源；矩阵之外视为未支持，新增场景必须通过新插件实现，Host 不改。
+>
+> 当前 0.1.0：**0 个协议插件**，连 HTTP 真实下载都未实现。下表是目标/计划，不是现状。
+
+## 1. 支持分级
+
+| 级别 | 含义 |
+| --- | --- |
+| Core | Host 默认携带、默认启用；基础下载能力 |
+| Optional | 第一方签名插件，按需安装/启用 |
+| External | 通过受控外部工具（yt-dlp/ffmpeg）提供，不保证所有站点 |
+| Not planned | 明确不做（DRM/绕过/私有加速等） |
+
+所有插件均为第一方开发、签名、版本化；不存在第三方插件市场。
+
+## 2. 传输协议
+
+| 场景 | 插件 | 级别 | 阶段 | 备注 |
+| --- | --- | --- | --- | --- |
+| HTTP/HTTPS 1.1 | http | Core | P1 | Range、分段、续传、重定向、代理、鉴权 |
+| HTTP/2 | http | Core | P1 | 多路复用 Range |
+| HTTP/3 / QUIC | http | Core | P1/P2 | 可选；UDP 失败回退 h2 |
+| FTP / FTPS | ftp | Optional | P4 | REST/SIZE/MDTM/TLS |
+| SFTP | sftp | Optional | P5 | 密码/密钥/agent |
+| WebDAV | webdav | Optional | P5 | 基本 GET/PUT/目录；锁/属性有限 |
+| S3 / 兼容对象存储 | s3 | Optional | P5 | 签名、分片、断点；不做所有云厂商专有 API |
+| Metalink | metalink | Optional | P4 | 多镜像/哈希；也可由 HTTP 插件内置 |
+| BitTorrent v1 / hybrid | bt | Optional（随包懒启动） | P3 | DHT/PEX/LSD/Tracker、magnet、做种 |
+| BitTorrent v2 / pure v2 | bt | Optional | P3 待验证 | 依赖 BT 内核能力；不支持则明确报错 |
+| WebTorrent / WebRTC | — | Not planned | — | 浏览器 P2P 不在核心 |
+| ED2K / Kad | ed2k | Optional | P5+ | eMule 网络；独立插件 |
+| thunder:// / QQdl:// / FlashGet | decoder | Optional | P5+ | 仅 URL 解码；不提供 Xunlei 私有加速/离线 |
+| IPFS / IPNS | ipfs | Optional | P5+ | 优先 HTTP gateway；不内置完整 Kubo |
+| RTMP / RTSP | rtmp | Optional | P5+ | 通过 ffmpeg 子进程；不写实时流核心 |
+| Usenet / NNTP | — | Not planned | — | 不在路线图 |
+| TFTP / Gopher / SCP | — | Not planned | — | 不在路线图 |
+| WebSocket / 长连接消息 | — | Not planned | — | 不是文件下载协议 |
+
+## 3. 内容与来源
+
+| 场景 | 方案 | 级别 | 备注 |
+| --- | --- | --- | --- |
+| 普通文件 URL | http | Core | 文件名/大小/校验 |
+| 多镜像 / Metalink | metalink/http | Optional | 源评分、分段分配 |
+| 种子 / magnet | bt | Optional | 多文件、做种、顺序模式 |
+| HLS 点播 | media | Optional | AES-128、init/media segments、合并 |
+| HLS 直播 | media | Optional | 滚动 playlist、窗口计算 |
+| DASH 点播/直播 | media | Optional | MPD、SegmentTemplate/List/Base |
+| YouTube/Bilibili 等站点 | extractor | External | yt-dlp；站点覆盖取决于 yt-dlp，不保证 |
+| Google Drive/OneDrive/Dropbox 等 | — | Not planned | OAuth/专有 API；如需要另做插件 |
+| 百度网盘/阿里云盘等 | — | Not planned | 私有 API/登录/风控；不做绕过 |
+| 浏览器正在下载的文件 | — | Not planned（当前） | 需要扩展/原生消息；P5+ |
+| RSS/自动追番 | — | Not planned（当前） | 可作为后续 Host 功能 |
+| 剪贴板监听 | — | Not planned（当前） | 平台集成层 |
+| 批量 URL 导入 | Host 功能 | 未实现 | 不属于协议插件 |
+
+## 4. 网络、鉴权与调度
+
+| 能力 | 状态 | 备注 |
+| --- | --- | --- |
+| 全局/单任务/单 host 限速 | 设计完成 | Host 发放预算，插件执行 |
+| 优先级/队列/暂停/恢复 | 设计完成 | Host 权威状态 |
+| 代理 HTTP CONNECT / SOCKS5 | 设计完成 | 全局/任务级；PAC 不做 |
+| Basic/Bearer/自定义 Header | 设计完成 | 插件设置 |
+| Cookie 手动导入 | 设计完成 | 不自动读取浏览器 Cookie |
+| Digest/NTLM/Kerberos | 未纳入 | 如有需求作为插件/SDK 扩展 |
+| OAuth2 刷新 | 未纳入 | 云盘插件才需要 |
+| 客户端证书/mTLS | 未纳入 | 可后续加 |
+| DNS/DoH/自定义 CA | 部分设计 | 系统 DNS 默认；DoH 可选 |
+| 自定义 UA/Referer | 设计完成 | 插件设置 |
+| IPv6/Happy Eyeballs | 设计完成 | 连接层 |
+| UPnP/NAT-PMP | 设计完成（BT） | 失败不阻塞 |
+| 浏览器 Cookie 自动导入 | 未纳入 | 安全/隐私复杂 |
+| Cloudflare/验证码/反爬 | Not planned | 不做绕过 |
+| DRM（Widevine/PlayReady/FairPlay） | Not planned | 明确不做 |
+
+## 5. 平台与分发
+
+| 平台/形态 | 状态 |
+| --- | --- |
+| Linux x86_64 | 打包已通；插件待实现 |
+| Linux arm64 | 打包已通；插件待实现 |
+| Windows x86_64 | 打包已通；插件待实现 |
+| Windows arm64 | 打包已通；插件待实现 |
+| macOS universal | 打包已通；插件待实现 |
+| Android / iOS | 不做（当前） |
+| Web / WASM | 不做（当前） |
+| Linux 32-bit / Windows 32-bit | 不做 |
+| Flatpak | 未做；当前 `.deb`/AppImage |
+| 自动更新 | 未做；插件更新设计已包含 |
+| 代码签名/公证 | Windows 未签名；macOS 未公证 |
+
+## 6. 存储与文件系统
+
+| 场景 | 状态 |
+| --- | --- |
+| 单文件/多文件 | 设计完成 |
+| 稀疏文件/预分配 | 设计完成 |
+| 原子 rename/fsync | 设计完成 |
+| 断点续传 | 设计完成 |
+| FAT32 4 GiB 限制 | 需在 Host 检查并提示 |
+| 网络盘/NFS/SMB | 尽力支持；不保证锁/原子性 |
+| 磁盘满/只读/权限 | 设计完成（错误分类） |
+| Windows 长路径/保留名/大小写 | 设计完成（路径守卫） |
+| S3 multipart / WebDAV 属性 | 插件级；不是 Host 核心 |
+
+## 7. 明确不做
+
+- 绕过 DRM、付费墙、登录、验证码、反爬。
+- 私有客户端的专有加速/离线下载协议（如迅雷私有通道）。
+- 抓取/导入浏览器 Cookie、密码、支付信息。
+- 自动执行下载内容。
+- 保证所有站点/所有 CDN/所有服务器的兼容性。
+
+## 8. 如何判断“支持”
+
+一个场景只有同时满足以下条件才算支持：
+
+1. 有已签名的插件实现；
+2. Host 能通过 `Probe` 识别并路由；
+3. 有集成测试（真实本地服务器/种子/分片）；
+4. 有明确的错误与恢复路径；
+5. 在支持矩阵中标记为 Core/Optional/External，而不是“应该可以”。
+
+矩阵之外 = 未支持。新增协议/站点 = 新增插件 + 测试 + 矩阵条目，不改 Host 核心。

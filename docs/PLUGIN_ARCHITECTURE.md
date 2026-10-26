@@ -322,6 +322,8 @@ Host 的“插件”页面（后续 UI）展示：
 
 ## 18. 插件矩阵
 
+完整支持分级与缺口见 [SUPPORT_MATRIX.md](SUPPORT_MATRIX.md)；矩阵外视为未支持。
+
 | 插件 | 默认携带 | 阶段 | 说明 |
 | --- | --- | --- | --- |
 | `http` | 是 | P1 | HTTP/HTTPS/Metalink/多镜像 |
