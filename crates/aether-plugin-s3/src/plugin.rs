@@ -1,0 +1,168 @@
+//! S3 plugin state machine.
+
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
+
+use aether_plugin_sdk::task::{shared_progress, SharedProgress, TaskControl};
+use aether_plugin_sdk::{
+    Capability, HostCommand, Metadata, Plugin, PluginContext, PluginEvent, SdkError,
+};
+
+use crate::s3;
+
+const PLUGIN_ID: &str = "s3";
+const PLUGIN_VERSION: &str = "0.1.0";
+const CAPABILITIES: &[Capability] = &[Capability::Network, Capability::FilesystemTask];
+
+pub struct S3Plugin {
+    client: Option<reqwest::blocking::Client>,
+    tasks: HashMap<String, TaskRecord>,
+}
+
+struct TaskRecord {
+    control: Arc<TaskControl>,
+    progress: SharedProgress,
+}
+
+impl S3Plugin {
+    pub fn new() -> Self {
+        Self {
+            client: None,
+            tasks: HashMap::new(),
+        }
+    }
+
+    fn client(&self) -> Result<reqwest::blocking::Client, SdkError> {
+        self.client
+            .clone()
+            .ok_or_else(|| SdkError::Protocol("S3 command before Init".into()))
+    }
+}
+
+impl Default for S3Plugin {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Plugin for S3Plugin {
+    fn id(&self) -> &str {
+        PLUGIN_ID
+    }
+
+    fn version(&self) -> &str {
+        PLUGIN_VERSION
+    }
+
+    fn capabilities(&self) -> &[Capability] {
+        CAPABILITIES
+    }
+
+    fn on_init(
+        &mut self,
+        _ctx: &mut PluginContext,
+        _init: &aether_plugin_sdk::Init,
+    ) -> Result<(), SdkError> {
+        let client = reqwest::blocking::Client::builder()
+            .connect_timeout(Duration::from_secs(15))
+            .user_agent("Aether/0.2 (+https://github.com/pengtang1024/Aether)")
+            .build()
+            .map_err(|error| SdkError::Protocol(error.to_string()))?;
+        self.client = Some(client);
+        Ok(())
+    }
+
+    fn on_command(
+        &mut self,
+        ctx: &mut PluginContext,
+        command: HostCommand,
+    ) -> Result<(), SdkError> {
+        match command {
+            HostCommand::Probe { request_id, input } => {
+                let client = self.client()?;
+                let probe = s3::probe(&client, &input, &serde_json::json!({}));
+                ctx.send(&PluginEvent::ProbeResult {
+                    request_id,
+                    supported: probe.supported,
+                    protocol: probe.supported.then(|| "s3".into()),
+                    priority: 70,
+                    metadata: probe.supported.then(|| Metadata {
+                        final_url: input.clone(),
+                        size: probe.size,
+                        etag: None,
+                        content_type: None,
+                        files: vec![],
+                    }),
+                    suggested_filename: probe.filename,
+                    reason: probe.reason,
+                })?;
+            }
+            HostCommand::Start { task, paths, .. } => {
+                let client = self.client()?;
+                let task_id = task.task_id.clone();
+                let sender = ctx.sender();
+                let control = Arc::new(TaskControl::new());
+                let progress = shared_progress();
+                let thread_control = control.clone();
+                let thread_progress = progress.clone();
+                thread::spawn(move || {
+                    s3::run(sender, client, task, paths, thread_control, thread_progress);
+                });
+                self.tasks.insert(task_id, TaskRecord { control, progress });
+            }
+            HostCommand::Pause { task_id } => {
+                if let Some(record) = self.tasks.get(&task_id) {
+                    record.control.pause();
+                }
+            }
+            HostCommand::Resume { task_id } => {
+                if let Some(record) = self.tasks.get(&task_id) {
+                    record.control.resume();
+                }
+            }
+            HostCommand::Cancel { task_id } => {
+                if let Some(record) = self.tasks.get(&task_id) {
+                    record.control.cancel();
+                }
+            }
+            HostCommand::SetBudget { .. } => {}
+            HostCommand::Snapshot { task_id, .. } => {
+                let Some(record) = self.tasks.get(&task_id) else {
+                    return Ok(());
+                };
+                let snapshot = record.progress.lock().unwrap().clone();
+                ctx.send(&PluginEvent::Progress {
+                    task_id,
+                    seq: snapshot.seq,
+                    downloaded: snapshot.downloaded,
+                    total: snapshot.total,
+                    speed_bps: snapshot.speed_bps,
+                    eta_secs: None,
+                    connections: 1,
+                    chunks_done: None,
+                    chunks_total: None,
+                })?;
+            }
+            HostCommand::Init { .. } => {
+                return Err(SdkError::Protocol(
+                    "init must be handled by the SDK runner".into(),
+                ));
+            }
+            HostCommand::Ping { .. } | HostCommand::Shutdown => {
+                return Err(SdkError::Protocol(
+                    "ping/shutdown must be handled by the SDK runner".into(),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn on_shutdown(&mut self, _ctx: &mut PluginContext) -> Result<(), SdkError> {
+        for record in self.tasks.values() {
+            record.control.cancel();
+        }
+        Ok(())
+    }
+}

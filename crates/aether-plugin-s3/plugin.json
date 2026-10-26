@@ -1,0 +1,32 @@
+{
+  "id": "s3",
+  "name": "S3 / Object Storage",
+  "version": "0.1.0",
+  "api": 1,
+  "min_host": "0.2.0",
+  "protocols": ["s3"],
+  "capabilities": ["network", "filesystem:task"],
+  "executable": {
+    "linux-x86_64": "bin/aether-plugin-s3-linux-x86_64",
+    "linux-aarch64": "bin/aether-plugin-s3-linux-aarch64",
+    "windows-x86_64": "bin/aether-plugin-s3-windows-x86_64.exe",
+    "windows-arm64": "bin/aether-plugin-s3-windows-arm64.exe",
+    "macos-universal": "bin/aether-plugin-s3-macos-universal"
+  },
+  "settings_schema": {
+    "sections": [
+      {
+        "title": "S3",
+        "fields": [
+          { "key": "access_key", "type": "string" },
+          { "key": "secret_key", "type": "secret" },
+          { "key": "session_token", "type": "secret" },
+          { "key": "region", "type": "string", "default": "us-east-1" },
+          { "key": "endpoint", "type": "string" },
+          { "key": "path_style", "type": "bool", "default": false }
+        ]
+      }
+    ]
+  },
+  "detail_schema": { "sections": [{ "type": "metrics", "items": ["speed", "size"] }] }
+}

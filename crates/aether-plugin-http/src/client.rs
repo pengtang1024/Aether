@@ -51,8 +51,25 @@ impl ProbeInfo {
 }
 
 pub fn build_client(init: &Init) -> Result<Client, ClientError> {
+    build_client_with_auth(init, None)
+}
+
+/// Build a client with an optional HTTP Basic Authorization header.
+pub fn build_client_with_auth(
+    init: &Init,
+    auth: Option<(&str, &str)>,
+) -> Result<Client, ClientError> {
+    let mut headers = reqwest::header::HeaderMap::new();
+    if let Some((username, password)) = auth {
+        let encoded = base64_encode(format!("{username}:{password}").as_bytes());
+        let value = reqwest::header::HeaderValue::from_str(&format!("Basic {encoded}"))
+            .map_err(|error| ClientError::Proxy(format!("invalid Basic auth header: {error}")))?;
+        headers.insert(reqwest::header::AUTHORIZATION, value);
+    }
+
     let mut builder = Client::builder()
         .connect_timeout(Duration::from_secs(15))
+        .default_headers(headers)
         .user_agent(format!(
             "Aether/{} (+https://github.com/pengtang1024/Aether)",
             init.host_version
@@ -79,6 +96,30 @@ pub fn build_client(init: &Init) -> Result<Client, ClientError> {
     }
 
     Ok(builder.build()?)
+}
+
+fn base64_encode(input: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut output = String::new();
+    for chunk in input.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = chunk.get(1).copied().unwrap_or(0) as u32;
+        let b2 = chunk.get(2).copied().unwrap_or(0) as u32;
+        let value = (b0 << 16) | (b1 << 8) | b2;
+        output.push(TABLE[((value >> 18) & 0x3f) as usize] as char);
+        output.push(TABLE[((value >> 12) & 0x3f) as usize] as char);
+        output.push(if chunk.len() > 1 {
+            TABLE[((value >> 6) & 0x3f) as usize] as char
+        } else {
+            '='
+        });
+        output.push(if chunk.len() > 2 {
+            TABLE[(value & 0x3f) as usize] as char
+        } else {
+            '='
+        });
+    }
+    output
 }
 
 /// Probe an HTTP(S) URL. Network errors are returned as `supported: false`

@@ -15,6 +15,10 @@ versioning; this is a UI mockup, so 0.x versions may change visual structure.
 - P1 HTTP plugin: segmented Range downloads, resume state, pause/resume/cancel,
   filename/ETag handling and SHA-256 verification, with a local Range server
   contract test.
+- Metalink v3/v4 support inside the HTTP plugin (priority-based mirror choice,
+  SHA-256 from the metalink).
+- FTP/FTPS (REST resume), HLS/DASH VOD (AES-128, SegmentTemplate/List), BT
+  (librqbit), WebDAV, S3 SigV4, SFTP and yt-dlp extractor plugins.
 
 ### Changed
 

@@ -23,12 +23,12 @@
 | HTTP/HTTPS 1.1 | http | Core | **已实现** | Range、分段、续传、重定向、代理；鉴权后续 |
 | HTTP/2 | http | Core | P1 | 多路复用 Range |
 | HTTP/3 / QUIC | http | Core | P1/P2 | 可选；UDP 失败回退 h2 |
-| FTP / FTPS | ftp | Optional | P4 | REST/SIZE/MDTM/TLS |
-| SFTP | sftp | Optional | P5 | 密码/密钥/agent |
-| WebDAV | webdav | Optional | P5 | 基本 GET/PUT/目录；锁/属性有限 |
-| S3 / 兼容对象存储 | s3 | Optional | P5 | 签名、分片、断点；不做所有云厂商专有 API |
-| Metalink | metalink | Optional | P4 | 多镜像/哈希；也可由 HTTP 插件内置 |
-| BitTorrent v1 / hybrid | bt | Optional（随包懒启动） | P3 | DHT/PEX/LSD/Tracker、magnet、做种 |
+| FTP / FTPS | ftp | Optional | **已实现** | FTP + 显式 FTPS、REST/SIZE、SHA-256；MDTM 待补 |
+| SFTP | sftp | Optional | **已实现（基础）** | 密码认证、seek 续传；密钥/agent 待补 |
+| WebDAV | webdav | Optional | **已实现（GET）** | webdav(s) 方案、Basic Auth、Range；PROPFIND/锁待补 |
+| S3 / 兼容对象存储 | s3 | Optional | **已实现（基础）** | SigV4 GET/HEAD、Range 续传；分片/自定义 CA 待补 |
+| Metalink | metalink | Optional | **已实现（HTTP 内置）** | v3/v4、优先级选源、SHA-256 |
+| BitTorrent v1 / hybrid | bt | Optional（随包懒启动） | **已实现（基础）** | librqbit、magnet/.torrent、initial peers；做种/DHT 压测待补 |
 | BitTorrent v2 / pure v2 | bt | Optional | P3 待验证 | 依赖 BT 内核能力；不支持则明确报错 |
 | WebTorrent / WebRTC | — | Not planned | — | 浏览器 P2P 不在核心 |
 | ED2K / Kad | ed2k | Optional | P5+ | eMule 网络；独立插件 |
@@ -46,10 +46,10 @@
 | 普通文件 URL | http | Core（已实现插件） | 文件名/大小/校验 |
 | 多镜像 / Metalink | metalink/http | Optional | 源评分、分段分配 |
 | 种子 / magnet | bt | Optional | 多文件、做种、顺序模式 |
-| HLS 点播 | media | Optional | AES-128、init/media segments、合并 |
+| HLS 点播 | media | Optional | **已实现插件** | AES-128、EXT-X-MAP、BYTERANGE、合并 |
 | HLS 直播 | media | Optional | 滚动 playlist、窗口计算 |
-| DASH 点播/直播 | media | Optional | MPD、SegmentTemplate/List/Base |
-| YouTube/Bilibili 等站点 | extractor | External | yt-dlp；站点覆盖取决于 yt-dlp，不保证 |
+| DASH 点播 | media | Optional | **已实现插件** | SegmentTemplate/List/BaseURL、首个 Period；直播待补 |
+| YouTube/Bilibili 等站点 | extractor | External | **已实现插件** | yt-dlp 子进程；站点覆盖取决于 yt-dlp，不保证 |
 | Google Drive / OneDrive / Dropbox | gdrive / onedrive | Optional | P6（最后） | OAuth2 + 官方 API；需要开发者应用审批 |
 | 百度网盘 / 阿里云盘等 | baidupan / aliyunpan | Optional | P6（最后） | 官方/私有 API 取决于开放程度；不做绕过风控 |
 | 浏览器正在下载的文件 | browser-extension | Optional | P5 | 扩展 + Native Messaging；用户显式授权 |

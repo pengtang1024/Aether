@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "api": 1,
   "min_host": "0.2.0",
-  "protocols": ["http", "https"],
+  "protocols": ["http", "https", "metalink"],
   "capabilities": ["network", "filesystem:task"],
   "executable": {
     "linux-x86_64": "bin/aether-plugin-http-linux-x86_64",

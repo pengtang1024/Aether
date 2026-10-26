@@ -10,6 +10,7 @@ use aether_plugin_sdk::{
 };
 
 use crate::client;
+use crate::metalink;
 use aether_plugin_sdk::task::{shared_progress, SharedProgress, TaskControl};
 
 use crate::download;
@@ -118,23 +119,46 @@ impl Plugin for HttpPlugin {
         match command {
             HostCommand::Probe { request_id, input } => {
                 let client = self.client()?;
-                let info = client::probe(&client, &input);
-
-                ctx.send(&PluginEvent::ProbeResult {
-                    request_id,
-                    supported: info.supported,
-                    protocol: info.protocol,
-                    priority: 100,
-                    metadata: info.supported.then(|| Metadata {
-                        final_url: info.final_url,
-                        size: info.size,
-                        etag: info.etag,
-                        content_type: info.content_type,
-                        files: vec![],
-                    }),
-                    suggested_filename: info.filename,
-                    reason: info.reason,
-                })?;
+                if metalink::is_metalink(&input) {
+                    let (supported, filename, size, reason) =
+                        match metalink::resolve(&client, &input) {
+                            Ok(Some(info)) => (true, Some(info.filename), info.size, None),
+                            Ok(None) => (false, None, None, Some("not a metalink".into())),
+                            Err(error) => (true, None, None, Some(error.to_string())),
+                        };
+                    ctx.send(&PluginEvent::ProbeResult {
+                        request_id,
+                        supported,
+                        protocol: supported.then(|| "metalink".into()),
+                        priority: 110,
+                        metadata: supported.then(|| Metadata {
+                            final_url: input.clone(),
+                            size,
+                            etag: None,
+                            content_type: Some("application/metalink4+xml".into()),
+                            files: vec![],
+                        }),
+                        suggested_filename: filename,
+                        reason,
+                    })?;
+                } else {
+                    let info = client::probe(&client, &input);
+                    ctx.send(&PluginEvent::ProbeResult {
+                        request_id,
+                        supported: info.supported,
+                        protocol: info.protocol,
+                        priority: 100,
+                        metadata: info.supported.then(|| Metadata {
+                            final_url: info.final_url,
+                            size: info.size,
+                            etag: info.etag,
+                            content_type: info.content_type,
+                            files: vec![],
+                        }),
+                        suggested_filename: info.filename,
+                        reason: info.reason,
+                    })?;
+                }
             }
             HostCommand::Start {
                 task,

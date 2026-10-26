@@ -338,9 +338,9 @@ Host 的“插件”页面（后续 UI）展示：
 | P0 | Host/PluginSupervisor/SDK/IPC/fake 插件 | SDK/IPC/fake + 契约测试已完成；UI 接线待重设计 |
 | P1 | HTTP 插件（单流+分段+续传+校验） | 核心已实现（512 KiB/4 连接测试、100 字节续传）；1 GB soak 待补 |
 | P2 | PAC/调度/限速 + 插件管理页 | PAC/预算/插件启停生效 |
-| P3 | BitTorrent 插件 | magnet/多文件/DHT/做种；进程崩溃不影响 Host |
-| P4 | FTP/FTPS、HLS/DASH、Metalink 插件 | 各协议完成/续传/校验 |
-| P5 | 浏览器集成 + 可选插件：SFTP/WebDAV/S3、yt-dlp、ED2K、thunder、IPFS、RTMP | 扩展接管/独立安装/回滚 |
+| P3 | BitTorrent 插件 | 本地 seed/leech 已通；DHT/多文件/做种/崩溃恢复待补 |
+| P4 | FTP/FTPS、HLS/DASH、Metalink 插件 | FTP/FTPS、HLS/DASH 点播、HTTP 内置 Metalink 已实现；直播/多 Period 待补 |
+| P5 | 浏览器集成 + 可选插件：SFTP/WebDAV/S3、yt-dlp、ED2K、thunder、IPFS、RTMP | SFTP/WebDAV/S3/yt-dlp 已实现；ED2K/thunder/IPFS/RTMP 待做 |
 | P6 | 网盘插件：Google Drive/OneDrive/百度/阿里（最后） | OAuth/刷新/共享链接 |
 | P7 | 沙箱、自动更新、长稳、模糊测试 | 安全审计 + soak |
 
@@ -350,13 +350,13 @@ Host 的“插件”页面（后续 UI）展示：
 
 | 插件 | 默认携带 | 阶段 | 说明 |
 | --- | --- | --- | --- |
-| `http` | 是 | P1（已实现） | HTTP/HTTPS、Range、续传、SHA-256；Metalink 后续 |
-| `bt` | 是（懒启动） | P3 | BitTorrent/Magnet |
-| `ftp` | 可选 | P4 | FTP/FTPS |
-| `media` | 可选 | P4 | HLS/DASH |
-| `metalink` | 可选 | P4 | 单独的多源/校验插件（也可由 HTTP 插件内置） |
-| `extractor` | 可选 | P5 | yt-dlp 等外部提取器 |
-| `sftp` / `webdav` / `s3` | 可选 | P5 | 云盘/远程文件 |
+| `http` | 是 | P1（已实现） | HTTP/HTTPS、Range、续传、SHA-256、Metalink 内置 |
+| `bt` | 是（懒启动） | P3（已实现） | librqbit；magnet/.torrent、initial peers、暂停/取消 |
+| `ftp` | 可选 | P4（已实现） | FTP + 显式 FTPS、REST 续传 |
+| `media` | 可选 | P4（已实现） | HLS/DASH VOD、AES-128、init/map、BaseURL |
+| `metalink` | 可选 | P4（HTTP 内置） | v3/v4 解析、优先级选源、SHA-256 |
+| `extractor` | 可选 | P5（已实现） | yt-dlp 子进程、进度解析、staging 落盘 |
+| `sftp` / `webdav` / `s3` | 可选 | P5（已实现基础） | SFTP 密码、WebDAV Basic、S3 SigV4 GET |
 | `ed2k` / `thunder` / `ipfs` / `rtmp` | 否 | P5+ | 独立签名插件，默认不装 |
 | `gdrive` / `onedrive` / `dropbox` / `baidupan` / `aliyunpan` | 否 | P6（最后） | OAuth/官方 API；见 CLOUD_PLUGINS.md |
 
@@ -370,8 +370,12 @@ Host 的“插件”页面（后续 UI）展示：
 - `crates/aether-plugin-sdk`：manifest、MessagePack IPC、协议类型、插件 runner、Host 侧 supervisor。
 - `crates/aether-plugin-fake`：fake 插件 + 真实进程契约测试（握手、Probe、Start、Progress、Completed、id 不匹配拒绝）。
 - Host UI 仍由 `src/engine.rs` 提供模拟数据；接线要等隔壁 UI 重设计完成，避免冲突。
-- `crates/aether-plugin-http`：P1 HTTP/HTTPS 插件，支持 Range 分段、续传、暂停/恢复/取消、SHA-256。
-- 真实插件 1 个（HTTP）；Host UI 仍未接线。接下来：FTP、Metalink、HLS/DASH、BitTorrent 等。
+- `crates/aether-plugin-http`：HTTP/HTTPS + Metalink，Range 分段、续传、暂停/恢复/取消、SHA-256。
+- `crates/aether-plugin-bt`：librqbit，magnet/.torrent、暂停/恢复/取消、initial peers。
+- `crates/aether-plugin-ftp`：FTP/FTPS、REST 续传。
+- `crates/aether-plugin-media`：HLS/DASH 点播、AES-128、SegmentTemplate/List。
+- `crates/aether-plugin-webdav` / `-s3` / `-sftp` / `-extractor`：WebDAV、SigV4 S3、SFTP、yt-dlp 适配。
+- 8 个真实插件均未接 Host UI；接下来：云盘（P6）、ED2K/thunder/IPFS/RTMP，以及 Host 调度/PAC。
 
 ## 20. 结论
 

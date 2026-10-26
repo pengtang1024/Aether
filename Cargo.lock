@@ -58,6 +58,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "aether-plugin-extractor"
+version = "0.1.0"
+dependencies = [
+ "aether-plugin-sdk",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "aether-plugin-fake"
 version = "0.1.0"
 dependencies = [
@@ -85,11 +94,13 @@ version = "0.1.0"
 dependencies = [
  "aether-plugin-sdk",
  "percent-encoding",
+ "quick-xml 0.41.0",
  "reqwest",
  "serde",
  "serde_json",
  "sha2",
  "thiserror 2.0.21",
+ "url",
 ]
 
 [[package]]
@@ -109,6 +120,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "aether-plugin-s3"
+version = "0.1.0"
+dependencies = [
+ "aether-plugin-sdk",
+ "chrono",
+ "hmac",
+ "percent-encoding",
+ "reqwest",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.21",
+ "url",
+]
+
+[[package]]
 name = "aether-plugin-sdk"
 version = "0.1.0"
 dependencies = [
@@ -118,6 +144,29 @@ dependencies = [
  "serde_json",
  "sha2",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "aether-plugin-sftp"
+version = "0.1.0"
+dependencies = [
+ "aether-plugin-sdk",
+ "percent-encoding",
+ "serde_json",
+ "ssh2",
+ "thiserror 2.0.21",
+ "url",
+]
+
+[[package]]
+name = "aether-plugin-webdav"
+version = "0.1.0"
+dependencies = [
+ "aether-plugin-http",
+ "aether-plugin-sdk",
+ "reqwest",
+ "serde_json",
+ "url",
 ]
 
 [[package]]
@@ -1240,6 +1289,7 @@ checksum = "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292"
 dependencies = [
  "block-buffer",
  "crypto-common",
+ "subtle",
 ]
 
 [[package]]
@@ -2100,6 +2150,15 @@ name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
+
+[[package]]
+name = "hmac"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c49c37c09c17a53d937dfbb742eb3a961d65a994e6bcdcf37e7399d0cc8ab5e"
+dependencies = [
+ "digest",
+]
 
 [[package]]
 name = "htmlparser"
@@ -3348,6 +3407,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "libssh2-sys"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f5eb74291e8691cab524a01274a1b1e7742b1a94f29d8b101d8aadc8372c1cd"
+dependencies = [
+ "cc",
+ "libc",
+ "libz-sys",
+ "openssl-sys",
+ "pkg-config",
+ "vcpkg",
+]
+
+[[package]]
 name = "libudev-sys"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3355,6 +3428,18 @@ checksum = "3c8469b4a23b962c1396b9b451dda50ef5b283e8dd309d69033475fa9b334324"
 dependencies = [
  "libc",
  "pkg-config",
+]
+
+[[package]]
+name = "libz-sys"
+version = "1.1.30"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f710a23e6dbf193214fd46ca56a9d6864e550abe86202184532ae7275e46de19"
+dependencies = [
+ "cc",
+ "libc",
+ "pkg-config",
+ "vcpkg",
 ]
 
 [[package]]
@@ -4106,6 +4191,18 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 dependencies = [
  "critical-section",
  "portable-atomic",
+]
+
+[[package]]
+name = "openssl-sys"
+version = "0.9.117"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b47e7e6bb2c38cd930d25a23b40fa52e068c10e85f3e03a7f5ba5aaca5713695"
+dependencies = [
+ "cc",
+ "libc",
+ "pkg-config",
+ "vcpkg",
 ]
 
 [[package]]
@@ -5549,6 +5646,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ssh2"
+version = "0.9.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c95eb3c09e378543395a3fa9796f897861862466ee331d59140ade4ea0dcfdfc"
+dependencies = [
+ "bitflags 2.13.2",
+ "libc",
+ "libssh2-sys",
+ "parking_lot",
+]
+
+[[package]]
 name = "stable_deref_trait"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6301,6 +6410,12 @@ dependencies = [
  "serde_core",
  "wasm-bindgen",
 ]
+
+[[package]]
+name = "vcpkg"
+version = "0.2.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "version_check"

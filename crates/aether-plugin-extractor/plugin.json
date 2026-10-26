@@ -1,0 +1,27 @@
+{
+  "id": "extractor",
+  "name": "yt-dlp Extractor",
+  "version": "0.1.0",
+  "api": 1,
+  "min_host": "0.2.0",
+  "protocols": ["extractor"],
+  "capabilities": ["network", "filesystem:task", "external-process"],
+  "executable": {
+    "linux-x86_64": "bin/aether-plugin-extractor-linux-x86_64",
+    "linux-aarch64": "bin/aether-plugin-extractor-linux-aarch64",
+    "windows-x86_64": "bin/aether-plugin-extractor-windows-x86_64.exe",
+    "windows-arm64": "bin/aether-plugin-extractor-windows-arm64.exe",
+    "macos-universal": "bin/aether-plugin-extractor-macos-universal"
+  },
+  "settings_schema": {
+    "sections": [
+      {
+        "title": "yt-dlp",
+        "fields": [
+          { "key": "yt_dlp_path", "type": "path", "default": "yt-dlp" }
+        ]
+      }
+    ]
+  },
+  "detail_schema": { "sections": [{ "type": "logs", "max_lines": 200 }] }
+}

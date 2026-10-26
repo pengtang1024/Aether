@@ -19,6 +19,7 @@ use reqwest::header::{ACCEPT_ENCODING, RANGE};
 use thiserror::Error;
 
 use crate::client;
+use crate::metalink;
 use crate::state::{self, ResumeState};
 
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
@@ -71,6 +72,19 @@ fn run_inner(
     if control.is_canceled() {
         return Err(DownloadError::Canceled);
     }
+
+    let mut resolved_task = task.clone();
+    if let Some(info) = metalink::resolve(client, &task.url)
+        .map_err(|error| DownloadError::Protocol(error.to_string()))?
+    {
+        resolved_task.url = info.url;
+        resolved_task.filename = Some(info.filename);
+        resolved_task.expected_size = info.size.or(resolved_task.expected_size);
+        if resolved_task.checksum.is_none() {
+            resolved_task.checksum = info.checksum;
+        }
+    }
+    let task = &resolved_task;
 
     fs::create_dir_all(&paths.staging)?;
 

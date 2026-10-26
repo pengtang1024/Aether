@@ -6,6 +6,10 @@ members = [
     "crates/aether-plugin-ftp",
     "crates/aether-plugin-media",
     "crates/aether-plugin-bt",
+    "crates/aether-plugin-webdav",
+    "crates/aether-plugin-extractor",
+    "crates/aether-plugin-s3",
+    "crates/aether-plugin-sftp",
 ]
 default-members = ["."]
 resolver = "2"
