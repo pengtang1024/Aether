@@ -5,6 +5,7 @@ After=network-online.target
 
 [Service]
 Type=simple
+EnvironmentFile=-%h/.config/aether/daemon.env
 ExecStart=/usr/bin/aether-daemon --download-dir %h/Downloads
 Restart=on-failure
 RestartSec=3

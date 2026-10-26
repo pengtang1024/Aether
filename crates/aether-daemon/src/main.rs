@@ -24,6 +24,21 @@ fn main() -> std::process::ExitCode {
             config.socket = PathBuf::from(value);
         }
     }
+    if let Some(index) = args.iter().position(|arg| arg == "--update-url") {
+        if let Some(value) = args.get(index + 1) {
+            config.update_url = Some(value.clone());
+        }
+    }
+    if let Some(index) = args.iter().position(|arg| arg == "--update-key") {
+        if let Some(value) = args.get(index + 1) {
+            config.update_public_key = Some(value.clone());
+        }
+    }
+    if let Some(index) = args.iter().position(|arg| arg == "--update-appimage") {
+        if let Some(value) = args.get(index + 1) {
+            config.update_appimage = Some(PathBuf::from(value));
+        }
+    }
     match run(config) {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {

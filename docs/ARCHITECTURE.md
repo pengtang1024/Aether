@@ -27,6 +27,7 @@
 - [HOST_RUNTIME.md](HOST_RUNTIME.md)：Host 插件发现/监督/Probe 路由/最终落盘与 CLI。
 - [DAEMON.md](DAEMON.md)：常驻 daemon、Unix socket 协议、systemd 与系统接管路径。
 - [PLUGIN_ABI.md](PLUGIN_ABI.md)：可选 cdylib ABI、加载器与安全边界。
+- [UPDATE.md](UPDATE.md)：签名更新清单、daemon 检查/下载/AppImage 回滚。
 
 ## 2. 固定决策
 

@@ -64,6 +64,9 @@ fn daemon_adds_lists_and_completes_a_task() {
         plugins_dir: root.join("plugins"),
         socket: socket.clone(),
         host_version: "0.2.0".into(),
+        update_url: None,
+        update_public_key: None,
+        update_appimage: None,
     };
     let daemon = thread::spawn(move || aether_daemon::run(config));
 
@@ -74,6 +77,7 @@ fn daemon_adds_lists_and_completes_a_task() {
         }
     };
     client.ping().unwrap();
+    assert_eq!(client.update_status().unwrap()["status"], "disabled");
     let added = client
         .add("https://example.com/file.bin", None, None)
         .unwrap();

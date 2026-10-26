@@ -105,6 +105,10 @@ impl Client {
         self.call("shutdown", None, None, None, None, json!({}))?;
         Ok(())
     }
+
+    pub fn update_status(&mut self) -> Result<Value, DaemonError> {
+        self.call("update_status", None, None, None, None, json!({}))
+    }
 }
 
 pub fn default_socket() -> PathBuf {

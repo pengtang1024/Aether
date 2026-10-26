@@ -4,6 +4,7 @@ members = [
     "crates/aether-plugin-abi",
     "crates/aether-plugin-cdylib-fake",
     "crates/aether-daemon",
+    "crates/aether-update",
     "crates/aether-plugin-fake",
     "crates/aether-plugin-http",
     "crates/aether-plugin-ftp",

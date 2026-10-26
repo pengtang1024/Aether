@@ -34,6 +34,9 @@ versioning; this is a UI mockup, so 0.x versions may change visual structure.
 - `aether-daemon`: single-instance Unix-socket daemon with SQLite + plugin
   runtime, `add/list/get/pause/resume/cancel/probe/shutdown`, systemd user
   unit and Linux packaging.
+- Signed auto-update client (Ed25519 detached signature, SHA-256, AppImage
+  atomic replace/rollback) with a daemon update loop and `update_status`;
+  idle daemon no longer polls plugins and unloads them after 5 minutes.
 - Linux packages now stage and install all plugin packages under
   `/usr/lib/aether/plugins`, and ship `aether-cli` for headless tasks/resume.
 

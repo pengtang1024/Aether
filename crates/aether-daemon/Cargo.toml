@@ -13,6 +13,7 @@ path = "src/main.rs"
 
 [dependencies]
 aether-host = { path = "../aether-host" }
+aether-update = { path = "../aether-update" }
 aether-plugin-sdk = { path = "../aether-plugin-sdk" }
 fs2 = "0.4"
 serde = { version = "1", features = ["derive"] }

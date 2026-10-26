@@ -73,7 +73,16 @@ unit 文件：`packaging/aether-daemon.service`，安装到
 - 完成事件由 daemon 执行 `finalize_task`，再写入 `task_files`。
 - 失败写入错误类别/消息/可重试标记。
 
-## 5. 接管系统下载还差什么
+## 5. 自动升级与低消耗
+
+- 可选签名更新：`AETHER_UPDATE_URL` + `AETHER_UPDATE_PUBKEY`，daemon 启动 30 秒后
+  检查，之后每 6 小时一次；AppImage 可原子替换，`.deb` 只下载不自行提权。详见
+  [UPDATE.md](UPDATE.md)。
+- 空闲时阻塞在命令 channel（1 秒超时），不轮询插件；下载中 100 ms 轮询。
+- 空闲 5 分钟卸载所有插件进程，保留 registry/SQLite，下次按需启动。
+- 不做 busy-loop；DHT/插件进程随任务启动/停止。
+
+## 6. 接管系统下载还差什么
 
 daemon 是常驻入口，但“接管所有下载”还需要：
 
@@ -86,7 +95,7 @@ daemon 是常驻入口，但“接管所有下载”还需要：
 5. **权限与自动启动策略**：systemd user unit、首次启动授权、单用户 session。
 6. **多用户/远程**：当前只支持本机同用户 Unix socket；不做局域网 TCP。
 
-## 6. 安全边界
+## 7. 安全边界
 
 - 不做 localhost TCP，避免网页/局域网访问。
 - socket 权限 0600；请求只能由同用户发起。

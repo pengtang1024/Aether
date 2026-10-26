@@ -136,11 +136,16 @@ impl PluginManager {
             if Instant::now() >= deadline {
                 return Ok(None);
             }
-            thread::sleep(Duration::from_millis(10));
+            thread::sleep(Duration::from_millis(20));
         }
     }
 
     pub fn shutdown(&mut self) {
+        self.stop_all();
+    }
+
+    /// Stop all running plugin processes but keep the registry intact.
+    pub fn stop_all(&mut self) {
         for (_, process) in self.processes.drain() {
             let _ = process.shutdown();
         }
