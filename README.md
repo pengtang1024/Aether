@@ -101,7 +101,9 @@ git push -u origin release/0.1.0
 | macOS universal | `.dmg` | Apple Silicon + Intel；未签名，需右键打开 |
 
 所有产物会附加到一个 **draft GitHub Release**（tag `v<version>`），确认后发布即可。构建只在
-release 分支进行，`main`/feature 提交不会产生包。
+release 分支进行，`main`/feature 提交不会产生包。每个包都必须携带 `LICENSE`、
+`THIRD_PARTY_NOTICES.md` 与 `LICENSES/Slint-Royalty-free-2.0.md`；发布前由
+`make check-licenses` 和 `scripts/check-license-bundles.py` 检查实际产物。
 
 Linux 本地验证：
 
@@ -244,3 +246,5 @@ Aether 只替换品牌色板，并补充上游没有的桌面业务组件。设�
 Aether 自有代码以 MIT 发布。`ui/material/` 为 Slint 上游 vendored 代码，版权归
 SixtyFPS GmbH 所有，保留原始许可头，采用三选一许可：GPL-3.0-only、
 Slint Royalty-free 2.0 或 Slint Software 3.0。再分发时请遵守相应条款。
+缺少第三方许可文件的旧发布会立即下架；v0.1.0 的二进制因此已撤回，记录见
+[`docs/WITHDRAWN_RELEASES.md`](docs/WITHDRAWN_RELEASES.md)。

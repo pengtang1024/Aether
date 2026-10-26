@@ -8,7 +8,7 @@ ifeq ($(GLIBC),)
 GLIBC := 2.39
 endif
 
-.PHONY: release check deb clean
+.PHONY: release check check-licenses deb clean
 
 release:
 	cargo build --release
@@ -16,6 +16,12 @@ release:
 check: release
 	desktop-file-validate packaging/aether.desktop
 	appstreamcli validate --no-net packaging/aether.metainfo.xml
+
+check-licenses:
+	python3 scripts/check-license-bundles.py --check-recipes
+	@if compgen -G "$(DIST)/aether_*.deb" >/dev/null; then \
+		python3 scripts/check-license-bundles.py "$(DIST)"/aether_*.deb; \
+	fi
 
 deb: release
 	rm -rf "$(STAGE)"

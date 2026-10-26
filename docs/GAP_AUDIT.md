@@ -9,6 +9,9 @@
 - **Slint 许可归属**：项目使用 Slint 1.18.1 的 **Royalty-free 2.0** 选项。该许可要求
   AboutSlint 或公网下载页的 “Made with Slint” 徽标；已在 v0.1.0 release notes 补徽标，
   并在 `THIRD_PARTY_NOTICES.md` 明确选择。后续 About 对话框接入 AboutSlint。
+- **撤回不合规旧发布**：v0.1.0 的二进制未携带完整 Slint 许可全文，已删除全部
+  release 资产；tag 保留用于溯源。记录见 `WITHDRAWN_RELEASES.md`，发布门禁加入
+  `scripts/check-license-bundles.py`。
 - **PR CI**：新增 `.github/workflows/ci.yml`（Linux fmt/build/test，Windows/macOS check），
   不再只有 release 分支才跑构建。
 - **安全披露**：新增 `SECURITY.md`。

@@ -9,7 +9,10 @@
    - Windows x86_64/arm64 setup + portable zip
    - macOS universal DMG
    and updates a **draft** GitHub release with the notes and `SHA256SUMS`.
-5. Review the draft, then create an annotated tag at the release commit:
+   The workflow also runs the license-bundle checks described below; a missing
+   notice fails the build before anything is attached.
+5. Review the draft and confirm that the license checks passed, then create an
+   annotated tag at the release commit:
 
    ```bash
    git tag -a v<version> -m "Aether <version>"
@@ -29,6 +32,43 @@
   If one fails, note the missing platform in the release notes.
 - The `.deb`, AppImage, ZIP, installer and DMG must include `LICENSE`,
   `THIRD_PARTY_NOTICES.md` and `LICENSES/Slint-Royalty-free-2.0.md`.
+
+## License-bundle gate
+
+Run this before publishing; the package workflow runs the same checks:
+
+```bash
+make check-licenses
+python3 scripts/check-license-bundles.py dist
+```
+
+- `--check-recipes` verifies the source license files exist and that the
+  Makefile, `package.yml` and Inno Setup recipe reference them.
+- The artifact check opens `.deb`, AppImage, ZIP and DMG files and requires a
+  non-empty MIT license file, `THIRD_PARTY_NOTICES.md` and the full
+  `Slint-Royalty-free-2.0.md` text. Inno Setup payloads are covered by the
+  recipe check.
+- Do not publish a draft if either check fails. Fix the packaging first; do not
+  remove the check.
+
+## Withdrawing a release
+
+If a published artifact is found to be missing required license notices or
+attribution, withdraw it immediately:
+
+1. Delete every asset from the GitHub release and delete the
+   `release/<version>` branch. Do not replace assets on the existing tag and
+   do not move the tag.
+2. Replace the release notes with a clear withdrawal notice and link to
+   [WITHDRAWN_RELEASES.md](WITHDRAWN_RELEASES.md).
+3. Add the asset names and SHA-256 digests to
+   [WITHDRAWN_RELEASES.md](WITHDRAWN_RELEASES.md).
+4. Keep the source tag for provenance unless the source snapshot itself must be
+   removed. Never reuse the withdrawn version number.
+5. Ship the fix in a new version after the license-bundle gate passes.
+
+`v0.1.0` was withdrawn on 2026-10-26 for this reason; see
+[WITHDRAWN_RELEASES.md](WITHDRAWN_RELEASES.md).
 
 ## Signing and notarization (deferred)
 

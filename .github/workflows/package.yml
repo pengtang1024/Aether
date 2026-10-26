@@ -63,8 +63,10 @@ jobs:
             libx11-dev libxcb1-dev libgl1-mesa-dev libegl1-mesa-dev \
             desktop-file-utils appstream dpkg-dev make curl
 
-      - name: Validate desktop entries and metadata
-        run: make check
+      - name: Validate desktop entries, metadata and license recipes
+        run: |
+          make check
+          make check-licenses
 
       - name: Build .deb
         env:
@@ -104,6 +106,9 @@ jobs:
           chmod +x /tmp/appimagetool
           ARCH="${APPIMAGE_ARCH}" APPIMAGE_EXTRACT_AND_RUN=1 /tmp/appimagetool \
             AppDir "dist/aether-${VERSION}-linux-${APPIMAGE_ARCH}.AppImage"
+
+      - name: Check license notices in Linux packages
+        run: python3 scripts/check-license-bundles.py dist
 
       - uses: actions/upload-artifact@v4
         with:
@@ -150,6 +155,10 @@ jobs:
           Compress-Archive -Force -Path $files `
             -DestinationPath "dist/aether-${{ needs.version.outputs.version }}-windows-${{ matrix.arch }}.zip"
 
+      - name: Check license notices in portable ZIP
+        shell: pwsh
+        run: py -3 scripts/check-license-bundles.py dist
+
       - name: Install Inno Setup
         shell: pwsh
         run: choco install innosetup -y --no-progress
@@ -167,6 +176,10 @@ jobs:
                   "/DAppArch=${{ matrix.arch }}" `
                   "/DRepoRoot=${{ github.workspace }}" `
                   "packaging\windows\aether.iss"
+
+      - name: Check installer license recipe
+        shell: pwsh
+        run: py -3 scripts/check-license-bundles.py --check-recipes
 
       - uses: actions/upload-artifact@v4
         with:
@@ -226,6 +239,9 @@ jobs:
           codesign --force --deep --sign - Aether.app
           hdiutil create -volname "Aether" -srcfolder Aether.app \
             -ov -format UDZO "dist/aether-${VERSION}-macos-universal.dmg"
+
+      - name: Check license notices in DMG
+        run: python3 scripts/check-license-bundles.py dist
 
       - uses: actions/upload-artifact@v4
         with:

@@ -27,6 +27,13 @@ versioning; this is a UI mockup, so 0.x versions may change visual structure.
   the Slint runtime are under the Slint Royalty-free 2.0 option. Packages now
   ship the full Slint license text and third-party notices.
 
+### Removed
+
+- Withdrew the v0.1.0 release binaries: they did not include
+  `LICENSES/Slint-Royalty-free-2.0.md` and predate the final third-party
+  notices. All assets were deleted; the tag is retained for provenance only.
+  See [docs/WITHDRAWN_RELEASES.md](docs/WITHDRAWN_RELEASES.md).
+
 ## [0.1.0] - 2026-10-26
 
 ### Added

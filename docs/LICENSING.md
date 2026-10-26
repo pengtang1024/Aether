@@ -77,7 +77,8 @@ Royalty-free 2.0 第 2 条要求二选一：
 
 当前状态：
 
-- 已采用 (b)：v0.1.0 的 GitHub Release 页面带徽标（本轮已移到发布说明顶部）。
+- 已采用 (b)：v0.1.0 的 GitHub Release 页面带徽标（该版本的二进制已因许可
+  文件不全而下架，见第 10 节；撤销说明仍保留在发布页）。
 - 应用内 **还没有** About 对话框，因此 (a) 尚未满足；不影响 (b) 的合规性。
 - README 也建议放一份徽标，但 README 正被 UI 重设计会话修改，等其落地后再加。
 
@@ -131,10 +132,29 @@ Slint 源文件；对外仍应保留 `THIRD_PARTY_NOTICES.md` 与署名。
 - 如果未来需要把项目整体改为 GPL 或商业双许可，需要所有贡献者的授权；当前没有 CLA，
   建议在引入大规模外部贡献前补一个 DCO/CLA 决策。
 
-## 10. 相关文件
+## 10. 已撤回的发布
+
+发布包一旦发现缺少第三方许可全文、第三方声明或署名，立即下架，不在旧 tag 上
+补挂新文件，也不静默替换资产。
+
+- **v0.1.0（2026-10-26 撤回）**：二进制包缺少
+  `LICENSES/Slint-Royalty-free-2.0.md`，且当时的 `THIRD_PARTY_NOTICES.md`
+  未明确记录所选许可。所有 release 资产已删除；tag 保留用于源码溯源，但不得
+  用于重新分发旧包。完整资产哈希与处理记录见
+  [`WITHDRAWN_RELEASES.md`](WITHDRAWN_RELEASES.md)。
+- 撤回后不得移动或复用该 tag；修复必须通过新版本发布。
+- 不得把已撤回的版本号重新用于新构建。
+- 每个新发布在 publish 前必须通过
+  `python3 scripts/check-license-bundles.py --check-recipes`，并对实际产物运行
+  `python3 scripts/check-license-bundles.py dist`（`.deb`、AppImage、ZIP、DMG；
+  Windows 安装器由 Inno Setup recipe 检查覆盖）。
+
+## 11. 相关文件
 
 - [`LICENSE`](../LICENSE) — MIT 全文
 - [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) — 第三方组件与许可范围
 - [`LICENSES/Slint-Royalty-free-2.0.md`](../LICENSES/Slint-Royalty-free-2.0.md) — Slint 许可全文
+- [`docs/WITHDRAWN_RELEASES.md`](WITHDRAWN_RELEASES.md) — 已撤回的发布、资产哈希与撤回规则
 - [`docs/GAP_AUDIT.md`](GAP_AUDIT.md) — 许可、签名、分发相关的待办
 - [`docs/RELEASING.md`](RELEASING.md) — 发布时需携带的许可文件
+- [`scripts/check-license-bundles.py`](../scripts/check-license-bundles.py) — 发布产物许可文件检查
