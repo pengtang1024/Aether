@@ -84,6 +84,7 @@ jobs:
                    AppDir/usr/share/metainfo \
                    AppDir/usr/share/icons/hicolor/256x256/apps
           install -m755 target/release/aether AppDir/usr/bin/aether
+          install -m755 target/release/aether-cli AppDir/usr/bin/aether-cli
           install -m644 packaging/aether.desktop AppDir/usr/share/applications/aether.desktop
           install -m644 packaging/aether.metainfo.xml \
             AppDir/usr/share/metainfo/io.github.pengtang1024.Aether.metainfo.xml

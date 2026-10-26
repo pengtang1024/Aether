@@ -124,6 +124,9 @@ Linux `.deb` 安装插件到：
 `make plugins` 用 `scripts/stage-plugins.py` 按当前平台 staging（当前 16 个）；`make deb` 自动包含。
 AppImage 也把 `build/plugins` 放进 `usr/lib/aether/plugins`。
 
+`.deb` 同时安装 `/usr/bin/aether-cli`，可直接使用 `tasks`/`resume` 和系统插件目录
+`/usr/lib/aether/plugins`。
+
 ## 8. 尚未实现
 
 - Slint UI 接线（等隔壁 UI 重设计完成）。
