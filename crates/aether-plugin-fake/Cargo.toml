@@ -1,0 +1,18 @@
+[package]
+name = "aether-plugin-fake"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.92"
+description = "Fake plugin used to exercise the Aether plugin IPC contract"
+license = "MIT"
+publish = false
+
+[[bin]]
+name = "aether-plugin-fake"
+path = "src/main.rs"
+
+[dependencies]
+aether-plugin-sdk = { path = "../aether-plugin-sdk" }
+
+[dev-dependencies]
+serde_json = "1"

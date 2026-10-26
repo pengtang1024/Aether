@@ -5,6 +5,14 @@ versioning; this is a UI mockup, so 0.x versions may change visual structure.
 
 ## [Unreleased]
 
+### Added
+
+- P0 plugin skeleton: `aether-plugin-sdk` (manifest, MessagePack framing, typed
+  Host/plugin protocol, `Plugin` runner, `PluginProcess` supervisor) and
+  `aether-plugin-fake` (real-process contract tests for handshake, probe,
+  progress and completion).
+- Workspace test/CI coverage for the plugin crates.
+
 ### Changed
 
 - A desktop UI redesign is in progress (floating canvas, filter counts,

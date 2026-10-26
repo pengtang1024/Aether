@@ -124,6 +124,7 @@ Host → Plugin：
 | `Pause/Resume/Cancel { task_id }` | 生命周期控制 |
 | `SetBudget { task_id, connections, rate }` | 调整并发/限速 |
 | `Snapshot { task_id }` | 主动查询状态 |
+| `Ping { request_id }` | 心跳探测，插件回 `Pong` |
 | `Shutdown` | 优雅退出 |
 
 Plugin → Host：
@@ -138,6 +139,7 @@ Plugin → Host：
 | `Completed` | 文件列表、校验和、plugin_state 清理 |
 | `Failed` | 错误类别、可重试性、诊断 ID |
 | `Heartbeat` | 存活 |
+| `Pong` | 对 `Ping` 的响应，带 `request_id` |
 
 ## 5. 插件 SDK
 
@@ -152,6 +154,18 @@ Plugin → Host：
 - `Checksum`：SHA-256/BLAKE3 流式。
 - `Logger`：结构化日志，自动脱敏。
 - 测试工具：fake Host、内存文件系统、范围 HTTP server。
+
+### 5.1 P0 已实现（`crates/`）
+
+| crate | 内容 |
+| --- | --- |
+| `aether-plugin-sdk` | `PluginManifest`、MessagePack 帧、`HostCommand`/`PluginEvent`、`Plugin` + `run_stdio`、Host 侧 `PluginProcess` |
+| `aether-plugin-fake` | 走真实握手/进度/完成的 fake 插件，用于契约测试和后续 UI 接线 |
+
+- 协议版本 `API_VERSION = 1`；帧上限 8 MiB；长度前缀为 `u32` big-endian。
+- 握手：插件 `Hello` → Host `Init` → 插件 `Ready`；id/version/api 不匹配直接拒绝。
+- Host 侧 `PluginProcess` 负责 spawn、握手、请求/事件、2 秒优雅退出和强制 kill。
+- 运行测试：`cargo test --workspace`；手动跑 fake 插件：`cargo run -p aether-plugin-fake`。
 
 插件可以复用 SDK 的网络/存储/限速，但**协议逻辑仍在插件**；Host 不依赖插件 crate。
 
@@ -321,7 +335,7 @@ Host 的“插件”页面（后续 UI）展示：
 
 | Phase | 内容 | 验收 |
 | --- | --- | --- |
-| P0 | Host/PluginSupervisor/SDK/IPC/fake 插件 | UI 通过 fake 插件走完添加→进度→完成 |
+| P0 | Host/PluginSupervisor/SDK/IPC/fake 插件 | SDK/IPC/fake + 契约测试已完成；UI 接线待重设计 |
 | P1 | HTTP 插件（单流+分段+续传+校验） | 1 GB 文件 8 连接；kill 后恢复 |
 | P2 | PAC/调度/限速 + 插件管理页 | PAC/预算/插件启停生效 |
 | P3 | BitTorrent 插件 | magnet/多文件/DHT/做种；进程崩溃不影响 Host |
@@ -351,8 +365,12 @@ Host 的“插件”页面（后续 UI）展示：
 
 ## 19. 当前状态
 
-**0.1.0 只有 Host UI，没有任何协议插件。** 现在的下载进度、速度、chunks、peers 和日志
-都是模拟数据。`src/engine.rs` 是 Host 的占位实现；真正的下载支持从 P0/P1 开始。
+**P0 骨架已落地，但还没有接入 Host UI，也没有真实下载协议。**
+
+- `crates/aether-plugin-sdk`：manifest、MessagePack IPC、协议类型、插件 runner、Host 侧 supervisor。
+- `crates/aether-plugin-fake`：fake 插件 + 真实进程契约测试（握手、Probe、Start、Progress、Completed、id 不匹配拒绝）。
+- Host UI 仍由 `src/engine.rs` 提供模拟数据；接线要等隔壁 UI 重设计完成，避免冲突。
+- 真实协议插件仍是 0 个；下一个是 P1 HTTP 插件。
 
 ## 20. 结论
 

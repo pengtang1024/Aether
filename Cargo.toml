@@ -1,3 +1,8 @@
+[workspace]
+members = ["crates/aether-plugin-sdk", "crates/aether-plugin-fake"]
+default-members = ["."]
+resolver = "2"
+
 [package]
 name = "aether"
 version = "0.1.0"

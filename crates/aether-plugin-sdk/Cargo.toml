@@ -1,0 +1,15 @@
+[package]
+name = "aether-plugin-sdk"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.92"
+description = "Protocol, IPC and SDK types for Aether first-party download plugins"
+license = "MIT"
+publish = false
+
+[dependencies]
+rmp-serde = "1.3"
+semver = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"

@@ -10,7 +10,7 @@ with their own license terms. See the scope table and details below.
 
 | Component | License | MIT? |
 | --- | --- | --- |
-| Aether's own code (`src/**`, Aether-authored `ui/*.slint`, `ui/pages/**`, scripts, docs) | MIT | Yes |
+| Aether's own code (`src/**`, `crates/**`, Aether-authored `ui/*.slint`, `ui/pages/**`, scripts, docs) | MIT | Yes |
 | Slint Material 3 widgets vendored under `ui/material/**` | `GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0` | No |
 | Slint runtime and `slint-build` (Cargo dependencies) | Same three options | No |
 | Brand logo and icons in `assets/` | Aether project, MIT | Yes |
@@ -41,6 +41,12 @@ removing copyright/license notices from the source files.
 The alternative upstream options are GPL-3.0-only and
 `LicenseRef-Slint-Software-3.0`; see <https://slint.dev> for the full terms.
 Redistributions must comply with the selected license.
+
+## Rust dependencies
+
+The plugin crates use `serde`, `serde_json`, `rmp-serde`, `semver` and
+`thiserror`. They are permissively licensed (MIT and/or Apache-2.0) and are
+enumerated with exact versions in `Cargo.lock`.
 
 ## Distribution requirements
 

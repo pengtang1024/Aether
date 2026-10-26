@@ -23,7 +23,7 @@
 | 1 | **Slint/第三方许可合规** | 法律风险，可能违反 Royalty-free 署名条件；也可能影响 SignPath 免费签名资格 | 发布页保留 badge / AboutSlint；补全 notices；正式发布前法务 review；向 SignPath 确认 Slint 三许可是否符合条件 |
 | 2 | **自动更新** | 用户长期停留在旧版；签名/安全修复无法下发 | 签名更新元数据、增量/全量包、分阶段发布、失败回滚；Windows/macOS/Flatpak 各自通道 |
 | 3 | **单实例 / 托盘 / 后台 / 开机自启** | 下载管理器必须能在后台跑；当前 UI 只有窗口 | 单实例锁、关闭到托盘、托盘菜单、开机启动、系统关机/休眠处理、唤醒续传 |
-| 4 | **PR CI 与测试** | 没有质量门禁，协议/插件改动容易回归 | 已有基础 CI；继续补 HTTP range/ETag、断点、路径安全、插件 IPC、崩溃恢复测试 |
+| 4 | **PR CI 与测试** | 没有质量门禁，协议/插件改动容易回归 | 已有基础 CI + P0 IPC/契约测试；继续补 HTTP range/ETag、断点、路径安全、崩溃恢复测试 |
 | 5 | **持久化/迁移/备份** | 升级后任务/设置/插件状态丢失 | DB `user_version` 迁移、备份/恢复、设置 schema 迁移、插件 state 版本、导入/导出 |
 | 6 | **Accessibility** | 屏幕阅读器/键盘用户不可用 | Slint 开启 `accessibility` feature；自定义 TaskItem/FilterChip 补 role/label/focus；高对比/减少动效 |
 | 7 | **i18n/本地化** | 目前所有文案硬编码中文 | 字符串资源、英文优先、日期/大小/速度格式化、RTL、错误消息本地化 |
@@ -87,7 +87,7 @@
 
 ## 6. 工程/质量盲区
 
-- 单元/集成/模糊/soak/性能/升级/签名验证测试；当前只有构建，0 测试。
+- 单元/集成/模糊/soak/性能/升级/签名验证测试；P0 已有 SDK/IPC/契约测试，协议与 UI 测试仍缺。
 - CI 只覆盖构建；需要协议 fixture、代理/PAC、路径 fuzz、插件 crash/restart。
 - 依赖审计、SBOM、可复现构建、Actions pin、secret scanning、代码扫描。
 - 错误分类/重试/取消安全/背压；panic 边界；插件进程泄漏。

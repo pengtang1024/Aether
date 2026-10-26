@@ -8,7 +8,7 @@
 
 | 部分 | 许可 | 能否改成 MIT |
 | --- | --- | --- |
-| `src/**`、`ui/*.slint`、`ui/pages/**`、脚本、文档 | **MIT** | 是（本来就是） |
+| `src/**`、`crates/**`、Aether 自己写的 `.slint`、脚本、文档 | **MIT** | 是（本来就是） |
 | `ui/material/**`（vendored Slint 组件） | `GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0` | **否** |
 | Slint 运行时 / `slint-build`（Cargo 依赖） | 同上，本项目选择 **Royalty-free 2.0** | 否（作为依赖） |
 | `assets/` 中的品牌 logo / 图标 | 项目自有，随 MIT | 是（第三方素材需单独确认） |
@@ -19,7 +19,7 @@
 
 ## 2. 自有代码：MIT
 
-`src/**`、Aether 自己的 `.slint` 页面与主题、构建脚本和文档都按 MIT 发布。MIT 允许：
+`src/**`、`crates/**`（插件 SDK/fake 插件）、Aether 自己的 `.slint` 页面与主题、构建脚本和文档都按 MIT 发布。MIT 允许：
 
 - 商用、闭源分发、收费；
 - 修改后不公开源码；
