@@ -281,8 +281,8 @@ Host 的“插件”页面（后续 UI）展示：
   `TaskContext.proxy_chain` 接收最终代理链。见 DOWNLOAD_ENGINE.md 11.1。
 - **浏览器集成**：扩展 + Native Messaging + 本地 IPC，Host 接管下载/右键发送；
   见 [BROWSER_INTEGRATION.md](BROWSER_INTEGRATION.md)。P5。
-- **签名/公证**：Windows Authenticode、macOS Developer ID + notarytool；
-  见 [SIGNING.md](SIGNING.md)。P1.5。
+- **签名/公证**：**暂缓**；Windows Authenticode、macOS Developer ID + notarytool 的
+  方案保留在 [SIGNING.md](SIGNING.md)，Linux 优先，不买证书。
 
 ## 14. 打包与分发
 
@@ -323,7 +323,6 @@ Host 的“插件”页面（后续 UI）展示：
 | --- | --- | --- |
 | P0 | Host/PluginSupervisor/SDK/IPC/fake 插件 | UI 通过 fake 插件走完添加→进度→完成 |
 | P1 | HTTP 插件（单流+分段+续传+校验） | 1 GB 文件 8 连接；kill 后恢复 |
-| P1.5 | Windows 签名 / macOS 公证（凭据到位时） | Gatekeeper/SmartScreen 通过 |
 | P2 | PAC/调度/限速 + 插件管理页 | PAC/预算/插件启停生效 |
 | P3 | BitTorrent 插件 | magnet/多文件/DHT/做种；进程崩溃不影响 Host |
 | P4 | FTP/FTPS、HLS/DASH、Metalink 插件 | 各协议完成/续传/校验 |

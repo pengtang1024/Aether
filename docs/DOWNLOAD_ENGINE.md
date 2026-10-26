@@ -581,12 +581,11 @@ enum ErrorKind {
 - Host 接入真实进度、速度、ETA；插件通过 IPC 上报。
 - 验收：1 GB 文件 8 连接下载；kill -9 后恢复；ETag 变化正确重启；校验失败可重试。
 
-### Phase 1.5：Windows 签名 / macOS 公证（凭据到位时）
+### Phase 1.5：签名 / 公证（暂缓，Linux 优先）
 
-- Windows Authenticode 签名 exe + setup；时间戳；SmartScreen 信誉积累。
-- macOS Developer ID 签名 + hardened runtime + notarytool + staple。
-- 没有证书/Apple 账号时保持未签名构建，但 release notes 明确提示。
-- 详细 secrets/命令见 [SIGNING.md](SIGNING.md)。
+- **当前决策：不投入证书费用，Linux 优先。** Windows 保持未签名、macOS 保持 adhoc。
+- 方案与 secrets 已写在 [SIGNING.md](SIGNING.md)，等免费 OSS 签名通过或获得赞助再接。
+- 不在 release notes 里声称已签名/已公证。
 
 ### Phase 2：调度/限速/PAC/插件管理（2 周）
 

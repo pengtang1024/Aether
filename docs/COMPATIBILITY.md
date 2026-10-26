@@ -1,8 +1,9 @@
 # Aether compatibility
 
-Aether targets **desktop PC platforms**. Mobile (Android/iOS) and embedded
-targets are deliberately out of scope for now; the UI is still optimized for a
-900×600+ desktop window.
+Aether targets **desktop PC platforms**, with **Linux as the primary platform**
+(x86_64 and arm64). Windows and macOS remain buildable secondary targets. Mobile
+(Android/iOS) and embedded targets are deliberately out of scope for now; the UI
+is still optimized for a 900×600+ desktop window.
 
 ## Release matrix
 
@@ -42,13 +43,13 @@ publish packages.
 
 ## Packaging caveats
 
-- macOS builds are currently **ad-hoc signed and not notarized**. Developer ID
-  signing + notarization requires a paid Apple Developer account (no free
-  notarization path); see [SIGNING.md](SIGNING.md). On recent macOS, use
-  System Settings → Privacy & Security → Open Anyway, or build from source.
-- Windows installers are currently **not code-signed**. Free OSS signing may be
-  available through SignPath Foundation, subject to eligibility; otherwise use
-  SHA256/winget or a low-cost certificate.
+- macOS builds are **ad-hoc signed and not notarized**. Notarization requires a
+  paid Apple Developer account and is not planned for now; see
+  [SIGNING.md](SIGNING.md). On recent macOS, use System Settings → Privacy &
+  Security → Open Anyway, or build from source.
+- Windows installers are **not code-signed**. Authenticode is not planned for
+  now (Linux is the priority). Use `SHA256SUMS`; a free OSS certificate may be
+  revisited later.
 - Linux `.deb` requires glibc 2.35+ (built on Ubuntu 22.04). The AppImage has
   the same glibc baseline. Older distros need a Flatpak or a rebuild on an older
   base image; Flatpak is not part of the current matrix.

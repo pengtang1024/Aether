@@ -28,6 +28,8 @@ deb: release
 	done
 	install -Dm644 LICENSE "$(STAGE)/usr/share/doc/aether/copyright"
 	install -Dm644 THIRD_PARTY_NOTICES.md "$(STAGE)/usr/share/doc/aether/THIRD_PARTY_NOTICES.md"
+	install -Dm644 LICENSES/Slint-Royalty-free-2.0.md \
+		"$(STAGE)/usr/share/doc/aether/Slint-Royalty-free-2.0.md"
 	mkdir -p "$(STAGE)/DEBIAN" "$(DIST)"
 	sed -e "s/@VERSION@/$(VERSION)/" \
 	    -e "s/@ARCH@/$(ARCH)/" \

@@ -9,6 +9,12 @@ versioning; this is a UI mockup, so 0.x versions may change visual structure.
 
 - A desktop UI redesign is in progress (floating canvas, filter counts,
   card-based detail surface). It is not part of 0.1.0.
+- **Linux is now the primary platform.** Windows/macOS remain buildable
+  secondary targets, but signing and notarization are deferred (no certificate
+  or Apple Developer spend).
+- Clarified license scope: Aether's own code is MIT; vendored Slint widgets and
+  the Slint runtime are under the Slint Royalty-free 2.0 option. Packages now
+  ship the full Slint license text and third-party notices.
 
 ## [0.1.0] - 2026-10-26
 

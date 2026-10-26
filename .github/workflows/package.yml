@@ -87,6 +87,11 @@ jobs:
             AppDir/usr/share/metainfo/io.github.pengtang1024.Aether.metainfo.xml
           install -m644 assets/logo-icon-256.png \
             AppDir/usr/share/icons/hicolor/256x256/apps/aether.png
+          install -d AppDir/usr/share/doc/aether
+          install -m644 LICENSE THIRD_PARTY_NOTICES.md \
+            AppDir/usr/share/doc/aether/
+          install -m644 LICENSES/Slint-Royalty-free-2.0.md \
+            AppDir/usr/share/doc/aether/
           cp packaging/aether.desktop AppDir/aether.desktop
           cp assets/logo-icon-256.png AppDir/aether.png
           cat > AppDir/AppRun <<'RUN'
@@ -139,6 +144,7 @@ jobs:
             "assets/logo.ico",
             "LICENSE",
             "THIRD_PARTY_NOTICES.md",
+            "LICENSES",
             "README.md"
           )
           Compress-Archive -Force -Path $files `
@@ -212,6 +218,10 @@ jobs:
           done
           iconutil -c icns Aether.iconset \
             -o Aether.app/Contents/Resources/aether.icns
+          cp LICENSE THIRD_PARTY_NOTICES.md Aether.app/Contents/Resources/
+          mkdir -p Aether.app/Contents/Resources/licenses
+          cp LICENSES/Slint-Royalty-free-2.0.md \
+            Aether.app/Contents/Resources/licenses/
 
           codesign --force --deep --sign - Aether.app
           hdiutil create -volname "Aether" -srcfolder Aether.app \
@@ -226,6 +236,10 @@ jobs:
   publish:
     name: Draft GitHub release
     needs: [version, linux, windows, macos]
+    # Linux is the release gate. Windows/macOS still run and their artifacts
+    # are attached when they succeed, but a secondary-platform failure must
+    # not block a Linux release.
+    if: always() && needs.version.result == 'success' && needs.linux.result == 'success'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4

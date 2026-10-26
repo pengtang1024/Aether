@@ -45,6 +45,7 @@ Source: "{#RepoRoot}\target\release\aether.exe"; DestDir: "{app}"; Flags: ignore
 Source: "{#RepoRoot}\assets\logo.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#RepoRoot}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#RepoRoot}\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#RepoRoot}\LICENSES\*"; DestDir: "{app}\licenses"; Flags: ignoreversion
 Source: "{#RepoRoot}\README.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]

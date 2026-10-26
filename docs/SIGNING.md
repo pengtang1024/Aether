@@ -1,8 +1,12 @@
 # 代码签名与 macOS 公证
 
+> **当前决策（2026-10）：暂不推进签名/公证，Linux 第一优先。** 不购买 Windows 证书，
+> 也不购买 Apple Developer；Windows 保持未签名、macOS 保持 adhoc。本文保留完整方案，
+> 等免费 OSS 签名（SignPath Foundation）通过或获得赞助后再接。
+>
 > 目标：Windows 安装包不再触发 SmartScreen 的“未知发布者”，macOS 通过 Gatekeeper/公证。
 > **Windows 有免费 OSS 路径；macOS 公证没有免费方案**。没有证书/Apple 账号时只能产出
-> 未签名/adhoc 包；v0.1.0 目前就是这种状态。本文给出免费/低成本路径、流水线与 secrets。
+> 未签名/adhoc 包；v0.1.0 目前就是这种状态。
 
 ## 0. 开源项目的现实路径（先看这里）
 
@@ -152,11 +156,13 @@ spctl --assess --type execute --verbose Aether.app
 - 建议把 Windows 签名放在 exe 构建后、zip/Inno 之前/之后；macOS 放在 lipo/icns 之后、
   DMG 创建之后。
 - Secret 只在 step env 中注入，禁止 `echo`/日志打印；临时证书文件在 job 结束前删除。
+- 当前 CI 不注入签名 secrets；在没有 secrets 时保持未签名/adhoc，且不把签名步骤设为必需。
 
 ## 5. 当前状态
 
 - v0.1.0 Windows：未签名。
 - v0.1.0 macOS：adhoc 签名、未公证；较新 macOS 上右键 Open 可能不再足够，
   需“系统设置 → 隐私与安全性 → 仍要打开”，或从源码构建。
-- 签名/公证流水线目标：P1.5；Windows 优先走 SignPath Foundation 免费 OSS 路径，
-  macOS 需赞助/组织账号后再接公证。
+- 签名/公证：**暂缓，不投入费用**。Linux 优先；Windows 只有 SignPath Foundation
+  免费 OSS 路径值得尝试，macOS 需赞助/组织账号后再议。
+- 发布说明必须明确“未签名/未公证”，不得暗示已通过 SmartScreen/Gatekeeper。

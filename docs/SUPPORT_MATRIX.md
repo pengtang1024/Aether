@@ -82,18 +82,18 @@
 
 | 平台/形态 | 状态 |
 | --- | --- |
-| Linux x86_64 | 打包已通；插件待实现 |
-| Linux arm64 | 打包已通；插件待实现 |
-| Windows x86_64 | 打包已通；插件待实现 |
-| Windows arm64 | 打包已通；插件待实现 |
-| macOS universal | 打包已通；插件待实现 |
+| Linux x86_64 | **第一优先**；打包已通，插件待实现 |
+| Linux arm64 | **第一优先**；打包已通，插件待实现 |
+| Windows x86_64 | 次优先；打包已通，未签名 |
+| Windows arm64 | 次优先；打包已通，未签名 |
+| macOS universal | 次优先；打包已通，adhoc 未公证 |
 | Android / iOS | 不做（当前） |
 | Web / WASM | 不做（当前） |
 | Linux 32-bit / Windows 32-bit | 不做 |
 | Flatpak | 未做；当前 `.deb`/AppImage |
 | 自动更新 | 未做；插件更新设计已包含 |
-| Windows 代码签名 | 计划；pipeline 就绪后需 Authenticode 证书/HSM |
-| macOS 公证 | 计划；需 Apple Developer + notarytool |
+| Windows 代码签名 | **暂不推进**（Linux 优先；不买证书） |
+| macOS 公证 | **暂不推进**（无免费路径；需 Apple Developer/赞助） |
 | PAC 自动代理 | P2 Host 网络层 |
 | 浏览器集成 | P5 扩展 + Native Messaging |
 | 网盘插件 | P6 最后（Google Drive/OneDrive/百度/阿里） |
@@ -116,8 +116,8 @@
 
 | 能力 | 外部条件 | 计划 |
 | --- | --- | --- |
-| Windows 代码签名 | SignPath Foundation 免费 OSS 证书（需确认 Slint 许可/项目资历）或 Certum/自有证书；CI secrets | P1.5（HTTP 插件完成后即可接入） |
-| macOS 公证 | Apple Developer Program（$99/年）、Developer ID、notarytool；无免费公证 | P1.5（需赞助/组织账号） |
+| Windows 代码签名 | SignPath Foundation 免费 OSS 证书（需确认 Slint 许可/项目资历）；不买证书 | 暂缓（条件满足再说） |
+| macOS 公证 | Apple Developer Program（$99/年）、Developer ID、notarytool；无免费公证 | 暂缓（需赞助/组织账号） |
 | 浏览器集成 | Chrome/Edge/Firefox 扩展商店账号；本地扩展可先侧载 | P5 |
 | Google Drive / OneDrive | OAuth 应用注册/审核、API 配额 | P6（最后） |
 | 百度网盘 / 阿里云盘 | 开放平台/API 权限；遵守 ToS | P6（最后） |
@@ -134,13 +134,15 @@
 
 ## 7.5 交付顺序
 
-1. Host/Plugin 骨架 + HTTP 插件（P0/P1）
-2. Windows 签名 + macOS 公证流水线（P1.5，凭据到位即可）
+1. Linux 上的 Host/Plugin 骨架 + HTTP 插件（P0/P1）
+2. Linux `.deb`/AppImage 真实下载联调与发布门禁
 3. PAC/调度/限速（P2）
 4. BitTorrent（P3）
 5. FTP/HLS/DASH/Metalink（P4）
 6. 浏览器集成 + 可选插件（P5）
 7. 网盘插件（P6，最后）
+
+> 签名/公证不在交付顺序里；Linux 优先，Windows/macOS 保持可构建、未签名/adhoc。
 
 ## 8. 如何判断“支持”
 

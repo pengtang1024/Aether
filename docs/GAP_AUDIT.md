@@ -2,6 +2,7 @@
 
 > 日期：2026-10-26。基于当前 Host + 第一方插件方案、PC/ARM64 打包与 UI 重设计计划。
 > 目的不是否定现有方案，而是把“上线一个真正能用的下载管理器”还缺的东西列全。
+> **当前优先级：Linux 第一。** 签名/公证不投入费用；Windows/macOS 保持可构建、未签名/adhoc。
 
 ## 0. 先修/已修（本轮）
 
@@ -98,8 +99,8 @@
 
 | 事项 | 需要什么 |
 | --- | --- |
-| Windows 签名 | SignPath Foundation 免费 OSS 证书（需审核/确认 Slint 许可）或自有证书；GitHub secrets |
-| macOS 公证 | Apple Developer Program（$99/年）+ Developer ID + notary 凭据；无免费替代 |
+| Windows 签名（暂缓） | SignPath Foundation 免费 OSS 证书（需审核/确认 Slint 许可）；不买证书 |
+| macOS 公证（暂缓） | Apple Developer Program（$99/年）+ Developer ID + notary 凭据；无免费替代 |
 | 浏览器扩展上架 | Chrome/Edge/Firefox 开发者账号 + 审核 |
 | 云盘 OAuth | 各厂商开发者应用/API 权限/审核 |
 | 自动更新服务器 | 更新元数据签名 key、托管/CDN、灰度策略 |

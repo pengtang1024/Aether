@@ -23,6 +23,7 @@
 - [SIGNING.md](SIGNING.md)：Windows Authenticode 与 macOS 公证的证书、secrets 和命令。
 - [BROWSER_INTEGRATION.md](BROWSER_INTEGRATION.md)：浏览器扩展 + Native Messaging。
 - [CLOUD_PLUGINS.md](CLOUD_PLUGINS.md)：Google Drive/OneDrive/百度/阿里等网盘插件（P6）。
+- [LICENSING.md](LICENSING.md)：MIT 与 Slint 许可的边界、署名义务、各分发场景。
 
 ## 2. 固定决策
 
@@ -35,11 +36,11 @@
 | 调度/限速 | Host 发放预算；插件在预算内执行 |
 | 存储 | Host 创建任务目录并授权 `staging/`；插件写入；Host 校验并原子落盘 |
 | UI | Slint 只渲染 Host 数据；插件通过 settings/detail schema 提供配置与详情 |
-| 平台 | 当前聚焦桌面 PC：Linux x64/arm64、Windows x64/arm64、macOS universal |
+| 平台 | **Linux 第一优先**（x64/arm64）；Windows x64/arm64、macOS universal 保持可构建，属次优先 |
 | 代理 | Host 统一解析 PAC/系统/手动代理；插件只接收最终代理链 |
 | 浏览器集成 | P5：扩展 + Native Messaging；用户显式授权，不抓密码/支付信息 |
 | 网盘 | P6（最后）：OAuth/官方 API 插件；不做 Cookie 抓取/绕过风控 |
-| 签名/公证 | P1.5：Windows Authenticode、macOS Developer ID/notarytool；需证书/Apple 账号 |
+| 签名/公证 | **暂不推进**：Windows 未签名、macOS adhoc；除非获得免费 OSS 签名或赞助，不投入证书费用 |
 | 移动端 | Android/iOS/Web 暂缓；不阻塞当前桌面重设计 |
 | 发布 | 仅 `release/*` 分支打包；Host 包内置默认插件 |
 
@@ -150,26 +151,29 @@ PluginRow {
 1. **界面系统重设计**（隔壁会话）：先定 Host 的导航、列表、详情、插件页、设置页。
 2. **P0 Host/Plugin 骨架**：PluginSupervisor、SDK、IPC、fake plugin，UI 用 fake 数据走通。
 3. **P1 HTTP 插件**：真实分段/续传/校验；替换模拟进度。
-4. **P1.5 签名/公证**：Windows Authenticode、macOS notarytool；凭据到位即接入。
-5. **P2**：调度/限速/PAC/代理/插件管理页接线。
-6. **P3**：BitTorrent 插件。
-7. **P4**：FTP/HLS/DASH/Metalink 插件。
-8. **P5**：浏览器集成、SFTP/WebDAV/S3、yt-dlp、ED2K、thunder、IPFS、RTMP。
-9. **P6**：Google Drive/OneDrive/百度/阿里等网盘插件（最后）。
+4. **P2**：调度/限速/PAC/代理/插件管理页接线。
+5. **P3**：BitTorrent 插件。
+6. **P4**：FTP/HLS/DASH/Metalink 插件。
+7. **P5**：浏览器集成、SFTP/WebDAV/S3、yt-dlp、ED2K、thunder、IPFS、RTMP。
+8. **P6**：Google Drive/OneDrive/百度/阿里等网盘插件（最后）。
+
+Linux 优先的具体含义：P0/P1 在 Linux 上先跑通并作为发布门禁；Windows/macOS 只保证
+构建不回归，不因签名/公证阻塞发布。签名/公证的代码与文档保留，等免费/赞助条件满足再接。
 
 ## 6. 打包与发布
 
 - Host 包必须内置默认插件（至少 HTTP；BT/媒体可随包懒启动）。
 - 每个平台/架构构建 Host + 插件二进制；CI 矩阵与现有兼容性矩阵一致。
 - 插件独立版本、签名、更新/回滚；Host 版本与插件 API 做兼容检查。
-- Windows exe/setup 走 Authenticode；macOS app/DMG 走 Developer ID + 公证；见 [SIGNING.md](SIGNING.md)。
-- 无证书/Apple 账号时保持未签名/adhoc 构建，并在 release notes 明确标注。
+- **Linux `.deb`/AppImage 是发布门禁**；Windows/macOS 保持未签名/adhoc，不阻塞 Linux 发布。
+- Linux 包必须包含 `LICENSE`、`THIRD_PARTY_NOTICES.md`、`LICENSES/Slint-Royalty-free-2.0.md`。
+- 签名/公证暂缓；如以后获得免费 OSS 签名或赞助，再按 [SIGNING.md](SIGNING.md) 接入。
 - 发布仍只在 `release/*` 分支触发；[RELEASING.md](RELEASING.md)。
 - 平台基线见 [COMPATIBILITY.md](COMPATIBILITY.md)。
 
 ## 7. 待定问题
 
-- Windows 代码签名证书/HSM、macOS Developer ID/Apple 账号的申请与轮换。
+- Linux 发行版打包（Flatpak/apt 仓库/GPG 签名）的优先级与维护成本。
 - 浏览器扩展商店账号与审核周期（Chrome/Edge/Firefox）。
 - 云盘 OAuth 应用注册/审核与 API 配额（P6）。
 - 插件签名 release key 的保管与轮换。

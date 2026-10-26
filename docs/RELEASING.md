@@ -19,12 +19,24 @@
 6. Publish the draft release. Do not move or reuse a tag; create a new version
    for subsequent code changes.
 
-## Signing and notarization
+## Linux-first gate
 
-- Windows: Authenticode-sign `aether.exe` before zipping and sign the Inno
-  `setup.exe`; macOS: Developer ID-sign the app/DMG and notarize with
-  `notarytool`, then staple.
-- If the signing secrets are configured, signing must succeed before publishing.
-- If they are not configured, keep the unsigned/adhoc artifacts but state this
-  explicitly in the release notes.
+- Linux x86_64 and arm64 `.deb` + AppImage are the **release blockers**. A
+  release does not ship if either Linux build fails.
+- Windows/macOS artifacts remain in the matrix as secondary targets. The
+  publish job runs after all builds finish, but only requires `version` and
+  `linux` to succeed; Windows/macOS assets are attached when those builds pass.
+  If one fails, note the missing platform in the release notes.
+- The `.deb`, AppImage, ZIP, installer and DMG must include `LICENSE`,
+  `THIRD_PARTY_NOTICES.md` and `LICENSES/Slint-Royalty-free-2.0.md`.
+
+## Signing and notarization (deferred)
+
+- Signing is **not planned for now**: Windows stays unsigned, macOS stays
+  ad-hoc signed. Do not spend money on certificates; revisit only if a free OSS
+  certificate (SignPath Foundation) is approved or a sponsor provides an Apple
+  Developer account.
+- If signing is enabled later and secrets are configured, signing must succeed
+  before publishing.
+- State clearly in release notes that artifacts are unsigned/adhoc.
 - Certificate/secret names and commands: [SIGNING.md](SIGNING.md).

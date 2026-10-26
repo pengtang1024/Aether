@@ -29,7 +29,7 @@
   <key>NSHighResolutionCapable</key>
   <true/>
   <key>NSHumanReadableCopyright</key>
-  <string>MIT licensed. Copyright 2026 Aether contributors.</string>
+  <string>MIT licensed. Bundled Slint components under the Slint Royalty-free 2.0 license.</string>
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
 </dict>
