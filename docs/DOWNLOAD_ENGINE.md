@@ -427,11 +427,26 @@ CREATE INDEX segments_pending ON segments (task_id, state);
 - HTTP 客户端：`reqwest`（hyper + rustls）为主；HTTP/3 可选 `quinn`/h3 feature。
 - DNS：系统解析器默认；可选 `hickory-resolver` 做缓存/DoH；Happy Eyeballs 连接。
 - TLS：rustls；系统根证书；可选自定义 CA；默认不跳过校验。
-- 代理：HTTP/HTTPS CONNECT、SOCKS5；全局/任务级；PAC 暂不做。
+- 代理：HTTP/HTTPS CONNECT、SOCKS5；全局/任务级；PAC 见 11.1。
 - 超时：连接 15s、首字节 30s、空闲读 60s（可配置）；下载大文件不设总超时。
 - Keep-alive：HTTP/1.1 连接池；HTTP/2/3 多路复用；按 host 隔离。
 - 速率：分层 token bucket（全局→host→task）；上传/下载独立。
 - IPv6：优先 Happy Eyeballs，失败回退 IPv4；绑定接口可选（P3）。
+
+### 11.1 PAC / 自动代理
+
+PAC 由 **Host 网络层**统一解析，插件只收到最终代理链：
+
+- 模式：系统代理 / 手动 / PAC URL / PAC 文件 / WPAD。
+- 求值：嵌入式 JS 引擎（候选 `rquickjs`，QuickJS）执行 `FindProxyForURL(url, host)`；
+  提供标准函数 `dnsDomainIs`、`shExpMatch`、`isInNet`、`dnsResolve`、`myIpAddress`、
+  `isPlainHostName` 等；脚本无文件/网络权限，50 ms 超时，超过限制回退直连。
+- 结果解析为 `PROXY host:port; SOCKS5 host:port; DIRECT` 优先级链；支持代理认证。
+- 缓存：按 URL/host 缓存结果，带 TTL；PAC 内容变化/网络切换/用户刷新时失效。
+- 系统 PAC：Windows WinHTTP/WPAD、macOS SystemConfiguration；Linux 读环境/桌面设置，
+  也可手动填 PAC URL。
+- 插件通过 `TaskContext.proxy_chain` 获取解析结果；不在插件里执行 PAC。
+- UI：设置页可填 PAC URL/文件、测试“当前 URL 使用的代理”、查看最近解析日志。
 
 ## 12. 错误模型与重试
 
@@ -542,6 +557,9 @@ enum ErrorKind {
 | DASH | dash-mpd | MPD 解析 |
 | Metalink | quick-xml + serde | 限制 XML 大小 |
 | 端口映射 | igd-next / portmapper | UPnP/NAT-PMP |
+| PAC JS | rquickjs / boa | Host 代理解析；沙箱/超时 |
+| OAuth2（网盘） | oauth2 + keyring | P6 云盘插件 |
+| 浏览器扩展 | MV3 / WebExtensions | P5；独立扩展工程 |
 | 通知 | notify-rust | 可选 |
 | 日志 | tracing + tracing-subscriber | 结构化 |
 
@@ -563,12 +581,20 @@ enum ErrorKind {
 - Host 接入真实进度、速度、ETA；插件通过 IPC 上报。
 - 验收：1 GB 文件 8 连接下载；kill -9 后恢复；ETag 变化正确重启；校验失败可重试。
 
-### Phase 2：调度/限速/代理/插件管理（2 周）
+### Phase 1.5：Windows 签名 / macOS 公证（凭据到位时）
 
-- Host 全局/per-host/per-task 限制、优先级 aging、token bucket、代理、鉴权；
+- Windows Authenticode 签名 exe + setup；时间戳；SmartScreen 信誉积累。
+- macOS Developer ID 签名 + hardened runtime + notarytool + staple。
+- 没有证书/Apple 账号时保持未签名构建，但 release notes 明确提示。
+- 详细 secrets/命令见 [SIGNING.md](SIGNING.md)。
+
+### Phase 2：调度/限速/PAC/插件管理（2 周）
+
+- Host 全局/per-host/per-task 限制、优先级 aging、token bucket、代理、PAC、鉴权；
   插件预算/管理页/设置 schema。
 - Metalink 作为插件接入。
-- 验收：多任务公平；限速误差 < 5%；插件启停/设置生效；镜像切换不丢进度。
+- 验收：多任务公平；限速误差 < 5%；PAC 规则/系统 PAC 生效；插件启停/设置生效；
+  镜像切换不丢进度。
 
 ### Phase 3：BitTorrent 插件（3–4 周）
 
@@ -581,14 +607,23 @@ enum ErrorKind {
 - FTP/FTPS 插件续传；HLS/DASH 插件点播 + AES-128；直播窗口；可选 ffmpeg remux。
 - 验收：点播分片合并可播放；直播停止/恢复；FTP REST 续传；插件独立升级。
 
-### Phase 5：可选插件与高级能力（持续）
+### Phase 5：浏览器集成与可选插件（持续）
 
-- SFTP/WebDAV/S3、yt-dlp、浏览器集成、通知、计划任务、代理 PAC。
+- 浏览器扩展 + Native Messaging：接管下载、右键发送、显式授权的 Cookie/Headers、
+  `aether://`/magnet 协议关联；详见 [BROWSER_INTEGRATION.md](BROWSER_INTEGRATION.md)。
+- SFTP/WebDAV/S3、yt-dlp、通知、计划任务。
 - ED2K/Kad、thunder/QQdl/FlashGet URL 解码、IPFS gateway、RTMP/RTSP via ffmpeg
   作为独立签名插件，默认不装。
-- 验收：插件独立安装/更新/回滚；崩溃不影响核心；外部工具超时/输出限制。
+- 验收：扩展→Host 本地 IPC 成功接管；插件独立安装/更新/回滚；崩溃不影响核心。
 
-### Phase 6：硬化（持续）
+### Phase 6：网盘插件（最后）
+
+- Google Drive / OneDrive / 百度网盘 / 阿里云盘等 OAuth/API 插件；
+  共享链接解析、分块下载、配额/限流、token keyring。
+- 详见 [CLOUD_PLUGINS.md](CLOUD_PLUGINS.md)。
+- 验收：账号授权/刷新/退出；共享链接可下载；API 限流可恢复。
+
+### Phase 7：硬化（持续）
 
 - 模糊测试、长时间 soak、跨平台 CI、内存/句柄泄漏、磁盘满/只读、休眠唤醒、网络切换。
 
@@ -603,7 +638,7 @@ enum ErrorKind {
 | 低资源设备内存/句柄 | 硬上限、背压、缓冲池、连接 semaphore |
 | 跨平台文件 I/O 差异 | PositionedFile trait + 平台 CI + 崩溃测试 |
 | UI 被高频事件拖慢 | 10 Hz 合并 + 行 diff + 详情模型稳定 |
-| 签名/分发限制 | macOS 未公证/Windows 未签名在 release notes 明示 |
+| 签名/分发限制 | 签名/公证流水线 + 证书/Apple 账号；未配置时明确提示 |
 
 ## 21. Host/Plugin API 草图
 

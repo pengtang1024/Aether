@@ -50,11 +50,11 @@
 | HLS 直播 | media | Optional | 滚动 playlist、窗口计算 |
 | DASH 点播/直播 | media | Optional | MPD、SegmentTemplate/List/Base |
 | YouTube/Bilibili 等站点 | extractor | External | yt-dlp；站点覆盖取决于 yt-dlp，不保证 |
-| Google Drive/OneDrive/Dropbox 等 | — | Not planned | OAuth/专有 API；如需要另做插件 |
-| 百度网盘/阿里云盘等 | — | Not planned | 私有 API/登录/风控；不做绕过 |
-| 浏览器正在下载的文件 | — | Not planned（当前） | 需要扩展/原生消息；P5+ |
-| RSS/自动追番 | — | Not planned（当前） | 可作为后续 Host 功能 |
-| 剪贴板监听 | — | Not planned（当前） | 平台集成层 |
+| Google Drive / OneDrive / Dropbox | gdrive / onedrive | Optional | P6（最后） | OAuth2 + 官方 API；需要开发者应用审批 |
+| 百度网盘 / 阿里云盘等 | baidupan / aliyunpan | Optional | P6（最后） | 官方/私有 API 取决于开放程度；不做绕过风控 |
+| 浏览器正在下载的文件 | browser-extension | Optional | P5 | 扩展 + Native Messaging；用户显式授权 |
+| RSS / 自动追番 | Host 功能 | Optional | P5 | 后续 Host 功能，不是协议插件 |
+| 剪贴板监听 | Host 功能 | Optional | P5 | 平台集成层，默认关闭 |
 | 批量 URL 导入 | Host 功能 | 未实现 | 不属于协议插件 |
 
 ## 4. 网络、鉴权与调度
@@ -63,17 +63,18 @@
 | --- | --- | --- |
 | 全局/单任务/单 host 限速 | 设计完成 | Host 发放预算，插件执行 |
 | 优先级/队列/暂停/恢复 | 设计完成 | Host 权威状态 |
-| 代理 HTTP CONNECT / SOCKS5 | 设计完成 | 全局/任务级；PAC 不做 |
+| 代理 HTTP CONNECT / SOCKS5 | 设计完成 | 全局/任务级；PAC 见下一行 |
+| PAC / 自动代理（URL、文件、WPAD） | 设计完成 | P2；Host 内置 JS 沙箱求值、缓存、刷新、系统 PAC |
 | Basic/Bearer/自定义 Header | 设计完成 | 插件设置 |
 | Cookie 手动导入 | 设计完成 | 不自动读取浏览器 Cookie |
 | Digest/NTLM/Kerberos | 未纳入 | 如有需求作为插件/SDK 扩展 |
-| OAuth2 刷新 | 未纳入 | 云盘插件才需要 |
+| OAuth2 刷新 | 计划 | P6 云盘插件；PKCE/设备码；token 存 keyring |
 | 客户端证书/mTLS | 未纳入 | 可后续加 |
 | DNS/DoH/自定义 CA | 部分设计 | 系统 DNS 默认；DoH 可选 |
 | 自定义 UA/Referer | 设计完成 | 插件设置 |
 | IPv6/Happy Eyeballs | 设计完成 | 连接层 |
 | UPnP/NAT-PMP | 设计完成（BT） | 失败不阻塞 |
-| 浏览器 Cookie 自动导入 | 未纳入 | 安全/隐私复杂 |
+| 浏览器 Cookie/请求头导入 | 计划 | P5；仅用户显式授权，不采集密码/支付信息 |
 | Cloudflare/验证码/反爬 | Not planned | 不做绕过 |
 | DRM（Widevine/PlayReady/FairPlay） | Not planned | 明确不做 |
 
@@ -91,7 +92,11 @@
 | Linux 32-bit / Windows 32-bit | 不做 |
 | Flatpak | 未做；当前 `.deb`/AppImage |
 | 自动更新 | 未做；插件更新设计已包含 |
-| 代码签名/公证 | Windows 未签名；macOS 未公证 |
+| Windows 代码签名 | 计划；pipeline 就绪后需 Authenticode 证书/HSM |
+| macOS 公证 | 计划；需 Apple Developer + notarytool |
+| PAC 自动代理 | P2 Host 网络层 |
+| 浏览器集成 | P5 扩展 + Native Messaging |
+| 网盘插件 | P6 最后（Google Drive/OneDrive/百度/阿里） |
 
 ## 6. 存储与文件系统
 
@@ -107,13 +112,35 @@
 | Windows 长路径/保留名/大小写 | 设计完成（路径守卫） |
 | S3 multipart / WebDAV 属性 | 插件级；不是 Host 核心 |
 
+## 6.5 计划内，但需要外部条件
+
+| 能力 | 外部条件 | 计划 |
+| --- | --- | --- |
+| Windows 代码签名 | Authenticode 证书（OV/EV）或 Azure Trusted Signing；CI secrets | P1.5（HTTP 插件完成后即可接入） |
+| macOS 公证 | Apple Developer Program、Developer ID 证书、App Store Connect 凭据 | P1.5 |
+| 浏览器集成 | Chrome/Edge/Firefox 扩展商店账号；本地扩展可先侧载 | P5 |
+| Google Drive / OneDrive | OAuth 应用注册/审核、API 配额 | P6（最后） |
+| 百度网盘 / 阿里云盘 | 开放平台/API 权限；遵守 ToS | P6（最后） |
+| PAC / 自动代理 | 无外部条件 | P2 |
+
 ## 7. 明确不做
 
 - 绕过 DRM、付费墙、登录、验证码、反爬。
 - 私有客户端的专有加速/离线下载协议（如迅雷私有通道）。
-- 抓取/导入浏览器 Cookie、密码、支付信息。
+- 未经用户明确同意抓取/导入浏览器 Cookie、密码或支付信息。
 - 自动执行下载内容。
 - 保证所有站点/所有 CDN/所有服务器的兼容性。
+- 使用私有加速通道或绕过云盘风控/登录限制。
+
+## 7.5 交付顺序
+
+1. Host/Plugin 骨架 + HTTP 插件（P0/P1）
+2. Windows 签名 + macOS 公证流水线（P1.5，凭据到位即可）
+3. PAC/调度/限速（P2）
+4. BitTorrent（P3）
+5. FTP/HLS/DASH/Metalink（P4）
+6. 浏览器集成 + 可选插件（P5）
+7. 网盘插件（P6，最后）
 
 ## 8. 如何判断“支持”
 

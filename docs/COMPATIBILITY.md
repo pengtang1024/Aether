@@ -22,6 +22,8 @@ publish packages.
 
 - **Native rendering.** Slint uses the winit backend with the femtovg/OpenGL
   renderer and a software fallback. There is no WebView, Chromium or Electron.
+- **Proxy.** HTTP CONNECT/SOCKS5 and manual proxy are supported by design;
+  PAC/WPAD auto-proxy is planned for P2 (Host-side resolver).
 - **Display servers.** Linux builds support Wayland and X11. The packages
   depend on the usual `libwayland`, `libxkbcommon`, `libx11` and `libgl1`/
   `libegl1` libraries; desktops normally provide them.
@@ -40,9 +42,11 @@ publish packages.
 
 ## Packaging caveats
 
-- macOS builds are **ad-hoc signed but not notarized**. Gatekeeper may require
-  right-click → Open, or clearing the quarantine attribute.
-- Windows installers are **not code-signed**; SmartScreen may show a warning.
+- macOS builds are currently **ad-hoc signed and not notarized**. Developer ID
+  signing + notarization is planned (P1.5) and requires an Apple Developer
+  account; see [SIGNING.md](SIGNING.md).
+- Windows installers are currently **not code-signed**; Authenticode signing is
+  planned (P1.5) and requires a code-signing certificate/HSM.
 - Linux `.deb` requires glibc 2.35+ (built on Ubuntu 22.04). The AppImage has
   the same glibc baseline. Older distros need a Flatpak or a rebuild on an older
   base image; Flatpak is not part of the current matrix.

@@ -19,5 +19,12 @@
 6. Publish the draft release. Do not move or reuse a tag; create a new version
    for subsequent code changes.
 
-macOS packages are ad-hoc signed but not notarized; Windows packages are
-unsigned. Mention this in release notes when relevant.
+## Signing and notarization
+
+- Windows: Authenticode-sign `aether.exe` before zipping and sign the Inno
+  `setup.exe`; macOS: Developer ID-sign the app/DMG and notarize with
+  `notarytool`, then staple.
+- If the signing secrets are configured, signing must succeed before publishing.
+- If they are not configured, keep the unsigned/adhoc artifacts but state this
+  explicitly in the release notes.
+- Certificate/secret names and commands: [SIGNING.md](SIGNING.md).

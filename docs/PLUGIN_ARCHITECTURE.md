@@ -275,6 +275,15 @@ Host 的“插件”页面（后续 UI）展示：
 
 禁用插件后，对应 URL 的“新建下载”会提示安装/启用插件，而不是显示一个假进度条。
 
+## 13.5 Host 级集成（不是下载插件）
+
+- **PAC/自动代理**：Host 网络层统一求值（JS 沙箱、缓存、系统 PAC），插件通过
+  `TaskContext.proxy_chain` 接收最终代理链。见 DOWNLOAD_ENGINE.md 11.1。
+- **浏览器集成**：扩展 + Native Messaging + 本地 IPC，Host 接管下载/右键发送；
+  见 [BROWSER_INTEGRATION.md](BROWSER_INTEGRATION.md)。P5。
+- **签名/公证**：Windows Authenticode、macOS Developer ID + notarytool；
+  见 [SIGNING.md](SIGNING.md)。P1.5。
+
 ## 14. 打包与分发
 
 - Host 包内置默认插件集；安装包必须包含插件二进制和清单。
@@ -314,11 +323,13 @@ Host 的“插件”页面（后续 UI）展示：
 | --- | --- | --- |
 | P0 | Host/PluginSupervisor/SDK/IPC/fake 插件 | UI 通过 fake 插件走完添加→进度→完成 |
 | P1 | HTTP 插件（单流+分段+续传+校验） | 1 GB 文件 8 连接；kill 后恢复 |
-| P2 | 调度/限速/代理 + 插件管理页 | 多任务公平；插件启停/设置生效 |
+| P1.5 | Windows 签名 / macOS 公证（凭据到位时） | Gatekeeper/SmartScreen 通过 |
+| P2 | PAC/调度/限速 + 插件管理页 | PAC/预算/插件启停生效 |
 | P3 | BitTorrent 插件 | magnet/多文件/DHT/做种；进程崩溃不影响 Host |
 | P4 | FTP/FTPS、HLS/DASH、Metalink 插件 | 各协议完成/续传/校验 |
-| P5 | 可选插件：SFTP/WebDAV/S3、yt-dlp、ED2K、thunder、IPFS、RTMP | 独立安装/更新/回滚 |
-| P6 | 沙箱、签名、自动更新、长稳 | 安全审计 + soak |
+| P5 | 浏览器集成 + 可选插件：SFTP/WebDAV/S3、yt-dlp、ED2K、thunder、IPFS、RTMP | 扩展接管/独立安装/回滚 |
+| P6 | 网盘插件：Google Drive/OneDrive/百度/阿里（最后） | OAuth/刷新/共享链接 |
+| P7 | 沙箱、自动更新、长稳、模糊测试 | 安全审计 + soak |
 
 ## 18. 插件矩阵
 
@@ -334,6 +345,7 @@ Host 的“插件”页面（后续 UI）展示：
 | `extractor` | 可选 | P5 | yt-dlp 等外部提取器 |
 | `sftp` / `webdav` / `s3` | 可选 | P5 | 云盘/远程文件 |
 | `ed2k` / `thunder` / `ipfs` / `rtmp` | 否 | P5+ | 独立签名插件，默认不装 |
+| `gdrive` / `onedrive` / `dropbox` / `baidupan` / `aliyunpan` | 否 | P6（最后） | OAuth/官方 API；见 CLOUD_PLUGINS.md |
 
 默认安装只保证 HTTP 可用；BT/媒体等即使随包携带也不启动，用户首次使用或启用时
 才加载。所有插件均为第一方开发、签名、版本化，不是第三方市场。
