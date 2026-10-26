@@ -21,6 +21,9 @@
 # 2. 浏览器加载 browser-extension/，复制扩展 ID
 aether-install-native-messaging <extension-id> /usr/bin/aether-native-host
 # 3. 扩展选项页点击“Test native host”
+# 4. 如协议关联未生效，刷新桌面数据库/设置默认处理器
+update-desktop-database ~/.local/share/applications 2>/dev/null || true
+xdg-mime default aether-url-handler.desktop x-scheme-handler/magnet
 ```
 
 限制：扩展尚未上架商店；native manifest 需要扩展 ID；Windows named pipe 未实现；

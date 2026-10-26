@@ -54,6 +54,7 @@ deb: release plugins
 	install -d "$(STAGE)/usr/lib/aether/plugins"
 	cp -a build/plugins/. "$(STAGE)/usr/lib/aether/plugins/"
 	mkdir -p "$(STAGE)/DEBIAN" "$(DIST)"
+	install -Dm755 packaging/debian/postinst "$(STAGE)/DEBIAN/postinst"
 	sed -e "s/@VERSION@/$(VERSION)/" \
 	    -e "s/@ARCH@/$(ARCH)/" \
 	    -e "s/@LIBC@/$(GLIBC)/" \
