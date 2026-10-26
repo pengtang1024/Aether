@@ -1,0 +1,33 @@
+{
+  "id": "media",
+  "name": "HLS / DASH Media Downloader",
+  "version": "0.1.0",
+  "api": 1,
+  "min_host": "0.2.0",
+  "protocols": ["hls", "dash"],
+  "capabilities": ["network", "filesystem:task"],
+  "executable": {
+    "linux-x86_64": "bin/aether-plugin-media-linux-x86_64",
+    "linux-aarch64": "bin/aether-plugin-media-linux-aarch64",
+    "windows-x86_64": "bin/aether-plugin-media-windows-x86_64.exe",
+    "windows-arm64": "bin/aether-plugin-media-windows-arm64.exe",
+    "macos-universal": "bin/aether-plugin-media-macos-universal"
+  },
+  "settings_schema": {
+    "sections": [
+      {
+        "title": "媒体",
+        "fields": [
+          { "key": "prefer_highest_bandwidth", "type": "bool", "default": true }
+        ]
+      }
+    ]
+  },
+  "detail_schema": {
+    "sections": [
+      { "type": "metrics", "items": ["size"] },
+      { "type": "chunks", "legend": ["done", "pending"] },
+      { "type": "logs", "max_lines": 200 }
+    ]
+  }
+}
