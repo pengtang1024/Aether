@@ -23,6 +23,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.92.0
+        with:
+          components: rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
           key: ci-ubuntu-22.04
