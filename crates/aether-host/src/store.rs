@@ -60,7 +60,7 @@ pub struct NewTask {
     pub state: TaskState,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoredTask {
     pub id: String,
     pub url: String,
@@ -81,7 +81,7 @@ pub struct StoredTask {
     pub files: Vec<StoredFile>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoredFile {
     pub relative_path: String,
     pub size: u64,

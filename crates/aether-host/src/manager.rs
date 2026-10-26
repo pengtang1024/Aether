@@ -6,8 +6,11 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use aether_plugin_sdk::{
-    Budget, Init, LogLevel, PluginEvent, PluginProcess, ProbeResult, TaskPaths, TaskSpec,
+    Budget, Init, LogLevel, PluginEvent, PluginKind, PluginProcess, ProbeResult, TaskPaths,
+    TaskSpec,
 };
+
+use crate::abi::AbiPlugin;
 
 use crate::error::HostError;
 use crate::registry::PluginRegistry;
@@ -16,7 +19,7 @@ pub struct PluginManager {
     registry: PluginRegistry,
     data_dir: PathBuf,
     host_version: String,
-    processes: HashMap<String, PluginProcess>,
+    processes: HashMap<String, RunningPlugin>,
 }
 
 #[derive(Debug, Clone)]
@@ -126,8 +129,8 @@ impl PluginManager {
                             event,
                         }))
                     }
-                    Err(aether_plugin_sdk::SdkError::Timeout(_)) => {}
-                    Err(error) => return Err(HostError::Sdk(error)),
+                    Err(HostError::Sdk(aether_plugin_sdk::SdkError::Timeout(_))) => {}
+                    Err(error) => return Err(error),
                 }
             }
             if Instant::now() >= deadline {
@@ -149,7 +152,7 @@ impl PluginManager {
         }
     }
 
-    fn ensure_process(&mut self, plugin_id: &str) -> Result<&mut PluginProcess, HostError> {
+    fn ensure_process(&mut self, plugin_id: &str) -> Result<&mut RunningPlugin, HostError> {
         if !self.processes.contains_key(plugin_id) {
             let entry = self
                 .registry
@@ -166,10 +169,68 @@ impl PluginManager {
                 proxy: None,
                 limits: Default::default(),
             };
-            let process = PluginProcess::spawn(entry.manifest.clone(), &executable, init)?;
-            self.processes.insert(plugin_id.to_string(), process);
+            let running = match entry.manifest.kind {
+                PluginKind::Process => RunningPlugin::Process(PluginProcess::spawn(
+                    entry.manifest.clone(),
+                    &executable,
+                    init,
+                )?),
+                PluginKind::Cdylib => {
+                    let mut plugin = AbiPlugin::load(&executable)?;
+                    plugin.handshake(init)?;
+                    RunningPlugin::Abi(plugin)
+                }
+            };
+            self.processes.insert(plugin_id.to_string(), running);
         }
         Ok(self.processes.get_mut(plugin_id).expect("inserted above"))
+    }
+}
+
+enum RunningPlugin {
+    Process(PluginProcess),
+    Abi(AbiPlugin),
+}
+
+impl RunningPlugin {
+    fn send(&mut self, command: &aether_plugin_sdk::HostCommand) -> Result<(), HostError> {
+        match self {
+            Self::Process(process) => Ok(process.send(command)?),
+            Self::Abi(plugin) => plugin.send(command),
+        }
+    }
+
+    fn recv_event(&mut self, timeout: Duration) -> Result<PluginEvent, HostError> {
+        match self {
+            Self::Process(process) => Ok(process.recv_event(timeout)?),
+            Self::Abi(plugin) => plugin.recv_event(timeout),
+        }
+    }
+
+    fn probe(&mut self, input: &str) -> Result<ProbeResult, HostError> {
+        match self {
+            Self::Process(process) => Ok(process.probe(input)?),
+            Self::Abi(plugin) => plugin.probe(input),
+        }
+    }
+
+    fn start_task(
+        &mut self,
+        task: TaskSpec,
+        paths: TaskPaths,
+        budget: Budget,
+    ) -> Result<u64, HostError> {
+        match self {
+            Self::Process(process) => Ok(process.start_task(task, paths, budget)?),
+            Self::Abi(plugin) => plugin.start_task(task, paths, budget),
+        }
+    }
+
+    fn shutdown(self) -> Result<(), HostError> {
+        match self {
+            Self::Process(process) => Ok(process.shutdown()?),
+            Self::Abi(plugin) => plugin.shutdown(),
+        }
     }
 }
 

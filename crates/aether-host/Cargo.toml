@@ -8,7 +8,9 @@ license = "MIT"
 publish = false
 
 [dependencies]
+aether-plugin-abi = { path = "../aether-plugin-abi" }
 aether-plugin-sdk = { path = "../aether-plugin-sdk" }
+libloading = "0.8"
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

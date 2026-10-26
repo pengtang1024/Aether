@@ -20,7 +20,7 @@ pub mod task;
 
 pub use error::SdkError;
 pub use ipc::{read_frame, write_frame, MAX_FRAME_SIZE};
-pub use manifest::{current_platform_key, ManifestError, PluginManifest};
+pub use manifest::{current_platform_key, ManifestError, PluginKind, PluginManifest};
 pub use plugin::{run_stdio, Plugin, PluginContext, PluginSender};
 pub use protocol::*;
 pub use supervisor::PluginProcess;

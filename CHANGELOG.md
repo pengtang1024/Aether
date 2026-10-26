@@ -29,6 +29,11 @@ versioning; this is a UI mockup, so 0.x versions may change visual structure.
 - SQLite task store (`tasks`, `task_files`, `plugin_settings`, `task_logs`)
   with schema v1 migration, recovery query, `aether-cli tasks` and
   `aether-cli resume`.
+- Optional cdylib plugin ABI (`kind: "cdylib"`, C ABI, `libloading` host
+  loader, example cdylib) while process plugins remain the default.
+- `aether-daemon`: single-instance Unix-socket daemon with SQLite + plugin
+  runtime, `add/list/get/pause/resume/cancel/probe/shutdown`, systemd user
+  unit and Linux packaging.
 - Linux packages now stage and install all plugin packages under
   `/usr/lib/aether/plugins`, and ship `aether-cli` for headless tasks/resume.
 

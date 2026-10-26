@@ -1,0 +1,11 @@
+[package]
+name = "aether-plugin-abi"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.92"
+description = "Optional C ABI for in-process Aether cdylib plugins"
+license = "MIT"
+publish = false
+
+[dependencies]
+aether-plugin-sdk = { path = "../aether-plugin-sdk" }

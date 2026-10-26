@@ -9,6 +9,16 @@ use thiserror::Error;
 
 use crate::protocol::{Capability, API_VERSION};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PluginKind {
+    /// Separate process over stdio + MessagePack (default, recommended).
+    #[default]
+    Process,
+    /// In-process `cdylib` loaded through the Aether ABI.
+    Cdylib,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginManifest {
     /// Lowercase, globally unique plugin id (for example `http` or `fake`).
@@ -17,6 +27,8 @@ pub struct PluginManifest {
     pub version: String,
     /// IPC/API major version. Must match the Host's [`API_VERSION`].
     pub api: u16,
+    #[serde(default)]
+    pub kind: PluginKind,
     #[serde(default)]
     pub min_host: Option<String>,
     #[serde(default)]

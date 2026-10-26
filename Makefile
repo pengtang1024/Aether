@@ -30,6 +30,9 @@ deb: release plugins
 	rm -rf "$(STAGE)"
 	install -Dm755 target/release/aether "$(STAGE)/usr/bin/aether"
 	install -Dm755 target/release/aether-cli "$(STAGE)/usr/bin/aether-cli"
+	install -Dm755 target/release/aether-daemon "$(STAGE)/usr/bin/aether-daemon"
+	install -Dm644 packaging/aether-daemon.service \
+		"$(STAGE)/usr/lib/systemd/user/aether-daemon.service"
 	install -Dm644 packaging/aether.desktop "$(STAGE)/usr/share/applications/aether.desktop"
 	install -Dm644 packaging/aether.metainfo.xml "$(STAGE)/usr/share/metainfo/io.github.pengtang1024.Aether.metainfo.xml"
 	for size in 32 48 64 128 256 512; do \

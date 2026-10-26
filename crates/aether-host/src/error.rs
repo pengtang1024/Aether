@@ -17,6 +17,9 @@ pub enum HostError {
     #[error("protocol error: {0}")]
     Protocol(String),
 
+    #[error("ABI plugin error: {0}")]
+    Abi(String),
+
     #[error("plugin not found: {0}")]
     PluginNotFound(String),
 

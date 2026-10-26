@@ -22,6 +22,9 @@ Host 只认识 `PluginId`、任务模型、预算和事件；新增协议 = 新�
 
 ## 2. 进程模型
 
+> 默认仍是独立进程；另提供 `kind: "cdylib"` 的可选同进程模式，见
+> [PLUGIN_ABI.md](PLUGIN_ABI.md)。cdylib 崩溃会影响 Host，不作为默认。
+
 ```
 ┌──────────────────────── Host 进程 ─────────────────────────┐
 │ Slint UI ← EngineEvent ← EventBus                          │
@@ -161,6 +164,8 @@ Plugin → Host：
 | --- | --- |
 | `aether-plugin-sdk` | `PluginManifest`、MessagePack 帧、`HostCommand`/`PluginEvent`、`Plugin` + `run_stdio`、Host 侧 `PluginProcess` |
 | `aether-plugin-fake` | 走真实握手/进度/完成的 fake 插件，用于契约测试和后续 UI 接线 |
+| `aether-plugin-abi` | 可选 cdylib C ABI + Rust 导出宏 |
+| `aether-plugin-cdylib-fake` | cdylib ABI 测试插件 |
 
 - 协议版本 `API_VERSION = 1`；帧上限 8 MiB；长度前缀为 `u32` big-endian。
 - 握手：插件 `Hello` → Host `Init` → 插件 `Ready`；id/version/api 不匹配直接拒绝。
@@ -383,7 +388,9 @@ Host 的“插件”页面（后续 UI）展示：
 - `crates/aether-plugin-ipfs`：IPFS/IPNS gateway + HTTP。
 - `crates/aether-plugin-rtmp`：ffmpeg RTMP/RTSP 捕获。
 - `crates/aether-plugin-cloud`：Google Drive / OneDrive / Dropbox 公开分享链接。
-- `crates/aether-host` + `crates/aether-cli`：插件发现、按需启动、Probe 路由、事件分发、最终落盘；CLI 已用真实 HTTP 插件跑通 256 KiB 下载。
+- `crates/aether-host` + `crates/aether-cli`：插件发现、按需启动、Probe 路由、事件分发、最终落盘、SQLite 任务库；CLI 已用真实 HTTP 插件跑通下载/续传。
+- `crates/aether-daemon`：常驻 Unix socket 服务，持有 PluginManager + SQLite，供浏览器/CLI/UI 接管下载。
+- `crates/aether-plugin-abi`：可选 cdylib 加载路径；Host 根据 manifest `kind` 选择进程或动态库。
 - 16 个真实插件均未接 Slint UI；剩余：ED2K，以及 UI 接线/调度/PAC。
 
 ## 20. 结论

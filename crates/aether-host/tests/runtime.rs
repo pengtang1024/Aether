@@ -127,3 +127,89 @@ fn disabled_plugins_are_not_probed() {
     manager.shutdown();
     fs::remove_dir_all(root).ok();
 }
+
+#[test]
+fn loads_a_cdylib_plugin() {
+    let prefix = std::env::consts::DLL_PREFIX;
+    let suffix = std::env::consts::DLL_SUFFIX;
+    let exe = std::env::current_exe().unwrap();
+    let debug_dir = exe.parent().unwrap().parent().unwrap();
+    let library = debug_dir.join(format!("{prefix}aether_plugin_cdylib_fake{suffix}"));
+    if !library.is_file() {
+        eprintln!("cdylib fake is not built; skipping");
+        return;
+    }
+
+    let root = temp_dir("abi");
+    let package = root.join("plugins").join("abi-fake");
+    fs::create_dir_all(package.join("bin")).unwrap();
+    let name = format!("{prefix}aether_plugin_cdylib_fake{suffix}");
+    fs::copy(&library, package.join("bin").join(&name)).unwrap();
+    let manifest = serde_json::json!({
+        "id": "abi-fake",
+        "name": "ABI fake",
+        "version": "0.1.0",
+        "api": aether_plugin_sdk::API_VERSION,
+        "kind": "cdylib",
+        "protocols": ["http"],
+        "capabilities": ["network", "filesystem:task"],
+        "executable": { current_platform_key(): format!("bin/{name}") }
+    });
+    fs::write(
+        package.join("plugin.json"),
+        serde_json::to_vec(&manifest).unwrap(),
+    )
+    .unwrap();
+
+    let registry = PluginRegistry::discover(&[root.join("plugins")]).unwrap();
+    let mut manager = PluginManager::new(registry, root.join("data"), "0.2.0");
+    let probe = manager
+        .probe("https://example.com/file.bin")
+        .into_iter()
+        .find_map(|outcome| outcome.result)
+        .expect("ABI probe");
+    assert!(probe.supported);
+
+    let staging = root.join("task").join("staging");
+    let final_dir = root.join("task").join("final");
+    fs::create_dir_all(&staging).unwrap();
+    manager
+        .start(
+            "abi-fake",
+            TaskSpec {
+                task_id: "abi-task".into(),
+                url: "https://example.com/file.bin".into(),
+                filename: None,
+                settings: serde_json::json!({}),
+                plugin_state: None,
+                expected_size: Some(2048),
+                checksum: None,
+            },
+            TaskPaths {
+                staging: staging.clone(),
+                final_dir: final_dir.clone(),
+            },
+            Budget::default(),
+        )
+        .unwrap();
+
+    let mut files = None;
+    for _ in 0..100 {
+        let Some(envelope) = manager.recv_event(Duration::from_secs(1)).unwrap() else {
+            continue;
+        };
+        if let PluginEvent::Completed {
+            files: completed, ..
+        } = envelope.event
+        {
+            files = Some(completed);
+            break;
+        }
+    }
+    let files = files.expect("ABI completion");
+    let moved = finalize_task(&staging, &final_dir, &files).unwrap();
+    assert_eq!(fs::read(&moved[0]).unwrap().len(), 2048);
+
+    manager.shutdown();
+    fs::remove_dir_all(root).ok();
+}
