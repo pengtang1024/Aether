@@ -3,6 +3,7 @@ members = [
     "crates/aether-plugin-sdk",
     "crates/aether-plugin-fake",
     "crates/aether-plugin-http",
+    "crates/aether-plugin-ftp",
 ]
 default-members = ["."]
 resolver = "2"

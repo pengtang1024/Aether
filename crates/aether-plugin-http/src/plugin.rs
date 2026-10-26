@@ -1,7 +1,7 @@
 //! The HTTP plugin state machine.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::thread;
 
 use aether_plugin_sdk::{
@@ -10,7 +10,9 @@ use aether_plugin_sdk::{
 };
 
 use crate::client;
-use crate::download::{self, ProgressSnapshot, SharedProgress, TaskControl};
+use aether_plugin_sdk::task::{shared_progress, SharedProgress, TaskControl};
+
+use crate::download;
 
 const PLUGIN_ID: &str = "http";
 const PLUGIN_VERSION: &str = "0.1.0";
@@ -53,7 +55,7 @@ impl HttpPlugin {
         let task_id = task.task_id.clone();
         let sender = ctx.sender();
         let control = Arc::new(TaskControl::new());
-        let progress: SharedProgress = Arc::new(Mutex::new(ProgressSnapshot::default()));
+        let progress: SharedProgress = shared_progress();
 
         let thread_control = control.clone();
         let thread_progress = progress.clone();

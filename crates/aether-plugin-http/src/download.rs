@@ -2,20 +2,20 @@
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read};
-use std::path::Path;
-use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use aether_plugin_sdk::fsutil::write_all_at;
+use aether_plugin_sdk::task::{SharedProgress, TaskControl};
 use aether_plugin_sdk::{
     Budget, Checksum, ChecksumAlgorithm, ErrorKind, FileInfo, Metadata, PluginError, PluginEvent,
     PluginSender, TaskPaths, TaskSpec,
 };
 use reqwest::blocking::Client;
 use reqwest::header::{ACCEPT_ENCODING, RANGE};
-use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::client;
@@ -25,77 +25,6 @@ const PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
 const STATE_INTERVAL: Duration = Duration::from_secs(1);
 const MAX_RETRIES: u32 = 3;
 const CHUNK: usize = 64 * 1024;
-
-const RUNNING: u8 = 0;
-const PAUSED: u8 = 1;
-const CANCELED: u8 = 2;
-
-/// Shared pause/resume/cancel flag.
-pub struct TaskControl {
-    mode: AtomicU8,
-}
-
-impl TaskControl {
-    pub fn new() -> Self {
-        Self {
-            mode: AtomicU8::new(RUNNING),
-        }
-    }
-
-    pub fn pause(&self) {
-        let _ = self
-            .mode
-            .compare_exchange(RUNNING, PAUSED, Ordering::SeqCst, Ordering::SeqCst);
-    }
-
-    pub fn resume(&self) {
-        let _ = self
-            .mode
-            .compare_exchange(PAUSED, RUNNING, Ordering::SeqCst, Ordering::SeqCst);
-    }
-
-    pub fn cancel(&self) {
-        self.mode.store(CANCELED, Ordering::SeqCst);
-    }
-
-    pub fn is_canceled(&self) -> bool {
-        self.mode.load(Ordering::SeqCst) == CANCELED
-    }
-
-    pub fn is_paused(&self) -> bool {
-        self.mode.load(Ordering::SeqCst) == PAUSED
-    }
-
-    /// Returns false if the task was canceled while paused.
-    fn wait_until_running(&self) -> bool {
-        loop {
-            match self.mode.load(Ordering::SeqCst) {
-                RUNNING => return true,
-                PAUSED => thread::sleep(Duration::from_millis(50)),
-                _ => return false,
-            }
-        }
-    }
-}
-
-impl Default for TaskControl {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct ProgressSnapshot {
-    pub downloaded: u64,
-    pub total: Option<u64>,
-    pub speed_bps: u64,
-    pub connections: u32,
-    pub chunks_done: u32,
-    pub chunks_total: u32,
-    pub seq: u64,
-}
-
-pub type SharedProgress = Arc<Mutex<ProgressSnapshot>>;
 
 /// Run one task. Intended to be called from a plugin worker thread.
 pub fn run(
@@ -155,7 +84,7 @@ fn run_inner(
     let filename = task
         .filename
         .as_deref()
-        .and_then(client::sanitize_filename)
+        .and_then(aether_plugin_sdk::fsutil::sanitize_filename)
         .or_else(|| info.filename.clone())
         .or_else(|| client::filename_from_url(&reqwest::Url::parse(&task.url).ok()?))
         .unwrap_or_else(|| "download.bin".into());
@@ -370,7 +299,7 @@ fn run_inner(
     }
 
     file.sync_all()?;
-    let checksum = sha256_file(&file_path)?;
+    let checksum = aether_plugin_sdk::checksum::sha256_file(&file_path)?;
     if let Some(expected) = &task.checksum {
         if expected.algorithm != ChecksumAlgorithm::Sha256 {
             return Err(DownloadError::Protocol(
@@ -589,54 +518,6 @@ fn eta(downloaded: u64, total: Option<u64>, speed: u64) -> Option<u64> {
         return None;
     }
     Some(total.saturating_sub(downloaded) / speed)
-}
-
-fn sha256_file(path: &Path) -> Result<String, DownloadError> {
-    let mut file = File::open(path)?;
-    let mut digest = Sha256::new();
-    let mut buffer = vec![0_u8; CHUNK];
-    loop {
-        let read = file.read(&mut buffer)?;
-        if read == 0 {
-            break;
-        }
-        digest.update(&buffer[..read]);
-    }
-    Ok(format!("{:x}", digest.finalize()))
-}
-
-#[cfg(unix)]
-fn write_all_at(file: &File, mut buffer: &[u8], mut offset: u64) -> io::Result<()> {
-    use std::os::unix::fs::FileExt;
-    while !buffer.is_empty() {
-        let written = file.write_at(buffer, offset)?;
-        if written == 0 {
-            return Err(io::Error::new(
-                io::ErrorKind::WriteZero,
-                "failed to write file chunk",
-            ));
-        }
-        buffer = &buffer[written..];
-        offset += written as u64;
-    }
-    Ok(())
-}
-
-#[cfg(windows)]
-fn write_all_at(file: &File, mut buffer: &[u8], mut offset: u64) -> io::Result<()> {
-    use std::os::windows::fs::FileExt;
-    while !buffer.is_empty() {
-        let written = file.seek_write(buffer, offset)?;
-        if written == 0 {
-            return Err(io::Error::new(
-                io::ErrorKind::WriteZero,
-                "failed to write file chunk",
-            ));
-        }
-        buffer = &buffer[written..];
-        offset += written as u64;
-    }
-    Ok(())
 }
 
 #[derive(Debug, Error)]

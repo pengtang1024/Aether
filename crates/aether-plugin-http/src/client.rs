@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+use aether_plugin_sdk::fsutil::sanitize_filename;
 use aether_plugin_sdk::{Init, ProxyMode};
 use percent_encoding::percent_decode_str;
 use reqwest::blocking::{Client, Response};
@@ -201,57 +202,9 @@ pub fn filename_from_disposition(value: &str) -> Option<String> {
     None
 }
 
-pub fn sanitize_filename(name: &str) -> Option<String> {
-    let name = name.rsplit(['/', '\\']).next()?.trim();
-    if name.is_empty() || name == "." || name == ".." {
-        return None;
-    }
-
-    let mut filtered: String = name
-        .chars()
-        .map(|ch| {
-            if ch.is_control() || matches!(ch, '<' | '>' | ':' | '"' | '|' | '?' | '*') {
-                '_'
-            } else {
-                ch
-            }
-        })
-        .collect();
-
-    if filtered.len() > 200 {
-        filtered.truncate(200);
-        while !filtered.is_char_boundary(filtered.len()) {
-            filtered.pop();
-        }
-    }
-
-    let stem = filtered
-        .split('.')
-        .next()
-        .unwrap_or_default()
-        .to_ascii_uppercase();
-    if matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
-        || (stem.len() == 4
-            && (stem.starts_with("COM") || stem.starts_with("LPT"))
-            && stem.as_bytes()[3].is_ascii_digit())
-    {
-        filtered.insert(0, '_');
-    }
-
-    Some(filtered)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn sanitizes_paths_and_reserved_names() {
-        assert_eq!(sanitize_filename("a/b.txt").as_deref(), Some("b.txt"));
-        assert_eq!(sanitize_filename("..").as_deref(), None);
-        assert_eq!(sanitize_filename("CON").as_deref(), Some("_CON"));
-        assert_eq!(sanitize_filename("a?b.txt").as_deref(), Some("a_b.txt"));
-    }
 
     #[test]
     fn parses_content_disposition() {
