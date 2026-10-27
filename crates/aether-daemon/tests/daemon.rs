@@ -2,7 +2,7 @@
 //! Daemon + fake plugin end-to-end tests.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -624,6 +624,63 @@ fn daemon_uses_the_proxy_from_the_environment() {
     // The environment override is per run: it must not rewrite the user's
     // persisted settings behind their back.
     assert!(!daemon.root.join("downloads/.aether/settings.json").exists());
+
+    client.shutdown().unwrap();
+    daemon.shutdown();
+}
+
+#[test]
+fn daemon_honors_the_destination_directory() {
+    let Some(daemon) = spawn_daemon("target-dir", 1, None) else {
+        eprintln!("fake plugin binary is not built; skipping");
+        return;
+    };
+    let root = daemon.root.clone();
+    let socket = daemon.socket.clone();
+
+    let mut client = connect(&socket);
+
+    // Absolute "save as": the file must not land in the default directory.
+    let target = root.join("elsewhere/nested");
+    let added = client
+        .add("https://example.com/fake.bin", Some(&target), None)
+        .unwrap();
+    assert_eq!(added["dir"], target.to_string_lossy().as_ref());
+    let task_id = added["task_id"].as_str().unwrap().to_string();
+    assert_reaches(&mut client, &task_id, "completed", 300);
+    assert!(
+        target.join("fake.bin").exists(),
+        "not saved to the target dir"
+    );
+    assert!(!root.join("downloads/fake.bin").exists());
+
+    // Relative paths are resolved inside the download root.
+    let added = client
+        .add(
+            "https://example.com/fake.bin",
+            Some(Path::new("sub/inner")),
+            None,
+        )
+        .unwrap();
+    let relative_id = added["task_id"].as_str().unwrap().to_string();
+    assert_reaches(&mut client, &relative_id, "completed", 300);
+    assert!(root.join("downloads/sub/inner/fake.bin").exists());
+
+    // Escaping the download root is rejected.
+    assert!(client
+        .add(
+            "https://example.com/fake.bin",
+            Some(Path::new("../escape")),
+            None
+        )
+        .is_err());
+
+    // The record keeps the destination so a restart can resume into it.
+    let record = client.task_record(&task_id).unwrap();
+    assert_eq!(
+        record.target_dir,
+        Some(target.to_string_lossy().into_owned())
+    );
 
     client.shutdown().unwrap();
     daemon.shutdown();

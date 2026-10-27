@@ -69,7 +69,9 @@ let subscription = Client::connect(&socket)?.subscribe()?;
 ## 4. 操作
 
 ```rust
-client.add_task(url, None, None, json!({}))?; // -> AddResult { task_id, plugin_id }
+client.add_task(url, None, None, json!({}))?; // -> AddResult { task_id, plugin_id, queued, dir }
+// “另存为”：传目标目录（绝对路径，或相对下载根目录的路径）
+client.add_task(url, Some(Path::new("/home/me/Videos")), None, json!({}))?;
 client.pause(task_id)?;   // running/queued -> paused
 client.resume(task_id)?;  // paused -> 原地恢复或重新启动；failed/canceled -> 重新排队
                           // 并发已满时返回 state: "queued"，稍后自动提升

@@ -31,6 +31,7 @@ fn seed(dir: &PathBuf) {
             filename: Some("a.bin".into()),
             settings: json!({}),
             state: TaskState::Queued,
+            target_dir: None,
         })
         .unwrap();
     store.append_log("t1", "info", "first line", None).unwrap();

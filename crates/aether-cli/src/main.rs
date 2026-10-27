@@ -166,6 +166,13 @@ fn download(url: &str, output: &Path, plugins: &Path, forced: Option<&str>) -> R
         expected_size: probe.metadata.as_ref().and_then(|metadata| metadata.size),
         checksum: None,
     };
+    // Store the destination so `resume` knows where the task belongs even if
+    // the user later runs it with a different --dir.
+    let target_dir = final_dir
+        .canonicalize()
+        .map_err(|error| error.to_string())?
+        .to_string_lossy()
+        .into_owned();
     store
         .create_task(&NewTask {
             id: task_id.clone(),
@@ -174,6 +181,7 @@ fn download(url: &str, output: &Path, plugins: &Path, forced: Option<&str>) -> R
             filename: probe.suggested_filename.clone(),
             settings,
             state: TaskState::Queued,
+            target_dir: Some(target_dir),
         })
         .map_err(|error| error.to_string())?;
 
@@ -208,8 +216,13 @@ fn resume(task_id: &str, output: &Path, plugins: &Path) -> Result<(), String> {
     let mut manager = manager(plugins, &data_dir)?;
     let task_root = data_dir.join(task_id);
     let staging = task_root.join("staging");
-    let final_dir = output.to_path_buf();
+    let final_dir = stored
+        .target_dir
+        .as_deref()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| output.to_path_buf());
     fs::create_dir_all(&staging).map_err(|error| error.to_string())?;
+    fs::create_dir_all(&final_dir).map_err(|error| error.to_string())?;
 
     let task = TaskSpec {
         task_id: task_id.to_string(),

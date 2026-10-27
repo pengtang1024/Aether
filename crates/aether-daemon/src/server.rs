@@ -6,7 +6,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::Shutdown;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -701,13 +701,18 @@ fn add_task(state: &mut State, request: Request) -> Result<Value, DaemonError> {
             .as_nanos()
     );
     // Staging lives under the daemon-owned `.aether` tree; finalized files go
-    // straight into the download directory so the user can see them.
+    // straight into the destination the client asked for.
+    let target_dir = resolve_target_dir(state, request.dir.as_deref())?;
     let task_root = state.download_dir.join(".aether").join(&task_id);
     let staging = task_root.join("staging");
-    let final_dir = state.download_dir.clone();
+    let final_dir = target_dir.clone();
     fs::create_dir_all(&staging)?;
     fs::create_dir_all(&final_dir)?;
 
+    // Only non-default destinations are persisted; `None` keeps following the
+    // daemon's `--download-dir` if the user moves it.
+    let stored_dir =
+        (target_dir != state.download_dir).then(|| target_dir.to_string_lossy().into_owned());
     let settings = request.settings;
     state.store.create_task(&NewTask {
         id: task_id.clone(),
@@ -716,6 +721,7 @@ fn add_task(state: &mut State, request: Request) -> Result<Value, DaemonError> {
         filename: probe.suggested_filename.clone(),
         settings: settings.clone(),
         state: TaskState::Queued,
+        target_dir: stored_dir,
     })?;
 
     let task = TaskSpec {
@@ -728,7 +734,7 @@ fn add_task(state: &mut State, request: Request) -> Result<Value, DaemonError> {
         checksum: None,
     };
 
-    let started = match try_launch(state, &plugin_id, task, staging, final_dir) {
+    let started = match try_launch(state, &plugin_id, task, staging, final_dir.clone()) {
         Ok(started) => started,
         Err(error) => {
             let message = error.to_string();
@@ -758,6 +764,7 @@ fn add_task(state: &mut State, request: Request) -> Result<Value, DaemonError> {
         "task_id": task_id,
         "plugin_id": plugin_id,
         "queued": !started,
+        "dir": final_dir.to_string_lossy(),
     }))
 }
 
@@ -923,7 +930,7 @@ fn check_retries(state: &mut State) {
 fn start_from_record(state: &mut State, task: &StoredTask) -> Result<bool, DaemonError> {
     let task_root = state.download_dir.join(".aether").join(&task.id);
     let staging = task_root.join("staging");
-    let final_dir = state.download_dir.clone();
+    let final_dir = destination_dir(state, task.target_dir.as_deref());
     fs::create_dir_all(&staging)?;
     fs::create_dir_all(&final_dir)?;
     let spec = TaskSpec {
@@ -966,7 +973,15 @@ fn handle_event(state: &mut State, envelope: PluginEventEnvelope) {
             state.live.remove(&task_id);
             let task_root = state.download_dir.join(".aether").join(&task_id);
             let staging = task_root.join("staging");
-            let final_dir = state.download_dir.clone();
+            // The record is authoritative: a "save as" task must finalize into
+            // the directory it was created with, even after a restart.
+            let target_dir = state
+                .store
+                .task(&task_id)
+                .ok()
+                .flatten()
+                .and_then(|task| task.target_dir);
+            let final_dir = destination_dir(state, target_dir.as_deref());
             match finalize_task(&staging, &final_dir, &files) {
                 Ok(moved) => {
                     let _ = state.store.complete_task(&task_id, &files);
@@ -1064,6 +1079,37 @@ fn recover_tasks(state: &mut State) {
             Err(error) => eprintln!("aether-daemon: cannot resume task {}: {error}", task.id),
         }
     }
+}
+
+/// Where a task's files land: the recorded directory or the daemon default.
+fn destination_dir(state: &State, target_dir: Option<&str>) -> PathBuf {
+    target_dir
+        .map(PathBuf::from)
+        .unwrap_or_else(|| state.download_dir.clone())
+}
+
+/// Resolve the `dir` field of `add`. Absolute paths are honored (same-user
+/// daemon: a client may legitimately "save as" elsewhere); relative paths stay
+/// inside the download root and may not climb out of it.
+fn resolve_target_dir(state: &State, requested: Option<&str>) -> Result<PathBuf, DaemonError> {
+    let Some(raw) = requested.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(state.download_dir.clone());
+    };
+    let path = Path::new(raw);
+    if path.is_absolute() {
+        return Ok(path.to_path_buf());
+    }
+    if path.components().any(|component| {
+        matches!(
+            component,
+            Component::ParentDir | Component::RootDir | Component::Prefix(_)
+        )
+    }) {
+        return Err(DaemonError::Protocol(format!(
+            "invalid destination {raw:?}: relative paths may not contain '..'"
+        )));
+    }
+    Ok(state.download_dir.join(path))
 }
 
 fn task_id(request: &Request) -> Result<String, DaemonError> {

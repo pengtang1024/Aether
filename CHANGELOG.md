@@ -46,6 +46,11 @@ versioning; this is a UI mockup, so 0.x versions may change visual structure.
 - Completed downloads now land directly in the download directory (previously
   buried under `.aether/<task>/final/`), with automatic `-1`, `-2`… renaming on
   filename conflicts instead of a hard error.
+- Per-task destination directory: `add` now honors the `dir` field (absolute
+  paths as-is, relative paths confined to the download root), reports it back
+  as `dir`, and stores non-default destinations in a new `tasks.target_dir`
+  column (schema v2 migration keeps v1 databases and tasks). `aether-cli`
+  records its output directory so `resume` returns to the same place.
 - Proxy configuration now reaches the plugins: `get_settings`/`set_settings`
   on the daemon (persisted in `.aether/settings.json`, mode `0600`), the
   `AETHER_PROXY` one-line override (`system`/`none`/`http://user:pass@host:port`/

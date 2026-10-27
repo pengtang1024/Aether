@@ -17,6 +17,13 @@ use crate::proto::{Request, Response};
 pub struct AddResult {
     pub task_id: String,
     pub plugin_id: String,
+    /// `false` when the task started immediately, `true` when it waits for a
+    /// concurrency slot.
+    #[serde(default)]
+    pub queued: bool,
+    /// Directory the files will land in (absolute).
+    #[serde(default)]
+    pub dir: Option<String>,
 }
 
 pub struct Client {

@@ -37,7 +37,7 @@ aether-daemon
 | --- | --- | --- |
 | `ping` | — | 存活检查 |
 | `probe` | `url` | 返回各插件支持度/优先级 |
-| `add` | `url`, `plugin?`, `settings?` | 创建任务、Probe、启动插件 |
+| `add` | `url`, `plugin?`, `settings?`, `dir?` | 创建任务、Probe、启动插件；`dir` 为目标目录 |
 | `list` | — | 最近 100 个任务 |
 | `get` | `task_id` | 单任务 + 文件 |
 | `logs` | `task_id`, `settings.limit?` | 任务日志（默认 200 条，上限 1000，旧→新） |
@@ -144,7 +144,18 @@ CLI 对等命令：`aether-cli logs <task-id> --dir <dir> [--limit <n>]`（直�
   文件位于下载目录本体，删除任务不会动它们。
 - 广播 `task_deleted` 事件，UI 用来移除列表项。
 
-## 5.5 代理
+## 5.5 目标目录（另存为）
+
+- `add` 的 `dir` 决定最终文件落在哪：绝对路径原样使用；相对路径相对下载根目录，
+  且不允许含 `..`（防止意外写出下载树）。省略时用 daemon 的 `--download-dir`。
+- 目录在 `add` 时就会创建，权限问题立即报错，而不是下载完才失败。
+- 非默认目录会写入 `tasks.target_dir`（schema v2），重启/resume 后仍回到原目录。
+  默认目录不落库，改 `--download-dir` 时既有任务跟随新根目录。
+- `add` 的响带 `dir` 字段，UI 可直接显示保存位置。
+- staging 始终在 `.aether/<task_id>/staging`；跨文件系统 finalize 通过复制+删除完成。
+- 同名冲突自动 `name-1.ext`，不会覆盖已有文件。
+
+## 5.6 代理
 
 插件侧的 `Init.proxy` 早就有三种模式，但 daemon 以前从不填它；现在两端接通：
 

@@ -58,6 +58,9 @@ pub struct NewTask {
     pub filename: Option<String>,
     pub settings: Value,
     pub state: TaskState,
+    /// Where finalized files land. `None` means the daemon's download root;
+    /// absolute paths let the UI implement "save as".
+    pub target_dir: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,6 +78,7 @@ pub struct StoredTask {
     pub error_retryable: bool,
     pub settings: Value,
     pub plugin_state: Option<Value>,
+    pub target_dir: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
     pub completed_at: Option<i64>,
@@ -209,14 +213,25 @@ impl TaskStore {
                 "#,
             )?;
         }
+        if version < 2 {
+            // v2: per-task destination directory ("save as").
+            connection.execute_batch(
+                r#"
+                BEGIN;
+                ALTER TABLE tasks ADD COLUMN target_dir TEXT;
+                PRAGMA user_version = 2;
+                COMMIT;
+                "#,
+            )?;
+        }
         Ok(())
     }
 
     pub fn create_task(&mut self, task: &NewTask) -> Result<(), StoreError> {
         let now = now_ms();
         self.connection.execute(
-            "INSERT INTO tasks (id, url, plugin_id, filename, state, settings, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)",
+            "INSERT INTO tasks (id, url, plugin_id, filename, state, settings, target_dir, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
             params![
                 task.id,
                 task.url,
@@ -224,6 +239,7 @@ impl TaskStore {
                 task.filename,
                 task.state.as_str(),
                 serde_json::to_string(&task.settings)?,
+                task.target_dir,
                 now,
             ],
         )?;
@@ -236,7 +252,7 @@ impl TaskStore {
             .query_row(
                 "SELECT id, url, plugin_id, filename, state, downloaded, total, speed_bps,
                         error_kind, error_message, error_retryable, settings, plugin_state,
-                        created_at, updated_at, completed_at
+                        created_at, updated_at, completed_at, target_dir
                  FROM tasks WHERE id = ?1",
                 [id],
                 row_to_task,
@@ -252,7 +268,7 @@ impl TaskStore {
         let mut statement = self.connection.prepare(
             "SELECT id, url, plugin_id, filename, state, downloaded, total, speed_bps,
                     error_kind, error_message, error_retryable, settings, plugin_state,
-                    created_at, updated_at, completed_at
+                    created_at, updated_at, completed_at, target_dir
              FROM tasks ORDER BY created_at DESC LIMIT ?1",
         )?;
         let rows = statement.query_map([limit as i64], row_to_task)?;
@@ -269,7 +285,7 @@ impl TaskStore {
         let mut statement = self.connection.prepare(
             "SELECT id, url, plugin_id, filename, state, downloaded, total, speed_bps,
                     error_kind, error_message, error_retryable, settings, plugin_state,
-                    created_at, updated_at, completed_at
+                    created_at, updated_at, completed_at, target_dir
              FROM tasks WHERE state IN ('queued', 'running', 'paused') ORDER BY created_at",
         )?;
         let rows = statement.query_map([], row_to_task)?;
@@ -476,6 +492,7 @@ fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredTask> {
         created_at: row.get(13)?,
         updated_at: row.get(14)?,
         completed_at: row.get(15)?,
+        target_dir: row.get(16)?,
         files: Vec::new(),
     })
 }
@@ -514,6 +531,7 @@ mod tests {
             filename: Some("file.bin".into()),
             settings: serde_json::json!({"connections": 4}),
             state: TaskState::Queued,
+            target_dir: None,
         }
     }
 
@@ -580,6 +598,87 @@ mod tests {
         assert_eq!(task.state, TaskState::Failed);
         assert!(task.error_retryable);
         assert_eq!(store.logs("t1", 10).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn migrates_a_v1_database_and_keeps_tasks() {
+        let path = std::env::temp_dir().join(format!(
+            "aether-store-v1-{}-{}.db",
+            std::process::id(),
+            now_ms()
+        ));
+        fs::remove_file(&path).ok();
+        {
+            let connection = rusqlite::Connection::open(&path).unwrap();
+            connection
+                .execute_batch(
+                    r#"
+                    CREATE TABLE tasks (
+                        id TEXT PRIMARY KEY,
+                        url TEXT NOT NULL,
+                        plugin_id TEXT NOT NULL,
+                        filename TEXT,
+                        state TEXT NOT NULL,
+                        downloaded INTEGER NOT NULL DEFAULT 0,
+                        total INTEGER,
+                        speed_bps INTEGER NOT NULL DEFAULT 0,
+                        error_kind TEXT,
+                        error_message TEXT,
+                        error_retryable INTEGER NOT NULL DEFAULT 0,
+                        settings TEXT NOT NULL DEFAULT '{}',
+                        plugin_state TEXT,
+                        created_at INTEGER NOT NULL,
+                        updated_at INTEGER NOT NULL,
+                        completed_at INTEGER
+                    );
+                    CREATE TABLE task_files (
+                        task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                        relative_path TEXT NOT NULL,
+                        size INTEGER NOT NULL,
+                        checksum TEXT,
+                        PRIMARY KEY (task_id, relative_path)
+                    );
+                    CREATE TABLE plugin_settings (
+                        plugin_id TEXT PRIMARY KEY,
+                        settings TEXT NOT NULL
+                    );
+                    CREATE TABLE task_logs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                        level TEXT NOT NULL,
+                        message TEXT NOT NULL,
+                        fields TEXT,
+                        created_at INTEGER NOT NULL
+                    );
+                    PRAGMA user_version = 1;
+                    INSERT INTO tasks (id, url, plugin_id, state, created_at, updated_at)
+                    VALUES ('old', 'https://example.com/old.bin', 'http', 'completed', 1, 1);
+                    "#,
+                )
+                .unwrap();
+        }
+
+        let mut store = TaskStore::open(&path).unwrap();
+        let old = store.task("old").unwrap().unwrap();
+        assert_eq!(old.state, TaskState::Completed);
+        assert_eq!(old.target_dir, None);
+
+        // The new column is usable after the migration.
+        let mut task = new_task("new");
+        task.target_dir = Some("/tmp/elsewhere".into());
+        store.create_task(&task).unwrap();
+        assert_eq!(
+            store.task("new").unwrap().unwrap().target_dir.as_deref(),
+            Some("/tmp/elsewhere")
+        );
+
+        let version: i64 = store
+            .connection
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 2);
+        drop(store);
+        fs::remove_file(&path).ok();
     }
 
     #[test]
