@@ -3,6 +3,7 @@
 
 import { StateLayer } from "components.slint";
 import { MaterialFontSettings, MaterialPalette, Elevation } from "styling.slint";
+import { Aether } from "../theme.slint";
 
 component MaterialButtonBase {
     in property <string> text;
@@ -84,7 +85,7 @@ export component Button {
 
     callback clicked;
 
-    min-height: max(40px, layout.min-height);
+    min-height: max(Aether.control-md, layout.min-height);
     min-width: max(40px, layout.min-width);
     forward-focus: base;
 
@@ -147,7 +148,7 @@ export component TextButton {
 
     callback clicked <=> base.clicked;
 
-    min-height: max(40px, base.min-height);
+    min-height: max(Aether.control-md, base.min-height);
     min-width: max(40px, base.min-width);
     forward-focus: base;
 
@@ -177,7 +178,7 @@ export component IconButton {
 
     callback clicked <=> base.clicked;
 
-    min-height: max(40px, base.min-height);
+    min-height: max(Aether.control-md, base.min-height);
     min-width: max(40px, base.min-width);
     forward-focus: base;
 

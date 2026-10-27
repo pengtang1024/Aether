@@ -1,10 +1,9 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
 // SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
-// Aether is a dark-first application: the Material palette is pinned to the
-// dark color scheme. (The upstream widget reads this from the platform via
-// `SlintInternal`, which is only available to compiler-internal files.)
+// Aether selects the Material colour scheme from the app shell. The shell
+// resolves "follow system" / light / dark and writes this global.
 
 export global ColorSchemeSelector  {
-    in property <ColorScheme> color-scheme: ColorScheme.dark;
+    in-out property <ColorScheme> color-scheme: ColorScheme.dark;
 }

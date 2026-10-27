@@ -1,59 +1,120 @@
-// Aether — download task list.
+// Aether — download list.
 //
-// The table is virtualized: rows live in a `ListView`, and Slint only
-// instantiates the rows that are inside the viewport.
+// A readable, virtualised queue: glyph, filename, source, progress, live speed
+// and state. Filters and search live inside this page, not in the global menu.
 
-import { IconButton, ListView, TextButton } from "std-widgets.slint";
-import { Aether, FileTone } from "theme.slint";
+import { ListView, TextButton } from "std-widgets.slint";
+import { Aether, StatusColor } from "theme.slint";
 import { AetherIcons } from "icons.slint";
 import { TaskRow } from "model.slint";
-import { FileBadge, ProgressTrack, StatusChip } from "widgets.slint";
+import { FileGlyph, ProgressTrack, SearchField } from "widgets.slint";
 
-component ColumnHeader inherits Rectangle {
+component FilterPill inherits Rectangle {
     in property <string> text: "";
-    in property <length> column-width: 0px;
-    in property <bool> flex: false;
+    in property <int> count: 0;
+    in property <bool> selected: false;
+    callback clicked;
 
-    height: 34px;
+    height: Aether.row-compact;
+    border-radius: Aether.radius-full;
+    border-width: 1px;
+    border-color: root.selected ? Aether.primary.with-alpha(0.35) : Aether.outline-faint;
+    background: root.selected ? Aether.primary-soft
+        : touch.has-hover ? Aether.on-surface.with-alpha(0.05)
+        : transparent;
 
-    Text {
-        text: root.text;
-        color: Aether.on-surface-muted;
-        font-size: Aether.text-micro;
-        font-weight: Aether.weight-medium;
-        width: root.flex ? parent.width : root.column-width;
-        x: 0;
+    animate background { duration: Aether.motion-short; easing: ease; }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 10px;
+        spacing: 6px;
+        alignment: center;
+
+        Text {
+            text: root.text;
+            color: root.selected ? Aether.primary-bright : Aether.on-surface-variant;
+            font-size: Aether.text-caption;
+            font-weight: root.selected ? Aether.weight-medium : Aether.weight-regular;
+            vertical-alignment: center;
+        }
+
+        Text {
+            text: "" + root.count;
+            color: root.selected ? Aether.primary-bright : Aether.on-surface-muted;
+            font-size: Aether.text-micro;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => { root.clicked(); }
+    }
+}
+
+component RowAction inherits Rectangle {
+    in property <image> icon-source;
+    in property <color> tone: Aether.on-surface-variant;
+    callback clicked;
+
+    width: Aether.control-xs;
+    height: Aether.control-xs;
+    border-radius: Aether.radius-sm;
+    background: touch.has-hover ? root.tone.with-alpha(0.10) : transparent;
+
+    Image {
+        source: root.icon-source;
+        width: Aether.icon-sm;
+        height: Aether.icon-sm;
+        colorize: root.tone;
+        x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
-        overflow: elide;
+    }
+
+    touch := TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => { root.clicked(); }
     }
 }
 
 component TaskItem inherits Rectangle {
     in property <TaskRow> task;
+    in property <float> drift: 0;
     callback task-action(int, int);
     callback open-detail(int);
 
-    height: 60px;
+    height: Aether.row-task;
 
-    background: root.task.selected ? Aether.primary.with-alpha(0.10)
-        : hover-area.has-hover ? Aether.on-surface.with-alpha(0.035)
-        : transparent;
-
-    animate background { duration: Aether.motion-short; easing: ease; }
-
-    // A slim rail marks the row that the detail drawer is showing.
-    if root.task.selected: Rectangle {
-        x: 0;
-        y: 0;
-        width: 3px;
-        height: 100%;
-        background: Aether.primary;
-    }
-
-    // The row background sits *behind* the content so the inline action
-    // buttons win the hit test, while empty space still opens the drawer.
     hover-area := TouchArea {
         clicked => { root.open-detail(root.task.id); }
+    }
+
+    Rectangle {
+        x: 6px;
+        y: 2px;
+        width: parent.width - 12px;
+        height: parent.height - 4px;
+        border-radius: 12px;
+        background: root.task.selected
+            ? @linear-gradient(135deg, Aether.primary.with-alpha(0.13), Aether.primary.with-alpha(0.05))
+            : hover-area.has-hover ? Aether.on-surface.with-alpha(0.04)
+            : transparent;
+        border-width: root.task.selected ? 1px : 0px;
+        border-color: Aether.primary.with-alpha(0.20);
+
+        animate background { duration: Aether.motion-short; easing: ease; }
+    }
+
+    if root.task.selected: Rectangle {
+        x: 10px;
+        y: 22px;
+        width: 3px;
+        height: 24px;
+        border-radius: 2px;
+        background: Aether.primary-bright;
     }
 
     HorizontalLayout {
@@ -61,120 +122,129 @@ component TaskItem inherits Rectangle {
         padding-right: 16px;
         spacing: 12px;
 
-        // --- name + source ---------------------------------------------
-        HorizontalLayout {
-            horizontal-stretch: 1;
-            spacing: 10px;
-
-            FileBadge {
-                kind: root.task.kind;
-                tone: root.task.kind-tone;
-                cross-axis-self-alignment: center;
-            }
-
-            VerticalLayout {
-                horizontal-stretch: 1;
-                spacing: 3px;
-                cross-axis-self-alignment: center;
-
-                Text {
-                    text: root.task.name;
-                    color: Aether.on-surface;
-                    font-size: Aether.text-body;
-                    font-weight: Aether.weight-medium;
-                    overflow: elide;
-                }
-
-                Text {
-                    text: root.task.subtitle;
-                    color: Aether.on-surface-muted;
-                    font-size: Aether.text-caption;
-                    overflow: elide;
-                }
-            }
-        }
-
-        // --- progress ---------------------------------------------------
-        VerticalLayout {
-            min-width: 190px;
-            max-width: 190px;
-            spacing: 5px;
+        FileGlyph {
+            tone: root.task.kind-tone;
             cross-axis-self-alignment: center;
-
-            HorizontalLayout {
-                spacing: 8px;
-
-                Text {
-                    text: root.task.progress-text;
-                    color: Aether.on-surface-variant;
-                    font-size: Aether.text-micro;
-                    font-weight: Aether.weight-medium;
-                }
-
-                Text {
-                    text: root.task.eta;
-                    color: Aether.on-surface-muted;
-                    font-size: Aether.text-micro;
-                    horizontal-stretch: 1;
-                    horizontal-alignment: right;
-                    overflow: elide;
-                }
-            }
-
-            ProgressTrack {
-                value: root.task.progress;
-                width: 100%;
-                fill-color: root.task.status == 1 ? Aether.success
-                    : root.task.status == 3 ? Aether.error
-                    : Aether.primary;
-                track-color: Aether.outline-faint;
-            }
         }
 
-        // --- speed ------------------------------------------------------
+        // ---- name, source, progress ---------------------------------
         VerticalLayout {
-            min-width: 92px;
-            max-width: 92px;
-            spacing: 1px;
+            horizontal-stretch: 1;
+            spacing: 3px;
             cross-axis-self-alignment: center;
 
             Text {
+                text: root.task.name;
+                color: Aether.on-surface;
+                font-size: Aether.text-body;
+                font-weight: Aether.weight-medium;
+                overflow: elide;
+            }
+
+            Text {
+                text: root.task.status == 0 && root.task.eta != ""
+                    ? root.task.source + " · 剩余 " + root.task.eta
+                    : root.task.source;
+                color: Aether.on-surface-muted;
+                font-size: Aether.text-micro;
+                overflow: elide;
+            }
+
+            HorizontalLayout {
+                height: 16px;
+                spacing: 8px;
+
+                ProgressTrack {
+                    horizontal-stretch: 1;
+                    value: root.task.progress;
+                    bar-height: 5px;
+                    fill-color: root.task.status == 1 ? Aether.success
+                        : root.task.status == 3 ? Aether.error
+                        : root.task.status == 5 ? Aether.info
+                        : Aether.primary;
+                    track-color: Aether.outline-faint;
+                    live: root.task.status == 0 || root.task.status == 5;
+                    pulse: root.drift;
+                    cross-axis-self-alignment: center;
+                }
+
+                Text {
+                    text: root.task.progress-text;
+                    color: Aether.on-surface-muted;
+                    font-size: Aether.text-micro;
+                    cross-axis-self-alignment: center;
+                }
+
+                Text {
+                    min-width: 32px;
+                    max-width: 32px;
+                    text: Math.round(root.task.progress * 100) + "%";
+                    color: Aether.on-surface-variant;
+                    font-size: Aether.text-micro;
+                    font-weight: Aether.weight-medium;
+                    horizontal-alignment: right;
+                    cross-axis-self-alignment: center;
+                }
+            }
+        }
+
+        // ---- status + speed ----------------------------------------
+        VerticalLayout {
+            min-width: 118px;
+            max-width: 118px;
+            spacing: 3px;
+            alignment: center;
+
+            HorizontalLayout {
+                alignment: end;
+                spacing: 6px;
+
+                Rectangle {
+                    width: 6px;
+                    height: 6px;
+                    border-radius: 3px;
+                    background: StatusColor.label(root.task.status);
+                    cross-axis-self-alignment: center;
+                }
+
+                Text {
+                    text: root.task.status-text;
+                    color: root.task.status == 3 ? Aether.error : Aether.on-surface-variant;
+                    font-size: Aether.text-caption;
+                    font-weight: Aether.weight-medium;
+                    cross-axis-self-alignment: center;
+                }
+            }
+
+            if root.task.status == 0 || root.task.status == 5: Text {
                 text: root.task.speed;
                 color: Aether.on-surface;
                 font-size: Aether.text-caption;
                 font-weight: Aether.weight-medium;
-            }
-
-            Text {
-                text: root.task.speed-label;
-                color: Aether.on-surface-muted;
-                font-size: Aether.text-micro;
+                horizontal-alignment: right;
+                width: 100%;
             }
         }
 
-        // --- status -----------------------------------------------------
-        StatusChip {
-            kind: root.task.status;
-            text: root.task.status-text;
-            min-width: 78px;
-            max-width: 78px;
-            cross-axis-self-alignment: center;
-        }
-
-        // --- actions ----------------------------------------------------
+        // ---- actions -----------------------------------------------
         HorizontalLayout {
-            min-width: 80px;
-            max-width: 80px;
-            spacing: 0px;
+            min-width: 58px;
+            max-width: 58px;
+            spacing: 2px;
+            alignment: end;
             cross-axis-self-alignment: center;
+            opacity: hover-area.has-hover || root.task.selected ? 1 : 0.62;
 
-            // Completed rows reveal their file; failed rows retry; paused and
-            // queued rows start again; everything else can pause.
-            IconButton {
-                icon: root.task.completed ? AetherIcons.folder
+            animate opacity { duration: Aether.motion-short; easing: ease; }
+
+            RowAction {
+                icon-source: root.task.completed ? AetherIcons.folder
                     : root.task.failed ? AetherIcons.refresh
                     : root.task.paused || root.task.status == 4 ? AetherIcons.play
                     : AetherIcons.pause;
+                tone: root.task.failed ? Aether.error
+                    : root.task.paused || root.task.status == 4 ? Aether.primary-bright
+                    : Aether.on-surface-variant;
                 clicked => {
                     root.task-action(root.task.id,
                         root.task.completed ? 3
@@ -183,90 +253,110 @@ component TaskItem inherits Rectangle {
                 }
             }
 
-            IconButton {
-                icon: AetherIcons.close;
+            RowAction {
+                icon-source: root.task.completed ? AetherIcons.trash : AetherIcons.close;
+                tone: Aether.on-surface-muted;
                 clicked => { root.task-action(root.task.id, 2); }
             }
         }
     }
-
-    Rectangle {
-        x: 16px;
-        y: parent.height - self.height;
-        width: parent.width - 32px;
-        height: 1px;
-        background: Aether.outline-faint.with-alpha(0.6);
-    }
-
 }
 
 export component DownloadsPage inherits Rectangle {
     in property <[TaskRow]> tasks: [];
-    in property <string> empty-hint: "当前筛选条件下没有任务";
+    in property <float> drift: 0;
+    in property <int> count-all: 0;
+    in property <int> count-active: 0;
+    in property <int> count-done: 0;
+    in property <int> count-paused: 0;
+    in property <int> count-failed: 0;
+    in property <int> count-seed: 0;
+    in-out property <int> active-filter: 0;
+    in-out property <string> search-text: "";
+
     callback task-action(int, int);
     callback open-detail(int);
+    callback filter-changed(int, string);
     callback reset-filters();
 
     VerticalLayout {
-        spacing: 0;
+        padding: Aether.page-padding;
+        spacing: Aether.section-gap;
 
-        // ---- column header ---------------------------------------------
-        Rectangle {
-            height: 34px;
+        // ---- page header --------------------------------------------
+        HorizontalLayout {
+            spacing: 16px;
 
-            // The ListView reserves 12px on the right for its scrollbar, so the
-            // header compensates to keep every column aligned with the rows.
-            HorizontalLayout {
-                padding-left: 16px;
-                padding-right: 28px;
-                spacing: 12px;
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 2px;
+                cross-axis-self-alignment: center;
 
-                ColumnHeader { text: "任务"; flex: true; horizontal-stretch: 1; }
-                ColumnHeader { text: "进度"; column-width: 190px; min-width: 190px; max-width: 190px; }
-                ColumnHeader { text: "速度"; column-width: 92px; min-width: 92px; max-width: 92px; }
-                ColumnHeader { text: "状态"; column-width: 78px; min-width: 78px; max-width: 78px; }
-                ColumnHeader { text: "操作"; column-width: 80px; min-width: 80px; max-width: 80px; }
+                Text {
+                    text: "下载列表";
+                    color: Aether.on-surface;
+                    font-size: Aether.text-headline;
+                    font-weight: Aether.weight-semibold;
+                    letter-spacing: -0.2px;
+                }
+
+                Text {
+                    text: "共 " + root.tasks.length + " 个任务 · 按最近添加排序";
+                    color: Aether.on-surface-muted;
+                    font-size: Aether.text-caption;
+                }
             }
 
-            Rectangle {
-                x: 16px;
-                y: parent.height - self.height;
-                width: parent.width - 44px;
-                height: 1px;
-                background: Aether.outline-variant.with-alpha(0.7);
+            SearchField {
+                width: 280px;
+                cross-axis-self-alignment: center;
+                text <=> root.search-text;
+                placeholder: "搜索任务名称或地址";
+                edited(t) => { root.filter-changed(root.active-filter, t); }
             }
         }
 
-        // ---- virtualized rows ------------------------------------------
+        // ---- filters ------------------------------------------------
+        HorizontalLayout {
+            spacing: 6px;
+
+            FilterPill { text: "全部"; count: root.count-all; selected: root.active-filter == 0; clicked => { root.active-filter = 0; root.filter-changed(0, root.search-text); } }
+            FilterPill { text: "下载中"; count: root.count-active; selected: root.active-filter == 1; clicked => { root.active-filter = 1; root.filter-changed(1, root.search-text); } }
+            FilterPill { text: "已完成"; count: root.count-done; selected: root.active-filter == 2; clicked => { root.active-filter = 2; root.filter-changed(2, root.search-text); } }
+            FilterPill { text: "已暂停"; count: root.count-paused; selected: root.active-filter == 3; clicked => { root.active-filter = 3; root.filter-changed(3, root.search-text); } }
+            FilterPill { text: "失败"; count: root.count-failed; selected: root.active-filter == 4; clicked => { root.active-filter = 4; root.filter-changed(4, root.search-text); } }
+            FilterPill { text: "种子"; count: root.count-seed; selected: root.active-filter == 5; clicked => { root.active-filter = 5; root.filter-changed(5, root.search-text); } }
+
+            Rectangle { horizontal-stretch: 1; background: transparent; }
+        }
+
+        // ---- list card ----------------------------------------------
         Rectangle {
             vertical-stretch: 1;
-            background: transparent;
+            border-radius: 18px;
+            background: Aether.surface-container;
+            border-width: 1px;
+            border-color: Aether.outline-faint;
+            drop-shadow-color: Aether.shadow-card;
+            drop-shadow-blur: 20px;
+            drop-shadow-offset-y: 6px;
+            clip: true;
 
-            // The list gets its own clipped viewport that stops above the FAB.
-            // Without the inner clip, ScrollView content paints past its
-            // bounds and rows show up underneath the button.
-            Rectangle {
-                y: 0;
+            ListView {
                 width: 100%;
-                height: parent.height - 72px;
-                clip: true;
+                height: 100%;
 
-                ListView {
-                    width: 100%;
-                    height: 100%;
-
-                    for task in root.tasks: TaskItem {
-                        task: task;
-                        task-action(id, action) => { root.task-action(id, action); }
-                        open-detail(id) => { root.open-detail(id); }
-                    }
+                for task in root.tasks: TaskItem {
+                    task: task;
+                    drift: root.drift;
+                    task-action(id, action) => { root.task-action(id, action); }
+                    open-detail(id) => { root.open-detail(id); }
                 }
             }
 
             if root.tasks.length == 0: Rectangle {
-                y: 0;
                 width: 100%;
-                height: parent.height - 72px;
+                height: 100%;
 
                 VerticalLayout {
                     width: 100%;
@@ -274,30 +364,24 @@ export component DownloadsPage inherits Rectangle {
                     alignment: center;
                     spacing: 8px;
 
-                    HorizontalLayout {
-                        alignment: center;
+                    Rectangle {
+                        width: 56px;
+                        height: 56px;
+                        border-radius: 28px;
+                        background: Aether.primary-soft;
 
-                        Rectangle {
-                            width: 64px;
-                            height: 64px;
-                            border-radius: 32px;
-                            background: Aether.primary-soft;
-
-                            Image {
-                                source: AetherIcons.cloud;
-                                width: 28px;
-                                height: 28px;
-                                colorize: Aether.primary-bright;
-                                x: (parent.width - self.width) / 2;
-                                y: (parent.height - self.height) / 2;
-                            }
+                        Image {
+                            source: AetherIcons.cloud;
+                            width: 24px;
+                            height: 24px;
+                            colorize: Aether.primary-bright;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
                         }
                     }
 
-                    Rectangle { height: 6px; background: transparent; }
-
                     Text {
-                        text: root.empty-hint;
+                        text: "没有符合条件的任务";
                         color: Aether.on-surface;
                         font-size: Aether.text-body;
                         font-weight: Aether.weight-medium;
@@ -312,8 +396,6 @@ export component DownloadsPage inherits Rectangle {
                         width: 100%;
                         horizontal-alignment: center;
                     }
-
-                    Rectangle { height: 6px; background: transparent; }
 
                     TextButton {
                         text: "清除筛选条件";

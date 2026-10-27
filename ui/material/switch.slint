@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 import { MaterialPalette, MaterialFontSettings } from "styling.slint";
+import { Aether } from "../theme.slint";
 
 export component Switch {
     in property <string> text <=> i-label.text;
@@ -20,7 +21,8 @@ export component Switch {
         root.toggled();
     }
 
-    min-height: max(32px, i-layout.min-height);
+    min-height: Aether.control-md;
+    max-height: Aether.control-md;
     vertical-stretch: 0;
     horizontal-stretch: 0;
     forward-focus: i-focus-scope;
@@ -42,8 +44,8 @@ export component Switch {
             i-label.color: MaterialPalette.accent-background;
             track.opacity: 0.12;
             i-handle.opacity: 0.38;
-            i-handle.width: 24px;
-            i-handle.x: track.width - 28px - 4px;
+            i-handle.width: Aether.switch-thumb;
+            i-handle.x: track.width - Aether.switch-thumb - Aether.switch-inset;
         }
         disabled when !root.enabled : {
             i-label.opacity: 0.38;
@@ -54,25 +56,25 @@ export component Switch {
         pressed when i-touch-area.pressed && !root.checked : {
             state-layer.opacity: 0.12;
             i-handle.background: MaterialPalette.control-foreground-variant;
-            i-handle.width: 28px;
-            i-handle.x: track.border-width;
+            i-handle.width: Aether.switch-h - 2px;
+            i-handle.x: Aether.switch-inset;
         }
         pressed-selected when i-touch-area.pressed && root.checked : {
             state-layer.opacity: 0.12;
             state-layer.background: MaterialPalette.control-foreground;
             track.background: MaterialPalette.accent-background;
             track.border-color: MaterialPalette.accent-background;
-            i-handle.background: MaterialPalette.control-foreground;
-            i-handle.width: 28px;
-            i-handle.x: track.width - 28px - 4px;
+            i-handle.background: MaterialPalette.accent-foreground;
+            i-handle.width: Aether.switch-h - 2px;
+            i-handle.x: track.width - (Aether.switch-h - 2px) - Aether.switch-inset;
         }
         hover-selected when i-touch-area.has-hover && root.checked : {
             state-layer.opacity: 0.08;
             track.background: MaterialPalette.accent-background;
             track.border-color: MaterialPalette.accent-background;
-            i-handle.background: MaterialPalette.control-foreground;
-            i-handle.width: 24px;
-            i-handle.x: track.width - 24px - 4px;
+            i-handle.background: MaterialPalette.accent-foreground;
+            i-handle.width: Aether.switch-thumb;
+            i-handle.x: track.width - Aether.switch-thumb - Aether.switch-inset;
         }
         hover when i-touch-area.has-hover && !root.checked : {
             state-layer.background: MaterialPalette.control-foreground;
@@ -82,17 +84,17 @@ export component Switch {
         selected when !i-touch-area.has-hover && root.checked : {
             track.background: MaterialPalette.accent-background;
             track.border-color: MaterialPalette.accent-background;
-            i-handle.background: MaterialPalette.control-foreground;
-            i-handle.width: 24px;
-            i-handle.x: track.width - 24px - 4px;
+            i-handle.background: MaterialPalette.accent-foreground;
+            i-handle.width: Aether.switch-thumb;
+            i-handle.x: track.width - Aether.switch-thumb - Aether.switch-inset;
         }
         focused-selected when i-focus-scope.has-focus && root.checked : {
             state-layer.opacity: 0.12;
             track.background: MaterialPalette.accent-background;
             track.border-color: MaterialPalette.accent-background;
-            i-handle.background: MaterialPalette.control-foreground;
-            i-handle.width: 24px;
-            i-handle.x: track.width - 24px - 4px;
+            i-handle.background: MaterialPalette.accent-foreground;
+            i-handle.width: Aether.switch-thumb;
+            i-handle.x: track.width - Aether.switch-thumb - Aether.switch-inset;
         }
         focused when i-focus-scope.has-focus && !root.checked : {
             state-layer.background: MaterialPalette.control-foreground;
@@ -104,35 +106,37 @@ export component Switch {
         alignment: center;
 
         HorizontalLayout {
-            spacing: 16px;
+            // Aether uses iconless switches only: remove the upstream label gap
+            // so the visible track sits on the same right edge as fields.
+            spacing: 0px;
 
             Rectangle {
-                width: 52px;
-                height: 32px;
+                width: Aether.switch-w;
+                height: Aether.switch-h;
 
                 track := Rectangle {
-                    border-radius: 16px;
+                    border-radius: Aether.switch-h / 2;
                     border-width: 2px;
                     border-color: MaterialPalette.border;
                     background: MaterialPalette.control-background-variant;
                 }
 
                 i-handle := Rectangle {
-                    x: 8px;
+                    x: Aether.switch-inset;
                     y: (parent.height - self.height) / 2;
-                    width: 16px;
+                    width: Aether.switch-thumb;
                     height: self.width;
                     border-radius: self.width / 2;
-                    background: MaterialPalette.border;
+                    background: MaterialPalette.control-foreground-variant;
 
                     state-layer := Rectangle {
-                        width: 40px;
-                        height: 40px;
+                        width: 28px;
+                        height: 28px;
                         x: (parent.width - self.width) / 2;
                         y: (parent.height - self.height) / 2;
                         opacity: 0;
                         background: MaterialPalette.accent-background;
-                        border-radius: 20px;
+                        border-radius: 14px;
 
                         animate opacity { duration: 300ms; easing: ease; }
                     }

@@ -3,28 +3,23 @@
 export struct TaskRow {
     id: int,
     name: string,
-    subtitle: string,
-    kind: string,
+    source: string,
     kind-tone: int,
     progress: float,
     progress-text: string,
     speed: string,
-    speed-label: string,
     eta: string,
     status: int,
     status-text: string,
     paused: bool,
     completed: bool,
     failed: bool,
-    torrent: bool,
-    note: string,
     selected: bool,
 }
 
 export struct TaskDetail {
+    id: int,
     name: string,
-    subtitle: string,
-    kind: string,
     kind-tone: int,
     status: int,
     status-text: string,
@@ -43,15 +38,25 @@ export struct TaskDetail {
     chunks-text: string,
 }
 
-export struct PeerRow {
-    address: string,
-    speed: string,
-    ratio: float,
-    kind: int,
+export struct RecordRow {
+    id: int,
+    name: string,
+    kind-tone: int,
+    status: int,
+    status-text: string,
+    time: string,
 }
 
-export struct LogRow {
-    time: string,
-    level: string,
-    message: string,
+export struct PluginRow {
+    id: int,
+    name: string,
+    description: string,
+    version: string,
+    category: string,
+    kind: int,
+    enabled: bool,
+    update: bool,
+    featured: bool,
+    icon: int,
+    tone: int,
 }

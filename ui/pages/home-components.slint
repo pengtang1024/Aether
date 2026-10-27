@@ -1,0 +1,354 @@
+// Aether — home dashboard sub-components.
+//
+// Design system rules (see docs/DESIGN_SYSTEM.md):
+// - Card radius 16, card padding 12, card header 32, icon tile 24
+// - Text line x = card inner + 24 icon slot + 8 gap = +44
+// - Spacing: 4 / 8 / 12 / 16 only
+// - Tile background = neutral surface-container-high (no per-item tone noise)
+// - Tone colors reserved for: icon colorize + status/connection dots only
+
+import { Aether, StatusColor } from "../theme.slint";
+import { AetherIcons } from "../icons.slint";
+import { RecordRow, PluginRow } from "../model.slint";
+import { FileGlyph, PluginGlyph } from "../widgets.slint";
+
+// =============================================================================
+// Card — rounded container with icon header + optional action + content slot
+// =============================================================================
+
+export component Card inherits Rectangle {
+    in property <string> title: "";
+    in property <image> icon-source;
+    in property <color> tone: Aether.primary-bright;
+    in property <string> action: "";
+    callback action-clicked;
+
+    border-radius: Aether.radius-lg; // 16px — all outer containers
+    background: @linear-gradient(155deg, Aether.card-top, Aether.card-bottom 75%);
+    border-width: 1px;
+    border-color: Aether.outline-faint;
+    drop-shadow-color: Aether.shadow-card;
+    drop-shadow-blur: 18px;
+    drop-shadow-offset-y: 5px;
+
+    VerticalLayout {
+        width: 100%;
+        height: 100%;
+        padding: Aether.space-md; // 12px outer pad
+        spacing: Aether.space-sm; // 8px between header and content
+
+        // ---- header ------------------------------------------------------
+        HorizontalLayout {
+            height: Aether.card-header;
+            spacing: Aether.space-sm; // 8px between header icon and title
+
+            Rectangle {
+                width: Aether.card-icon;
+                height: Aether.card-icon;
+                border-radius: Aether.radius-sm; // 8px icon tile
+                background: root.tone.with-alpha(0.14);
+                border-width: 1px;
+                border-color: root.tone.with-alpha(0.24);
+                cross-axis-self-alignment: center;
+
+                Image {
+                    source: root.icon-source;
+                    width: Aether.icon-md;
+                    height: Aether.icon-md;
+                    colorize: root.tone;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                }
+            }
+
+            Text {
+                text: root.title;
+                color: Aether.on-surface;
+                font-size: Aether.text-title;
+                font-weight: Aether.weight-medium;
+                vertical-alignment: center;
+            }
+
+            Rectangle { horizontal-stretch: 1; background: transparent; }
+
+            if root.action != "": Rectangle {
+                width: 48px;
+                height: 24px;
+                border-radius: Aether.radius-sm;
+                background: action-touch.has-hover ? Aether.on-surface.with-alpha(0.06) : transparent;
+                cross-axis-self-alignment: center;
+
+                Text {
+                    text: root.action;
+                    color: Aether.primary-bright;
+                    font-size: Aether.text-micro;
+                    font-weight: Aether.weight-medium;
+                    width: 100%;
+                    height: 100%;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+
+                action-touch := TouchArea {
+                    width: 100%;
+                    height: 100%;
+                    clicked => { root.action-clicked(); }
+                }
+            }
+        }
+
+        // ---- content slot: starts at the card inner edge (12px) --------
+        Rectangle {
+            width: 100%;
+            horizontal-stretch: 1;
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                width: 100%;
+                height: 100%;
+                spacing: Aether.space-xs; // 4px tight row spacing
+                @children
+            }
+        }
+    }
+}
+
+// =============================================================================
+// StatTile — icon + big number + label (NEUTRAL bg, tone only for icon)
+// =============================================================================
+
+export component StatTile inherits Rectangle {
+    in property <image> icon-source;
+    in property <string> value: "";
+    in property <string> label: "";
+    in property <color> tone: Aether.primary-bright;
+    callback clicked;
+
+    border-radius: Aether.radius-md; // 12px — same as inner tiles
+    background: Aether.surface-container-high; // neutral, no per-tile tone
+    border-width: 1px;
+    border-color: Aether.outline-faint;
+
+    VerticalLayout {
+        width: 100%;
+        height: 100%;
+        padding: Aether.space-xs; // 4px tight
+        spacing: 1px;
+        alignment: center;
+
+        Image {
+            source: root.icon-source;
+            width: 14px;
+            height: 14px;
+            colorize: root.tone; // tone only here
+            horizontal-alignment: center;
+        }
+
+        Text {
+            text: root.value;
+            color: Aether.on-surface;
+            font-size: Aether.text-heading; // stat value — between body(13) and hero(28)
+            font-weight: Aether.weight-semibold;
+            horizontal-alignment: center;
+        }
+
+        Text {
+            text: root.label;
+            color: Aether.on-surface-muted;
+            font-size: Aether.text-micro; // 10px
+            horizontal-alignment: center;
+            height: 12px;
+            vertical-alignment: center;
+            opacity: touch.has-hover ? 1 : 0.7;
+            animate opacity { duration: Aether.motion-short; easing: ease; }
+        }
+    }
+
+    touch := TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => { root.clicked(); }
+    }
+}
+
+// =============================================================================
+// ResourceTile — integration row (NEUTRAL bg, tone only for icon + dot)
+// =============================================================================
+
+export component ResourceTile inherits Rectangle {
+    in property <image> icon-source;
+    in property <string> label: "";
+    in property <color> tone: Aether.primary-bright;
+    in property <bool> connected: true;
+
+    height: 32px; // RHYTHM: same as RecordItem / PluginTile
+    border-radius: Aether.radius-md; // 12px
+    background: touch.has-hover ? Aether.on-surface.with-alpha(0.05) : transparent;
+    border-width: 1px;
+    border-color: touch.has-hover ? Aether.outline-variant : transparent;
+
+    animate background { duration: Aether.motion-short; easing: ease; }
+    animate border-color { duration: Aether.motion-short; easing: ease; }
+
+    HorizontalLayout {
+        padding-left: Aether.space-xs; // 4px
+        padding-right: Aether.space-xs; // 4px
+        spacing: Aether.space-sm; // 8px
+        alignment: center;
+
+        Image {
+            source: root.icon-source;
+            width: 16px;
+            height: 16px;
+            colorize: root.tone; // tone only here
+            cross-axis-self-alignment: center;
+        }
+
+        Text {
+            text: root.label;
+            color: Aether.on-surface-variant;
+            font-size: Aether.text-body; // 13px — row label
+            font-weight: Aether.weight-medium;
+            horizontal-stretch: 1;
+            overflow: elide;
+            vertical-alignment: center;
+            opacity: touch.has-hover ? 1 : 0.9;
+            animate opacity { duration: Aether.motion-short; easing: ease; }
+        }
+
+        Rectangle {
+            width: 6px;
+            height: 6px;
+            border-radius: 3px;
+            background: root.connected ? Aether.live : Aether.on-surface-muted;
+            opacity: root.connected ? 1 : 0.4;
+            cross-axis-self-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        width: 100%;
+        height: 100%;
+    }
+}
+
+// =============================================================================
+// PluginTile — featured plugin row
+// =============================================================================
+
+export component PluginTile inherits Rectangle {
+    in property <PluginRow> plugin;
+    callback clicked;
+
+    height: 32px; // RHYTHM
+    border-radius: Aether.radius-md;
+    background: touch.has-hover ? Aether.on-surface.with-alpha(0.05) : transparent;
+
+    HorizontalLayout {
+        padding-left: Aether.space-xs;
+        padding-right: Aether.space-xs;
+        spacing: Aether.space-sm;
+
+        PluginGlyph {
+            icon: root.plugin.icon;
+            tone: root.plugin.tone;
+            width: 24px;
+            height: 24px;
+            cross-axis-self-alignment: center;
+        }
+
+        Text {
+            text: root.plugin.name;
+            color: Aether.on-surface;
+            font-size: Aether.text-body; // 13px — row label
+            font-weight: Aether.weight-medium;
+            horizontal-stretch: 1;
+            overflow: elide;
+            cross-axis-self-alignment: center;
+            opacity: touch.has-hover ? 1 : 0.92;
+            animate opacity { duration: Aether.motion-short; easing: ease; }
+        }
+
+        Rectangle {
+            width: 5px;
+            height: 5px;
+            border-radius: 3px;
+            background: root.plugin.update ? Aether.warning
+                : root.plugin.enabled ? Aether.live
+                : Aether.on-surface-muted;
+            opacity: root.plugin.enabled || root.plugin.update ? 1 : 0.4;
+            cross-axis-self-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => { root.clicked(); }
+    }
+}
+
+// =============================================================================
+// RecordItem — task history row: icon + name + time + status dot
+// =============================================================================
+
+export component RecordItem inherits Rectangle {
+    in property <RecordRow> record;
+    callback clicked;
+
+    height: 32px; // RHYTHM
+    border-radius: Aether.radius-md;
+    background: touch.has-hover ? Aether.on-surface.with-alpha(0.05) : transparent;
+
+    HorizontalLayout {
+        padding-left: Aether.space-xs;
+        padding-right: Aether.space-xs;
+        spacing: Aether.space-sm;
+
+        FileGlyph {
+            tone: root.record.kind-tone;
+            width: 24px;
+            height: 24px;
+            cross-axis-self-alignment: center;
+        }
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 1px;
+
+            Text {
+                text: root.record.name;
+                color: Aether.on-surface;
+                font-size: Aether.text-body; // 13px — row label
+                font-weight: Aether.weight-medium;
+                overflow: elide;
+                opacity: touch.has-hover ? 1 : 0.92;
+                animate opacity { duration: Aether.motion-short; easing: ease; }
+            }
+
+            Text {
+                text: root.record.time;
+                color: Aether.on-surface-muted;
+                font-size: Aether.text-micro; // 10px
+                overflow: elide;
+                height: 12px;
+                vertical-alignment: center;
+            }
+        }
+
+        Rectangle {
+            width: 5px;
+            height: 5px;
+            border-radius: 3px;
+            background: StatusColor.label(root.record.status);
+            opacity: root.record.status == 1 ? 1 : 0.7;
+            cross-axis-self-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => { root.clicked(); }
+    }
+}

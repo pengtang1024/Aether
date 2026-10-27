@@ -13,15 +13,16 @@
 // stays a complete, spec-shaped M3 system.
 
 import { ColorSchemeSelector } from "color-scheme.slint";
+import { Aether } from "../theme.slint";
 
 struct TextStyle { font-size: relative-font-size, font-weight: int}
 
 export global MaterialFontSettings {
-    out property <TextStyle> label-large: { font-size: 14pt * 1rem / 14pt, font-weight: FontWeight.medium };
+    out property <TextStyle> label-large: { font-size: 13pt * 1rem / 14pt, font-weight: FontWeight.medium };
     out property <TextStyle> label-medium: { font-size: 12pt * 1rem / 14pt, font-weight: FontWeight.medium };
-    out property <TextStyle> body-large: { font-size: 16pt * 1rem / 14pt, font-weight: FontWeight.normal };
+    out property <TextStyle> body-large: { font-size: 13pt * 1rem / 14pt, font-weight: FontWeight.normal };
     out property <TextStyle> body-small: { font-size: 12pt * 1rem / 14pt, font-weight: FontWeight.normal };
-    out property <TextStyle> title-small: { font-size: 14pt * 1rem / 14pt, font-weight: FontWeight.medium };
+    out property <TextStyle> title-small: { font-size: 13pt * 1rem / 14pt, font-weight: FontWeight.medium };
     out property <TextStyle> title-medium: { font-size: 16pt * 1rem / 14pt, font-weight: FontWeight.medium };
     out property <TextStyle> title-large: { font-size: 22pt * 1rem / 14pt, font-weight: FontWeight.medium };
     out property <TextStyle> headline-small: { font-size: 24pt * 1rem / 14pt, font-weight: FontWeight.medium };
@@ -46,48 +47,48 @@ export global MaterialPalette {
     out property <brush> brand-on-primary: #FFFFFF;
 
     // ---- Core M3 roles ---------------------------------------------------
-    out property <brush> background: !dark-color-scheme ? #F8F3F9 : #141218;
-    out property <brush> foreground: !dark-color-scheme ? #1C1B1F : #E6E1E5;
-    out property <brush> alternate-background: !dark-color-scheme ? #FFFBFE : #1C1B1F;
-    out property <brush> alternate-foreground: !dark-color-scheme ? #1C1B1F : #E6E1E5;
-    out property <brush> control-background: !dark-color-scheme ? #E8DEF8 : #4A4458;
-    out property <brush> control-foreground: !dark-color-scheme ? #1E192B : #E8DEF8;
+    out property <brush> background: !dark-color-scheme ? #F8F3F9 : #141119;
+    out property <brush> foreground: !dark-color-scheme ? #1C1B1F : #EDE7F0;
+    out property <brush> alternate-background: !dark-color-scheme ? #FFFBFE : #17131E;
+    out property <brush> alternate-foreground: !dark-color-scheme ? #1C1B1F : #EDE7F0;
+    out property <brush> control-background: !dark-color-scheme ? #E8DEF8 : #322A3D;
+    out property <brush> control-foreground: !dark-color-scheme ? #1E192B : #EDE7F0;
     out property <brush> accent-background: !dark-color-scheme ? brand-primary : brand-primary;
     out property <brush> accent-foreground: brand-on-primary;
     out property <brush> selection-background: accent-background.with-alpha(0.3);
-    out property <brush> selection-foreground: !dark-color-scheme ? #1C1B1F : #E6E1E5;
-    out property <brush> border: !dark-color-scheme ? #79747E : #938F99;
+    out property <brush> selection-foreground: !dark-color-scheme ? #1C1B1F : #EDE7F0;
+    out property <brush> border: !dark-color-scheme ? #79747E : #8C8496;
 
     // ---- Additional palette ---------------------------------------------
-    out property <brush> control-background-variant: !dark-color-scheme ? #E7E0EC.darker(0.2) : #49454F;
-    out property <brush> control-foreground-variant: !dark-color-scheme ? #49454E : #CAC4D0;
+    out property <brush> control-background-variant: !dark-color-scheme ? #E7E0EC.darker(0.2) : #3A3345;
+    out property <brush> control-foreground-variant: !dark-color-scheme ? #49454E : #CBC2D6;
     out property <brush> control-background-tint: accent-background;
-    out property <brush> accent-container: !dark-color-scheme ? #4F378B : #4F378B;
+    out property <brush> accent-container: !dark-color-scheme ? #4F378B : #4B3585;
     out property <brush> accent-ripple: brand-primary;
     out property <brush> shadow: #000000.with-alpha(0.3);
-    out property <brush> border-variant: !dark-color-scheme ? #C4C7C5 : #444746;
-    out property <brush> foreground-alt: !dark-color-scheme ? #1C1B1F : #E6E1E5;
+    out property <brush> border-variant: !dark-color-scheme ? #C4C7C5 : #443C4F;
+    out property <brush> foreground-alt: !dark-color-scheme ? #1C1B1F : #EDE7F0;
     out property <brush> secondary-ripple: !dark-color-scheme ? #fffc : #000000;
-    out property <brush> surface-container: !dark-color-scheme ? #F3EDF7 : #211F26;
-    out property <brush> surface-container-high: !dark-color-scheme ? #ECE6F0 : #2B2930;
-    out property <brush> surface-container-highest: !dark-color-scheme ? #E6E0E9 : #36343B;
-    out property <brush> tertiary-container: !dark-color-scheme ? #FFD8E4 : #633B48;
-    out property <brush> on-tertiary-container: !dark-color-scheme ? #31111D : #FFD8E4;
+    out property <brush> surface-container: !dark-color-scheme ? #F3EDF7 : #211C29;
+    out property <brush> surface-container-high: !dark-color-scheme ? #ECE6F0 : #2A2433;
+    out property <brush> surface-container-highest: !dark-color-scheme ? #E6E0E9 : #352E40;
+    out property <brush> tertiary-container: !dark-color-scheme ? #FFD8E4 : #10342E;
+    out property <brush> on-tertiary-container: !dark-color-scheme ? #31111D : #C8F8EC;
 
     // ---- State roles -----------------------------------------------------
-    out property <brush> state-default: dark-color-scheme ? #E6E0E9 : #1D1B20;
+    out property <brush> state-default: dark-color-scheme ? #EDE7F0 : #1D1B20;
     out property <brush> state-secondary: accent-background;
     out property <brush> state-tertiary: dark-color-scheme ? #381E72 : #FFFFFF;
 
     // ---- Semantic status roles (Aether) ----------------------------------
-    out property <brush> status-success: !dark-color-scheme ? #2E7D32 : #7FD892;
-    out property <brush> status-success-container: !dark-color-scheme ? #C8E6C9 : #1E3B26;
-    out property <brush> status-warning: !dark-color-scheme ? #9A6700 : #F5C77E;
-    out property <brush> status-warning-container: !dark-color-scheme ? #FFECB3 : #3A2E14;
-    out property <brush> status-error: !dark-color-scheme ? #B3261E : #F2B8B5;
-    out property <brush> status-error-container: !dark-color-scheme ? #F9DEDC : #4A1614;
-    out property <brush> status-info: !dark-color-scheme ? #00639B : #8AC8E8;
-    out property <brush> status-info-container: !dark-color-scheme ? #CDE7F7 : #16303F;
+    out property <brush> status-success: !dark-color-scheme ? #2E7D32 : #7FE3B5;
+    out property <brush> status-success-container: !dark-color-scheme ? #C8E6C9 : #11352B;
+    out property <brush> status-warning: !dark-color-scheme ? #9A6700 : #F3C77E;
+    out property <brush> status-warning-container: !dark-color-scheme ? #FFECB3 : #3A2C14;
+    out property <brush> status-error: !dark-color-scheme ? #B3261E : #FFB4AB;
+    out property <brush> status-error-container: !dark-color-scheme ? #F9DEDC : #4B1714;
+    out property <brush> status-info: !dark-color-scheme ? #00639B : #8ED3F2;
+    out property <brush> status-info-container: !dark-color-scheme ? #CDE7F7 : #12313E;
 }
 
 export global Icons {
@@ -106,5 +107,5 @@ export global Icons {
 }
 
 export global MaterialSizeSettings {
-    out property <length> item-height: 48px;
+    out property <length> item-height: Aether.control-md;
 }

@@ -2,46 +2,90 @@
 
 # Aether
 
-**原生 Material 3 下载管理器 · Rust + Slint · 无 WebView**
+**原生 Material 3 全能下载工具 · Rust + Slint · 无 WebView**
 
 Aether 是一个桌面下载管理器的界面原型（UI mockup），交互与视觉参考 Motrix，但完全用
 Rust 与 [Slint](https://slint.dev) 绘制：没有 Electron、没有 Chromium。除品牌 logo 外，
 窗口里的图标、进度条、折线图和背景流线全部是矢量渲染。
 
-界面严格遵循 Material 3：深色主题、`#6750A4` 品牌主色、M3 形状与字号阶梯、柔和的环境
-阴影，以及适合桌面工具的紧凑留白。
+产品结构只有 **3 个一级入口**：**主页 / 下载 / 设置**。主页是控制台（资源、统计、插件、
+支持、记录），下载页专注任务列表，设置页展开为完整的多分类中心。视觉采用 **aurora ink**
+语言：`#6750A4` 品牌紫、薄荷色实时状态、plum-black / lavender 双主题表面和低对比环境光。
+
+主题支持 **浅色 / 深色 / 跟随系统** 三种选择，默认跟随系统；自定义 Aether token 与
+Material 组件会一起切换。
 
 ---
 
 ## 界面预览
 
+### 主页
+
+主页是卡片化控制台，五张卡共用一套卡片规范：16px 圆角、26px 图标标题栏、12px 内边距、
+统一边线和阴影。
+
+- **实时速度**（跨 2 列）：当前速度、活跃/队列/连接状态、实时曲线，今日下载 / 上传 /
+  峰值速度，以及限速预设
+- **任务**（1 列）：活跃任务环图、任务总数与占比、状态分布条，以及已完成 / 暂停 /
+  失败 / 种子的数量与占比；点击任一行进入对应筛选
+- **数据统计**：本周下载总量、7 天流量柱图、上传 / 平均速度 / 成功率
+- **存储与分类**：磁盘使用环图、本周入库总量、视频 / 压缩包 / 应用 / 文档分类占比
+- **系统与会话**：版本、下载引擎、浏览器扩展、插件、协议汇总、运行时长 / 缓存与
+  下载设置入口
+
+支持入口在左侧栏底部。窗口默认 900×600，最小 900×560，主页完整落在单屏内。
+
+![主页](docs/screenshots/home.png)
+
 ### 下载列表
 
-虚拟化任务表：文件名与来源、进度、实时速率、状态标签、行内暂停/继续与取消操作。
-顶栏包含搜索、新建下载按钮与状态筛选 chip；右下角是新建任务 FAB。
+下载页不混入主页内容，只有一条可读的任务列表：本地筛选/搜索、文件名、来源、进度、大小、
+剩余时间、实时速度、状态和行内操作。筛选属于这个页面，不再出现在全局菜单里。
 
-![下载列表](docs/screenshots/home.png)
+![下载列表](docs/screenshots/downloads.png)
+
+### 设置中心
+
+设置页是独立的多分类中心：左侧 10 个分类，右侧是 M3 分组卡片。覆盖下载并发、连接数、
+动态分段、重试与超时、全局限速、磁盘预分配、校验、代理、DNS、请求头、BT/PT、DHT/PEX、
+做种、媒体嗅探、浏览器接管、插件、计划任务、通知、外观、RPC 与维护等能力。
+
+![设置中心](docs/screenshots/settings.png)
+
+### 插件
+
+主页系统卡显示插件总数和可更新数量；设置 → 插件是完整目录：
+**18 个插件（15 个内置、
+3 个社区）**，支持按全部/内置/已启用/可更新筛选，单独启停、更新全部、安装、插件目录、
+自动更新与开发者模式。插件在独立进程中运行；界面目录目前是 mockup，协议与 IPC 在
+`crates/aether-plugin-sdk`。
+
+![插件](docs/screenshots/plugins.png)
+
+### 双主题
+
+主题选择共 3 项：**浅色 / 深色 / 跟随系统**，默认跟随系统。选择会立即切换自定义 token、
+卡片渐变、状态色以及上游 Material 控件，并写入用户配置（`~/.config/aether/theme`，
+Windows / macOS 使用对应平台目录）；应用还会在跟随系统模式下周期性检查桌面主题。
+
+![浅色主页](docs/screenshots/home-light.png)
+
+![主题选项](docs/screenshots/settings-theme.png)
 
 ### 新建下载
 
-URL、保存路径（带下拉选择）、分片数、限速滑块与备注。打开后自动聚焦地址栏，Enter
-提交、Esc 取消；URL 为空时主按钮保持 M3 禁用态。确认后任务会立即插入列表并开始推进。
+左栏 `+` 打开新建下载。表单保留图标化字段和输入值，标题、字段名、帮助文案都收进悬停
+提示；Enter 提交、Esc 关闭，URL 为空时提交图标保持禁用态。确认后自动切到下载列表。
 
 ![新建下载](docs/screenshots/dialog.png)
 
-### 任务详情抽屉
+### 任务详情
 
-固定头部展示文件徽标、状态与整宽进度条；下方依次是最近 60 秒实时速度折线图、分片进度
-网格与图例、紧凑的文件信息卡、日志预览和 BT 节点列表。点击任务行任意空白处打开，点击
-遮罩或右上角关闭。
+任务行点击后打开紧凑的 icon inspector：文件 glyph、状态点、进度线、操作图标、三枚指标
+图标、无标签速度图、分片网格和信息图标。标签与数值都在悬停提示里，日志与 BT 节点列表
+不属于当前界面范围。
 
 ![任务详情](docs/screenshots/drawer.png)
-
-### 设置
-
-通用、网络限速、BT 配置、外观、通知五组 M3 卡片，包含开关、输入框、下拉框与滑块。
-
-![设置](docs/screenshots/settings.png)
 
 ---
 
@@ -61,26 +105,31 @@ cargo run --release
 
 ### 开发用启动参数
 
-调试某个界面状态时，不必手动点击：
-
 ```bash
-AETHER_VIEW=settings cargo run   # 直接打开设置页
-AETHER_VIEW=dialog   cargo run   # 直接打开新建下载对话框
-AETHER_VIEW=drawer   cargo run   # 打开一个正在做种/下载的任务详情
+AETHER_VIEW=home      cargo run   # 默认，主页控制台
+AETHER_VIEW=downloads cargo run   # 直接打开下载列表
+AETHER_VIEW=settings  cargo run   # 直接打开设置中心
+AETHER_VIEW=dialog    cargo run   # 直接打开新建下载
+AETHER_VIEW=drawer    cargo run   # 打开一个正在下载的任务 inspector
+
+AETHER_THEME=light    cargo run   # 临时固定浅色（也可 dark）
 ```
+
+不设置 `AETHER_THEME` 时使用已保存的主题；首次启动默认跟随系统。应用会读取
+GNOME / Windows / macOS 的桌面明暗偏好，并在“跟随系统”模式下每 10 秒检查一次变化。
 
 ### 截图脚本
 
 `scripts/shot.sh` 会在私有 Xvfb 显示（默认 `:97`）上启动应用并抓图，不打扰当前桌面：
 
 ```bash
-./scripts/shot.sh /tmp/aether.png 6          # 输出路径、等待秒数
-./scripts/shot.sh /tmp/aether.png 6 1200 800 # 还可指定画布尺寸
-AETHER_VIEW=drawer ./scripts/shot.sh /tmp/drawer.png
+./scripts/shot.sh /tmp/aether.png 6             # 输出路径、等待秒数
+AETHER_VIEW=downloads ./scripts/shot.sh /tmp/downloads.png
+AETHER_THEME=light ./scripts/shot.sh /tmp/light.png
 ```
 
-依赖 `Xvfb` 与 ImageMagick 的 `import`。窗口默认 1040×700，可在 900×600 以上自由缩放；
-脚本默认画布与窗口一致。
+依赖 `Xvfb` 与 ImageMagick 的 `import`；若安装了 `xdotool`，脚本会先把指针移出内容区，
+避免截到悬停/焦点态。窗口默认 900×600，可在 900×560 以上自由缩放；脚本默认画布与窗口一致。
 
 ### 打包与安装
 
@@ -121,7 +170,7 @@ sudo apt install ./dist/aether_0.1.0_amd64.deb
 - 画布：GNOME HIG 的 128×128 名义尺寸；仓库导出 32/48/64/128/256/512，安装到 hicolor。
 - 底板：Ubuntu Yaru 方形图标按 224/256（87.5%）绘制，256 画布外缘 2px 描边；对应 512
   画布即 448px 底板、4px 描边。100% 铺满会明显大于其他 Dock 图标，75% 又会偏小。
-- Dock 使用 48px 资产；桌面、Dock 和窗口图标使用浅色半透明磨砂底，导航栏使用去底版本。
+- Dock 使用 48px 资产；桌面、Dock 和窗口图标使用浅色半透明磨砂底，左栏品牌标记使用去底版本。
 - 图标名与 `.desktop` 的 `Icon` 都使用 app id `aether`，并安装到 `hicolor/{32,48,64,128,256,512}x…/apps/`。
 - 发布包由 `.deb` 安装到 `/usr`；AppStream 组件 ID 使用反向域名
   `io.github.pengtang1024.Aether`。
@@ -136,32 +185,39 @@ sudo apt install ./dist/aether_0.1.0_amd64.deb
 .
 ├── build.rs                 # 注册 "material" 样式、include 路径
 ├── src/
-│   ├── main.rs              # UI 胶水层：过滤/搜索、行 diff、回调、200 ms 定时器
-│   ├── engine.rs            # 模拟下载引擎：种子数据、速率抖动、完成/做种迁移、图表路径
+│   ├── main.rs              # UI 胶水层：过滤/搜索、聚合统计、记录、主题检测、定时器
+│   ├── engine.rs            # 模拟下载引擎：种子数据、速率抖动、全局历史、完成/做种迁移
 │   └── model.rs             # Task / Status 领域模型与格式化
 ├── ui/
-│   ├── app.slint            # 窗口外壳、导航栏、顶栏、筛选 chip、FAB、覆盖层
-│   ├── theme.slint          # Aether 设计令牌（surface / brand / 字号 / 圆角）
-│   ├── icons.slint          # SVG 图标注册表（33 个）
-│   ├── widgets.slint        # 自有组件：chip、导航项、搜索框、速度图、分片网格、流线背景
-│   ├── model.slint          # 与 Rust 共享的结构体
+│   ├── app.slint            # 左侧导航外壳、页面路由、主题应用、覆盖层
+│   ├── theme.slint          # 浅/深双主题 token、状态色与文件类型色
+│   ├── icons.slint          # SVG 图标注册表（34 个）
+│   ├── widgets.slint        # RailButton、Tip、FileGlyph、分组卡片、速度图、分片网格
+│   ├── model.slint          # 与 Rust 共享的 Task / Detail / Record 结构体
 │   ├── pages/
-│   │   ├── downloads.slint  # 任务表与空状态
-│   │   ├── settings.slint   # 五组设置卡片
+│   │   ├── home.slint       # 卡片控制台：速度、任务、统计、存储、系统
+│   │   ├── downloads.slint  # 下载列表、本地筛选与搜索
+│   │   ├── settings.slint   # 10 分类设置中心
 │   │   ├── new-download.slint
 │   │   └── task-drawer.slint
+│   ├── plugins.slint        # 18 个插件的展示目录（15 内置 / 3 社区）
 │   └── material/            # vendored Slint 1.18.1 Material 3 组件库
+├── crates/
+│   ├── aether-plugin-sdk/   # 首方插件协议、IPC framing 与 manifest 校验
+│   └── aether-plugin-fake/  # SDK 的测试插件
 ├── assets/
-│   ├── icons/               # 单色描边 SVG（33 个），使用时 colorize
+│   ├── icons/               # 单色描边 SVG（34 个），使用时 colorize
 │   ├── logo.png                 # 原始 logo（带浅色底板）
-│   ├── logo-transparent-128.png # 导航栏使用（去背景）
+│   ├── logo-transparent-128.png # 左栏品牌标记（去背景）
 │   ├── logo-transparent-512.png # 去背景高分辨率版本
 │   ├── logo-icon-*.png          # hicolor 32–512 图标（半透明磨砂底）
 │   ├── logo.ico                 # Windows 安装器/快捷方式图标
 ├── packaging/                # desktop / AppStream / Debian / Windows / macOS
 ├── .github/workflows/        # release 分支全平台打包
 ├── Makefile                  # make check / make deb
-├── docs/screenshots/
+├── docs/
+│   ├── DESIGN_SYSTEM.md      # 类型比例、组件尺寸、间距与圆角规范
+│   └── screenshots/          # light / dark 界面截图
 └── scripts/shot.sh
 ```
 
@@ -170,64 +226,87 @@ sudo apt install ./dist/aether_0.1.0_amd64.deb
 ```
 Slint 回调  →  main.rs 意图处理  →  Engine 状态变更
     ↑                                    │
-    └──  VecModel / 属性更新  ←  行级 diff ┘
+    └──  VecModel / 属性更新 / 聚合统计 / 全局曲线 / 记录 ┘
 ```
 
 UI 不直接修改任务。暂停、继续、取消、新建、筛选和搜索都先变成 `main.rs` 里的意图，由
-模拟引擎算出新状态，再以最小 diff 写回 `VecModel`。定时器每 200 ms 推进一次引擎，因此
-速率、进度、剩余时间和详情图表都会连续变化。
-
-引擎内置 12 个演示任务（HTTP / BT、下载中 / 等待 / 暂停 / 完成 / 失败 / 做种），覆盖了
-列表与详情抽屉的所有视觉状态。
+模拟引擎算出新状态，再以最小 diff 写回 `VecModel`。定时器每 200 ms 推进引擎，同时刷新
+计数、全局限速曲线和记录；详情抽屉按需刷新图表与分片。主题由 UI 选择 + Rust 系统探测
+共同决定，`Aether.dark` 驱动自绘 token，`ColorSchemeSelector` 驱动 Material 控件。
 
 ---
 
 ## 设计说明
 
+完整的类型比例、组件尺寸、间距与圆角规范见 [docs/DESIGN_SYSTEM.md](docs/DESIGN_SYSTEM.md)。令牌集中在 `ui/theme.slint`；页面不再写裸字号和一次性高度。
+
+**左侧图标导航。** 左侧 72px 导航栏固定 3 个一级入口（主页 / 下载 / 设置），底部是
+支持入口，名称显示在导航栏内的固定提示位，不改变按钮布局，因此悬停不会抖动。筛选属于
+下载页，分类属于设置页，全局导航只承担页面切换。左栏从上到下是品牌、主页 / 下载 / 设置、
+新建下载 `+` 和支持入口；内容区不再保留空顶栏。
+
+**主页是卡片化控制台。** 五张卡放在同一套 3 列网格上：上排实时速度跨 2 列、任务卡 1 列；
+下排数据统计、存储分类、系统会话各 1 列。卡片复用同一套 Card 规范——16px 圆角、26px
+标题图标、12px 内边距、统一阴影和边线；卡边、列轨和上下排间距对齐。实时速度卡带今日
+下载 / 上传 / 峰值和限速预设；任务卡用活跃任务环图 +「3 / 12」+ 状态分布条 + 四条状态明细
+表达任务结构；数据统计卡展示本周总量和 7 天柱图；存储卡展示磁盘和分类占比；系统卡承载
+版本、引擎、扩展、插件、协议汇总和会话信息。主页不混入任务列表；任务列表在下载页里完整展开。
+
+**下载页是列表。** 本地筛选 chip 带计数，搜索框只影响列表；行内展示文件名、来源、进度、
+大小、百分比、剩余时间、速度和状态，操作按钮在悬停时提亮。列表使用虚拟化 `ListView`，
+默认 900×600 下可见 5 行左右，滚动条独立于卡片。
+
+**设置中心是全能工具的面板。** 设置页使用左侧分类导航 + 右侧分组卡片，包含常规、下载、
+网络、BT/PT、媒体与浏览器、插件、计划与通知、外观、高级、关于与支持。下载项覆盖并发、
+连接、分段、动态分段、重试、超时、带宽、预分配、校验、完成动作；网络项覆盖代理、DNS、
+IPv6、User-Agent、请求头、HTTP/2、FTP 被动、镜像；BT/PT 覆盖端口、加密、DHT/PEX/LSD、
+uTP、上传、做种比例、Peer 上限、IP 过滤与 Tracker；另有媒体嗅探/ffmpeg、浏览器接管、
+18 个插件（15 内置 / 3 社区）的管理目录、计划任务、通知、RPC 与诊断。
+
+**双主题。** 自定义 token 全部从 `Aether.dark` 派生：表面、卡片渐变、画布、弹窗、
+抽屉、遮罩、阴影、代码与状态色都有浅/深值。上游 Material 控件通过
+`ColorSchemeSelector` 切换。设置提供 **浅色 / 深色 / 跟随系统** 3 项，默认跟随系统；
+Rust 在 Linux 读取 `gsettings`，Windows 读取注册表，macOS 读取
+`AppleInterfaceStyle`，并在跟随系统时每 10 秒复查。主题选择会持久化，首次启动（或配置为
+`跟随系统`）时跟随桌面；`AETHER_THEME=light|dark` 可用于截图或测试。
+
 **Material 3。** 直接使用 Slint 官方 Material 3 组件库，而不是手写一套仿 M3 控件。
 `build.rs` 通过 `with_style("material")` 把 vendored 的 Slint 1.18.1 组件注册为样式；
-Aether 只替换品牌色板，并补充上游没有的桌面业务组件。设置项、对话框和详情抽屉中的
-按钮、开关、滑块、下拉框与单行输入框全部来自上游实现；自绘组件复用同一套 M3 令牌与官方
+设置、弹窗、抽屉和列表中的开关、滑块、下拉框、单行输入框与图标按钮来自上游实现；
+导航、卡片、Tip、FileGlyph、速度图、分片网格等业务组件复用同一套令牌与
 `StateLayer`（涟漪、悬停、焦点）。
 
-| 层级 | 组件 | 来源 |
-| --- | --- | --- |
-| 上游 M3 | `Button`、`TextButton`、`IconButton`、`Switch`、`Slider`、`ComboBox`、`LineEdit`、`ScrollView`、`ListView`、`StateLayer` | `ui/material/`（Slint 1.18.1） |
-| 自绘业务组件 | 导航栏、筛选 chip、搜索框、FAB、状态标签、进度轨、速度图、分片网格、文件徽标、设置卡片 | 基于 Aether 令牌 / `StateLayer` |
+**Aurora ink。** 深色为 plum-black（`#0A0810` → `#141119` → `#211C29`），浅色为
+lavender（`#ECE5F1` → `#F7F3FA` → `#E2D9EC`）。主色 `#6750A4`，实时状态用薄荷
+`#6FE3C4`（深）/ `#0F8A73`（浅）；状态色、文件类型色和进度条颜色随主题一起切换。
 
-上游 Slint 目前没有 App Bar、Navigation Rail、Chip、FAB 这类模式组件，对应部分按 M3
-规范自绘；设置页、对话框、表格与抽屉中的按钮、下拉框、开关与滑块均来自上游实现，文本
-输入使用上游 M3 `LineEdit`（搜索框为自绘的胶囊组合）。
+**留白与层级。** 左栏 72 px 贯穿全高，内容区离窗口边缘 12 px；主页卡片 18 px 圆角、14 px 内边距；
+下载行高 68 px；设置分类栏 214 px。卡片的悬浮感来自低透明度阴影与顶部高光，而不是
+粗边框；画布顶部保留一条紫到薄荷的 1 px 极光线。
 
-**深色优先。** `MaterialPalette` 的深色角色被重定向到 Aether 的 surface 阶梯
-（`#141218` → `#211F26` → `#2B2930` → `#36343B`）。主色 `#6750A4` 驱动 accent 角色，
-`ColorSchemeSelector` 固定为 dark，避免跟随系统切到浅色而破坏整屏对比。
+**矢量图表。** Slint 1.18 还没有 `Canvas`。主页和 inspector 的速度图用 `Path` 的 SVG
+`commands` 绘制，归一化到 0..1 后用 `ImageFit.fill` 拉伸；分片网格、进度轨和背景流线同理。
+图标是单色描边 SVG，由 `colorize` 在使用处着色，因此能跟随主题。
 
-**留白与层级。** 导航栏 84 px，内容区 20 px 外边距，表格行高 60 px。卡片的“悬浮感”
-来自低透明度、大模糊半径的阴影，而不是粗边框或高对比描边。
+**虚拟化与命中测试。** 列表用 `ListView`，只实例化视口内的行；整行 TouchArea 先声明，
+行内操作在内容层上方，空白区域仍能打开 inspector。主页/设置/详情中的悬停提示、指标
+Tip 与卡片交互各自独立，不依赖系统 Tooltip 窗口。
 
-**矢量图表。** Slint 1.18 还没有 `Canvas`。速度折线图因此用 `Path` 的 SVG `commands`
-绘制，坐标系归一化到 0..1，再通过 `ImageFit.fill` 拉伸到目标尺寸；分片网格、进度轨和
-背景流线同理。图标是单色描边 SVG 资源，由 `colorize` 在使用处着色，因此一套资源可以适配任意前景色角色。
-
-**虚拟化与命中测试。** 表格用 `ListView`，只实例化视口内的行；行背景的
-`TouchArea` 放在内容**之后**，这样行内按钮优先接收点击，而空白区域仍能打开详情抽屉。
-
-**键盘与空状态。** 新建对话框自动聚焦 URL，Enter 提交、Esc 关闭；详情抽屉也支持 Esc
-关闭。搜索或筛选无结果时，空状态提供“清除筛选条件”入口，一次恢复全部任务。
+**键盘与空状态。** 新建对话框自动聚焦 URL，Enter 提交、Esc 关闭；任务 inspector 支持
+Esc 关闭；下载空状态提供“清除筛选条件”，一次恢复全部任务。
 
 ### 对 vendored 组件的改动
 
-`ui/material/` 来自 Slint 1.18.1 的 `widgets/{material,common,interfaces}`，做了几处
-小而局部的补丁，均保留上游版权头：
+`ui/material/` 来自 Slint 1.18.1 的 `widgets/{material,common,interfaces}`，保留上游版权头，
+做了几处小而局部的补丁：
 
 | 文件 | 改动 |
 | --- | --- |
-| `styling.slint` | 品牌色板：`#6750A4` 及 Aether 深色 surface 阶梯 |
-| `color-scheme.slint` | 固定深色方案（上游从平台读取） |
+| `styling.slint` | aurora ink 色板与浅/深 surface 阶梯 |
+| `color-scheme.slint` | 主题方案改为可由 app shell 读写的 `in-out`，支持跟随系统/浅/深 |
 | `lineedit.slint` | 新增 `show-clear-button`，路径输入框不需要清除按钮 |
 | `scrollview.slint` | 1 px 描边滑块改为 6 px 实心圆角滑块，深色下更清晰 |
-| `switch.slint` | 选中态滑块改用 `control-foreground`，与深紫轨道拉开对比 |
+| `switch.slint` | 选中态 handle 改用 `accent-foreground`，浅色下保持白色 knob；移除空标签间距 |
 
 ---
 
@@ -237,9 +316,14 @@ Aether 只替换品牌色板，并补充上游没有的桌面业务组件。设�
 
 - 下载过程完全由 `engine.rs` 模拟，不发起网络请求、不写文件
 - 数据每次启动重新生成，没有持久化、断点续传或真实校验
-- 没有系统托盘、通知、剪贴板监听、协议关联与多语言
-- 窗口默认 1040×700，最小 900×600；没有做手机/超窄窗口布局
-- 设置项只改变界面状态，不产生实际效果
+- 设置页展示的是能力结构与交互，选项不全部产生实际效果；主题选择会持久化，其余设置存放在内存
+- 主题支持浅/深/跟随系统；系统检测为 Linux GNOME / Windows / macOS 的轻量实现，
+  跟随系统时每 10 秒轮询
+- 详情面板不展示日志与 BT 节点；当前 inspector 聚焦图表、分片、指标与文件信息
+- 插件页展示 18 个 UI 目录条目；开关/更新/安装为原型反馈，真实插件 supervisor 以
+  `crates/aether-plugin-sdk` 为基础继续接入
+- 没有系统托盘、真实通知、剪贴板监听、协议关联与多语言
+- 窗口默认 900×600，最小 900×560；没有做手机/超窄窗口布局
 
 ## 许可
 

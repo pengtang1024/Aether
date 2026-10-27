@@ -1,60 +1,83 @@
 // Aether — design tokens.
 //
-// A thin layer on top of the Material 3 palette (`MaterialPalette`) that
-// exposes the app-level roles the UI needs: surfaces, brand colors, the M3
-// shape scale and the type scale. Everything is dark-first.
-
-import { MaterialPalette } from "std-widgets.slint";
+// A reactive light/dark token set. `Aether.dark` is driven by the app shell
+// (system preference or an explicit user choice); every colour below resolves
+// from it, so custom components and stock Material widgets switch together.
 
 export global Aether {
+    in-out property <bool> dark: true;
+
     // ---- Surfaces --------------------------------------------------------
-    out property <color> surface: #141218;
-    out property <color> surface-dim: #0F0D13;
-    out property <color> surface-container: #211F26;
-    out property <color> surface-container-high: #2B2930;
-    out property <color> surface-container-highest: #36343B;
-    out property <color> surface-raised: #26232B;
+    out property <color> surface: dark ? #141119 : #F7F3FA;
+    out property <color> surface-dim: dark ? #0A0810 : #ECE5F1;
+    out property <color> surface-container-low: dark ? #1A1621 : #F1EBF6;
+    out property <color> surface-container: dark ? #211C29 : #EAE2F1;
+    out property <color> surface-container-high: dark ? #2A2433 : #E2D9EC;
+    out property <color> surface-container-highest: dark ? #352E40 : #D9CEE5;
+    out property <color> surface-raised: dark ? #262030 : #F4EEF9;
+
+    // ---- Structural gradients -------------------------------------------
+    out property <color> backdrop-top: dark ? #0D0A14 : #F4EEFA;
+    out property <color> backdrop-mid: dark ? #0A0810 : #F8F5FB;
+    out property <color> backdrop-bottom: dark ? #090E11 : #EDF3F1;
+    out property <color> canvas-top: dark ? #17131F : #F9F5FC;
+    out property <color> canvas-bottom: dark ? #121017 : #EFE9F5;
+    out property <color> card-top: dark ? #2A2433 : #FCF9FF;
+    out property <color> card-bottom: dark ? #1C1824 : #F2ECF8;
+    out property <color> hero-top: dark ? #2B2338 : #F1E8FF;
+    out property <color> hero-bottom: dark ? #1A1621 : #F8F4FC;
+    out property <color> dialog-top: dark ? #2E2639 : #FCF9FF;
+    out property <color> dialog-bottom: dark ? #221D2B : #F1EAF9;
+    out property <color> sheet-top: dark ? #231D2D : #FAF6FD;
+    out property <color> sheet-bottom: dark ? #18141F : #F0EAF6;
 
     // ---- Lines -----------------------------------------------------------
-    out property <color> outline: #938F99;
-    out property <color> outline-variant: #444746;
-    out property <color> outline-faint: #333138;
+    out property <color> outline: dark ? #8C8496 : #7A7185;
+    out property <color> outline-variant: dark ? #443C4F : #C9C0D4;
+    out property <color> outline-faint: dark ? #2F2938 : #DED6E8;
 
     // ---- Content ---------------------------------------------------------
-    out property <color> on-surface: #E6E1E5;
-    out property <color> on-surface-variant: #CAC4D0;
-    out property <color> on-surface-muted: #948F99;
+    out property <color> on-surface: dark ? #EDE7F0 : #1D1825;
+    out property <color> on-surface-variant: dark ? #CBC2D6 : #4F465A;
+    out property <color> on-surface-muted: dark ? #9A92A8 : #7A7185;
 
     // ---- Brand -----------------------------------------------------------
     out property <color> primary: #6750A4;
     out property <color> on-primary: #FFFFFF;
-    out property <color> primary-container: #4F378B;
-    out property <color> on-primary-container: #EADDFF;
-    out property <color> primary-bright: #B69DF8;
-    out property <color> primary-soft: #6750A4.with-alpha(0.16);
-    out property <color> primary-softer: #6750A4.with-alpha(0.08);
+    out property <color> primary-container: dark ? #4B3585 : #EADDFF;
+    out property <color> on-primary-container: dark ? #EADDFF : #21005D;
+    out property <color> primary-bright: dark ? #CBB6FF : #5B3FA0;
+    out property <color> primary-soft: dark ? #6750A4.with-alpha(0.18) : #6750A4.with-alpha(0.12);
+    out property <color> primary-softer: dark ? #6750A4.with-alpha(0.09) : #6750A4.with-alpha(0.06);
+    out property <color> accent-top: dark ? #8B6FE8 : #7C5CD6;
+    out property <color> accent-bottom: dark ? #5B3FA0 : #5B3FA0;
 
     // ---- Secondary -------------------------------------------------------
-    out property <color> secondary-container: #4A4458;
-    out property <color> on-secondary-container: #E8DEF8;
+    out property <color> secondary-container: dark ? #3A3345 : #E8DEF8;
+    out property <color> on-secondary-container: dark ? #E9E0F5 : #1D192B;
+
+    // ---- Live transfer accent -------------------------------------------
+    out property <color> live: dark ? #6FE3C4 : #0F8A73;
+    out property <color> live-container: dark ? #10342E : #D8F5ED;
+    out property <color> on-live-container: dark ? #C8F8EC : #00382E;
 
     // ---- Status ----------------------------------------------------------
-    out property <color> success: #7FD892;
-    out property <color> success-container: #1E3B26;
-    out property <color> warning: #F5C77E;
-    out property <color> warning-container: #3A2E14;
-    out property <color> error: #F2B8B5;
-    out property <color> error-container: #4A1614;
-    out property <color> info: #8AC8E8;
-    out property <color> info-container: #16303F;
-    out property <color> neutral-container: #36343B;
+    out property <color> success: dark ? #7FE3B5 : #1F7A55;
+    out property <color> success-container: dark ? #11352B : #D7F2E1;
+    out property <color> warning: dark ? #F3C77E : #8A5B00;
+    out property <color> warning-container: dark ? #3A2C14 : #FBEBC8;
+    out property <color> error: dark ? #FFB4AB : #B3261E;
+    out property <color> error-container: dark ? #4B1714 : #F9DEDC;
+    out property <color> info: dark ? #8ED3F2 : #00639B;
+    out property <color> info-container: dark ? #12313E : #D7ECF7;
+    out property <color> neutral-container: dark ? #322B3C : #E5DEEE;
 
     // ---- Shape scale (M3) -----------------------------------------------
     out property <length> radius-xs: 4px;
     out property <length> radius-sm: 8px;
     out property <length> radius-md: 12px;
     out property <length> radius-lg: 16px;
-    out property <length> radius-xl: 20px;
+    out property <length> radius-xl: 22px;
     out property <length> radius-2xl: 28px;
     out property <length> radius-full: 999px;
 
@@ -65,39 +88,99 @@ export global Aether {
     out property <length> space-lg: 16px;
     out property <length> space-xl: 24px;
     out property <length> space-2xl: 32px;
+    out property <length> space-3xl: 40px;
 
     // ---- Type scale ------------------------------------------------------
-    out property <length> text-display: 28px;
-    out property <length> text-headline: 20px;
-    out property <length> text-title: 15px;
+    out property <length> text-display: 30px;
+    out property <length> text-headline: 24px;
+    out property <length> text-heading: 20px;
+    out property <length> text-title: 16px;
     out property <length> text-body: 13px;
+    out property <length> text-control: 13px;
     out property <length> text-label: 12px;
     out property <length> text-caption: 11px;
     out property <length> text-micro: 10px;
 
+    // ---- Component size scale -------------------------------------------
+    // Card shell
+    out property <length> card-radius: 16px;
+    out property <length> card-padding: 12px;
+    out property <length> card-header: 32px;
+    out property <length> card-header-tall: 40px;
+    out property <length> card-icon: 24px;
+    // Page / layout
+    out property <length> page-padding: 16px;
+    out property <length> section-gap: 16px;
+    out property <length> panel-header: 48px;
+    // Controls: nav rows, fields, primary icon buttons
+    out property <length> control-xs: 28px;
+    out property <length> control-sm: 32px;
+    out property <length> control-md: 36px;
+    out property <length> control-lg: 40px;
+    out property <length> control-xl: 44px;
+    // Information rows
+    out property <length> row-compact: 28px;
+    out property <length> row-regular: 32px;
+    out property <length> row-comfortable: 36px;
+    out property <length> row-task: 68px;
+    // Named layout / visualization sizes
+    out property <length> nav-width: 72px;
+    out property <length> settings-nav-width: 216px;
+    out property <length> viz-ring: 72px;
+    out property <length> viz-chart: 88px;
+    out property <length> speed-pill-w: 36px;
+    out property <length> speed-pill-h: 24px;
+    out property <length> slider-label-w: 96px;
+    out property <length> value-chip-w: 80px;
+    out property <length> value-chip-h: 24px;
+    out property <length> plugin-row: 56px;
+    out property <length> about-hero: 104px;
+    // Form control widths / toggle
+    out property <length> field-xs: 112px;
+    out property <length> field-md: 240px;
+    out property <length> switch-w: 36px;
+    out property <length> switch-h: 20px;
+    out property <length> switch-thumb: 12px;
+    out property <length> switch-inset: 4px;
+    // Icons / glyphs
+    out property <length> icon-xs: 12px;
+    out property <length> icon-sm: 14px;
+    out property <length> icon-md: 16px;
+    out property <length> icon-lg: 20px;
+
     out property <int> weight-regular: 400;
     out property <int> weight-medium: 500;
+    out property <int> weight-semibold: 600;
 
     // ---- Motion ----------------------------------------------------------
     out property <duration> motion-short: 120ms;
     out property <duration> motion-medium: 220ms;
     out property <duration> motion-long: 400ms;
 
-    // ---- Elevation (soft, M3 tonal rather than heavy shadow) ------------
-    out property <color> shadow-soft: #000000.with-alpha(0.35);
+    // ---- Elevation / overlays --------------------------------------------
+    out property <color> scrim: dark ? #050409.with-alpha(0.66) : #201A2B.with-alpha(0.32);
+    out property <color> highlight: dark ? #FFFFFF.with-alpha(0.035) : #FFFFFF.with-alpha(0.65);
+    out property <color> shadow-soft: dark ? #000000.with-alpha(0.35) : #3A2F4B.with-alpha(0.14);
+    out property <color> shadow-card: dark ? #000000.with-alpha(0.22) : #3A2F4B.with-alpha(0.12);
+    out property <color> shadow-popup: dark ? #000000.with-alpha(0.45) : #3A2F4B.with-alpha(0.20);
+    out property <color> glow-primary: dark ? #6750A4.with-alpha(0.16) : #6750A4.with-alpha(0.08);
+    out property <color> glow-primary-soft: dark ? #6750A4.with-alpha(0.09) : #6750A4.with-alpha(0.05);
+    out property <color> glow-live: dark ? #6FE3C4.with-alpha(0.07) : #0F8A73.with-alpha(0.04);
+    out property <color> hover-layer: on-surface.with-alpha(0.04);
+    out property <color> band: dark ? #000000.with-alpha(0.10) : #6750A4.with-alpha(0.035);
     out property <length> elevation-1: 3px;
     out property <length> elevation-2: 8px;
 }
 
-// Status → color mapping shared by the task table and the detail drawer.
+// Status → color mapping shared by the task list and the inspector.
 export global StatusColor {
     public pure function container(kind: int) -> color {
-        if (kind == 0) { return Aether.primary-container; }     // downloading
-        if (kind == 1) { return Aether.success-container; }     // completed
-        if (kind == 2) { return Aether.warning-container; }     // paused
-        if (kind == 3) { return Aether.error-container; }       // failed
-        if (kind == 4) { return Aether.neutral-container; }     // queued
-        if (kind == 5) { return Aether.info-container; }        // seeding
+        if (kind == 0) { return Aether.primary-container; }
+        if (kind == 1) { return Aether.success-container; }
+        if (kind == 2) { return Aether.warning-container; }
+        if (kind == 3) { return Aether.error-container; }
+        if (kind == 4) { return Aether.neutral-container; }
+        if (kind == 5) { return Aether.info-container; }
         return Aether.neutral-container;
     }
 
@@ -110,29 +193,48 @@ export global StatusColor {
         if (kind == 5) { return Aether.info; }
         return Aether.on-surface-variant;
     }
+
+    public pure function fill(kind: int) -> color {
+        if (kind == 0) { return Aether.primary; }
+        if (kind == 1) { return Aether.success; }
+        if (kind == 2) { return Aether.warning; }
+        if (kind == 3) { return Aether.error; }
+        if (kind == 5) { return Aether.info; }
+        return Aether.outline;
+    }
 }
 
-// File-type accent used by the table row badge. Kept deliberately quiet:
-// a tinted outline plus a readable label, never a saturated block of color.
+// File-type accent used by row glyphs.
 export global FileTone {
     public pure function label(tone: int) -> color {
-        if (tone == 1) { return Aether.primary-bright; }   // archives
-        if (tone == 2) { return Aether.warning; }          // disk images
-        if (tone == 3) { return Aether.info; }             // video
-        if (tone == 4) { return Aether.success; }          // executables
+        if (tone == 1) { return Aether.primary-bright; }
+        if (tone == 2) { return Aether.warning; }
+        if (tone == 3) { return Aether.info; }
+        if (tone == 4) { return Aether.success; }
         return Aether.on-surface-variant;
     }
 
     public pure function container(tone: int) -> color {
-        if (tone == 1) { return Aether.primary.with-alpha(0.13); }
-        if (tone == 2) { return Aether.warning.with-alpha(0.10); }
-        if (tone == 3) { return Aether.info.with-alpha(0.10); }
-        if (tone == 4) { return Aether.success.with-alpha(0.10); }
+        if (tone == 1) { return Aether.primary.with-alpha(0.14); }
+        if (tone == 2) { return Aether.warning.with-alpha(0.11); }
+        if (tone == 3) { return Aether.info.with-alpha(0.11); }
+        if (tone == 4) { return Aether.success.with-alpha(0.11); }
         return Aether.on-surface.with-alpha(0.05);
     }
 
     public pure function outline(tone: int) -> color {
         if (tone == 0) { return Aether.outline-faint; }
-        return label(tone).with-alpha(0.24);
+        return label(tone).with-alpha(0.26);
+    }
+}
+
+// Plugin accent tones shared by the home tile and the settings list.
+export global PluginTone {
+    public pure function color(tone: int) -> color {
+        if (tone == 1) { return Aether.live; }
+        if (tone == 2) { return Aether.info; }
+        if (tone == 3) { return Aether.warning; }
+        if (tone == 4) { return Aether.success; }
+        return Aether.primary-bright;
     }
 }

@@ -1,0 +1,936 @@
+// Aether — home dashboard (v8, card grid + statistics).
+//
+// Five cards in a shared 3-column grid:
+//   row 1: live speed (2 cols) + task summary (1 col)
+//   row 2: weekly statistics + storage breakdown + system/session
+//
+// Cards use the shared home-components card system so radius, padding,
+// header height, borders and shadows stay consistent.
+
+import { Aether } from "../theme.slint";
+import { AetherIcons } from "../icons.slint";
+import { SpeedChart } from "../widgets.slint";
+import { Card } from "home-components.slint";
+
+// -----------------------------------------------------------------------------
+// Speed limit preset pill. 0 = unlimited, 1 = low, 2 = medium, 3 = high.
+// -----------------------------------------------------------------------------
+component SpeedLimitPill inherits Rectangle {
+    in property <int> index: 0;
+    in property <int> mode: 0;
+    callback clicked;
+
+    property <bool> is-selected: root.mode == root.index;
+
+    width: Aether.speed-pill-w;
+    height: Aether.speed-pill-h;
+    border-radius: Aether.radius-sm;
+    background: is-selected ? Aether.on-surface.with-alpha(0.08) : transparent;
+
+    Text {
+        text: index == 0 ? "不限" : index == 1 ? "低" : index == 2 ? "中" : "高";
+        color: parent.is-selected ? Aether.on-surface : Aether.on-surface-muted;
+        font-size: Aether.text-caption;
+        font-weight: parent.is-selected ? Aether.weight-medium : Aether.weight-regular;
+        x: 0;
+        y: 0;
+        width: 100%;
+        height: 100%;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    Rectangle {
+        width: 18px;
+        height: 1px;
+        x: (parent.width - self.width) / 2;
+        y: parent.height - 1px;
+        background: Aether.primary-bright;
+        visible: parent.is-selected;
+    }
+
+    TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => { root.clicked(); }
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Compact information row for storage / system cards.
+// -----------------------------------------------------------------------------
+component InfoRow inherits Rectangle {
+    in property <image> icon-source;
+    in property <string> label: "";
+    in property <string> value: "";
+    in property <bool> connected: false;
+    in property <bool> interactive: false;
+    callback clicked;
+
+    height: 24px;
+    border-radius: Aether.radius-sm;
+    background: root.interactive && touch.has-hover
+        ? Aether.on-surface.with-alpha(0.05)
+        : transparent;
+
+    HorizontalLayout {
+        padding-left: 0;
+        padding-right: 0;
+        spacing: 7px;
+
+        Image {
+            source: root.icon-source;
+            width: 13px;
+            height: 13px;
+            colorize: Aether.on-surface-muted;
+            cross-axis-self-alignment: center;
+        }
+
+        Text {
+            text: root.label;
+            color: Aether.on-surface-muted;
+            font-size: Aether.text-micro;
+            horizontal-stretch: 1;
+            vertical-alignment: center;
+        }
+
+        Text {
+            text: root.value;
+            color: Aether.on-surface;
+            font-size: Aether.text-micro;
+            font-family: "JetBrains Mono";
+            vertical-alignment: center;
+        }
+
+        Rectangle {
+            width: 12px;
+            height: 100%;
+
+            if root.connected: Rectangle {
+                width: 5px;
+                height: 5px;
+                border-radius: 3px;
+                background: Aether.live;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+            }
+
+            if root.interactive: Image {
+                source: AetherIcons.chevron-right;
+                width: 8px;
+                height: 8px;
+                colorize: Aether.on-surface-muted;
+                opacity: 0.45;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+            }
+        }
+    }
+
+    touch := TouchArea {
+        width: 100%;
+        height: 100%;
+        enabled: root.interactive;
+        clicked => { root.clicked(); }
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Compact metric for the live-speed card footer / stats card.
+// -----------------------------------------------------------------------------
+component MetricCell inherits Rectangle {
+    in property <string> label: "";
+    in property <string> value: "";
+
+    height: 100%;
+
+    VerticalLayout {
+        spacing: 0;
+        alignment: center;
+
+        Text {
+            text: root.label;
+            color: Aether.on-surface-muted;
+            font-size: Aether.text-micro;
+        }
+
+        Text {
+            text: root.value;
+            color: Aether.on-surface;
+            font-size: Aether.text-caption;
+            font-family: "JetBrains Mono";
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
+// One bar of the 7-day volume chart.
+// -----------------------------------------------------------------------------
+component DayBar inherits Rectangle {
+    in property <float> fraction: 0;
+    in property <string> label: "";
+    in property <bool> active: false;
+
+    height: Aether.viz-chart;
+
+    VerticalLayout {
+        spacing: 3px;
+
+        Rectangle {
+            height: Aether.viz-chart - 16px;
+            width: 100%;
+            background: transparent;
+
+            Rectangle {
+                width: 100%;
+                height: parent.height * root.fraction;
+                y: parent.height - self.height;
+                border-radius: 3px;
+                background: root.active
+                    ? Aether.primary-bright
+                    : Aether.primary.with-alpha(0.42);
+            }
+        }
+
+        Text {
+            text: root.label;
+            color: Aether.on-surface-muted;
+            font-size: Aether.text-micro;
+            horizontal-alignment: center;
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Storage category row.
+// -----------------------------------------------------------------------------
+component CategoryRow inherits Rectangle {
+    in property <color> dot: Aether.primary-bright;
+    in property <string> label: "";
+    in property <string> value: "";
+    in property <string> percent: "";
+
+    height: Aether.space-lg;
+
+    HorizontalLayout {
+        spacing: 6px;
+
+        Rectangle {
+            width: 6px;
+            height: 6px;
+            border-radius: 3px;
+            background: root.dot;
+            cross-axis-self-alignment: center;
+        }
+
+        Text {
+            text: root.label;
+            color: Aether.on-surface-muted;
+            font-size: Aether.text-micro;
+            horizontal-stretch: 1;
+            vertical-alignment: center;
+        }
+
+        Text {
+            text: root.value;
+            color: Aether.on-surface;
+            font-size: Aether.text-micro;
+            font-family: "JetBrains Mono";
+            width: 54px;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+        }
+
+        Text {
+            text: root.percent;
+            color: Aether.on-surface-muted;
+            font-size: Aether.text-micro;
+            font-family: "JetBrains Mono";
+            width: 30px;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Task status row (icon dot + label + count/share).
+// -----------------------------------------------------------------------------
+component TaskStatusRow inherits Rectangle {
+    in property <color> dot: Aether.primary-bright;
+    in property <string> label: "";
+    in property <string> count: "";
+    in property <string> percent: "";
+    callback clicked;
+
+    border-radius: Aether.radius-sm;
+    background: touch.has-hover ? Aether.on-surface.with-alpha(0.05) : transparent;
+
+    HorizontalLayout {
+        padding-left: 0;
+        padding-right: 0;
+        spacing: 8px;
+
+        Rectangle {
+            width: 6px;
+            height: 6px;
+            border-radius: 3px;
+            background: root.dot;
+            cross-axis-self-alignment: center;
+        }
+
+        Text {
+            text: root.label;
+            color: Aether.on-surface-muted;
+            font-size: Aether.text-micro;
+            horizontal-stretch: 1;
+            vertical-alignment: center;
+        }
+
+        Text {
+            text: root.count;
+            color: Aether.on-surface;
+            font-size: Aether.text-micro;
+            font-family: "JetBrains Mono";
+            width: 16px;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+        }
+
+        Text {
+            text: root.percent;
+            color: Aether.on-surface-muted;
+            font-size: Aether.text-micro;
+            font-family: "JetBrains Mono";
+            width: 34px;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+        }
+
+        Image {
+            source: AetherIcons.chevron-right;
+            width: 8px;
+            height: 8px;
+            colorize: Aether.on-surface-muted;
+            opacity: 0.35;
+            cross-axis-self-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => { root.clicked(); }
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Ring gauge for a single ratio (task activity, disk usage).
+// -----------------------------------------------------------------------------
+component RingGauge inherits Rectangle {
+    in property <float> progress: 0;
+    in property <string> label: "";
+    in property <color> tone: Aether.primary-bright;
+    in property <length> size: 72px;
+
+    width: root.size;
+    height: root.size;
+
+    private property <float> c: (root.size / 1px) / 2;
+    private property <float> r: (root.size / 1px) / 2 - 4;
+    private property <angle> angle: root.progress * 360deg;
+    private property <float> end-x: root.c + root.r * sin(root.angle);
+    private property <float> end-y: root.c - root.r * cos(root.angle);
+
+    Rectangle {
+        width: 100%;
+        height: 100%;
+        border-radius: root.size / 2;
+        border-width: 8px;
+        border-color: Aether.surface-container-highest;
+        background: transparent;
+    }
+
+    Path {
+        width: 100%;
+        height: 100%;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: root.size / 1px;
+        viewbox-height: root.size / 1px;
+        fit: ImageFit.fill;
+        fill: transparent;
+        stroke: root.tone;
+        stroke-width: 8px;
+        stroke-line-cap: butt;
+        commands: "M " + root.c + " " + (root.c - root.r)
+            + " A " + root.r + " " + root.r + " 0 "
+            + (root.progress > 0.5 ? 1 : 0) + " 1 "
+            + root.end-x + " " + root.end-y;
+    }
+
+    Text {
+        text: root.label;
+        color: Aether.on-surface;
+        font-size: Aether.text-title;
+        font-weight: Aether.weight-semibold;
+        font-family: "JetBrains Mono";
+        width: 100%;
+        height: 100%;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+export component HomePage inherits Rectangle {
+    in property <int> count-active: 0;
+    in property <int> count-done: 0;
+    in property <int> count-paused: 0;
+    in property <int> count-failed: 0;
+    in property <int> count-seed: 0;
+    in property <int> count-all: 0;
+    in property <string> total-speed: "0 B/s";
+    in property <string> chart-line: "";
+    in property <string> chart-area: "";
+    in property <float> chart-latest: 0;
+
+    in-out property <int> speed-limit-mode: 0;
+
+    callback open-downloads(int);
+    callback open-plugins();
+    callback open-download-settings();
+
+    private property <length> pad: Aether.page-padding;
+    private property <length> gap: Aether.section-gap;
+    private property <length> row-h: (root.height - Aether.page-padding * 2 - Aether.section-gap) / 2;
+    private property <length> col-w: (root.width - Aether.page-padding * 2 - Aether.section-gap * 2) / 3;
+
+    // ---- row 1: live speed (2/3) + task summary (1/3) -------------------------
+    HorizontalLayout {
+        x: root.pad;
+        y: root.pad;
+        width: root.width - root.pad * 2;
+        height: root.row-h;
+        spacing: root.gap;
+
+        speed-card := Card {
+            width: root.col-w * 2 + root.gap;
+            title: "实时速度";
+            icon-source: AetherIcons.signal;
+            tone: Aether.live;
+
+            VerticalLayout {
+                width: 100%;
+                height: 100%;
+                spacing: 4px;
+
+                HorizontalLayout {
+                    width: 100%;
+                    vertical-stretch: 1;
+                    spacing: 16px;
+
+                    VerticalLayout {
+                        width: 200px;
+                        spacing: 6px;
+                        alignment: start;
+
+                        Text {
+                            text: "当前速度";
+                            color: Aether.on-surface-muted;
+                            font-size: Aether.text-caption;
+                        }
+
+                        Text {
+                            text: root.total-speed;
+                            color: Aether.on-surface;
+                            font-size: Aether.text-display;
+                            font-weight: Aether.weight-semibold;
+                            font-family: "JetBrains Mono";
+                            letter-spacing: -1px;
+                        }
+
+                        Text {
+                            text: "活跃 " + root.count-active + " · 队列 " + root.count-paused + " · 连接 24";
+                            color: Aether.on-surface-muted;
+                            font-size: Aether.text-micro;
+                        }
+
+                        Rectangle { vertical-stretch: 1; background: transparent; }
+
+                        HorizontalLayout {
+                            spacing: 6px;
+                            alignment: start;
+                            cross-axis-alignment: center;
+
+                            Text {
+                                text: "实时更新";
+                                color: Aether.on-surface-muted;
+                                font-size: Aether.text-micro;
+                            }
+
+                            Rectangle {
+                                width: 5px;
+                                height: 5px;
+                                border-radius: 3px;
+                                background: Aether.live;
+                            }
+                        }
+                    }
+
+                    SpeedChart {
+                        width: speed-card.width - 240px;
+                        height: 100%;
+                        clip: true;
+                        line-path: root.chart-line;
+                        area-path: root.chart-area;
+                        latest: root.chart-latest;
+                        caption: "";
+                    }
+                }
+
+                Rectangle {
+                    height: 1px;
+                    background: Aether.outline-faint.with-alpha(0.5);
+                }
+
+                Rectangle {
+                    width: 100%;
+                    height: 32px;
+
+                    HorizontalLayout {
+                        x: 0;
+                        y: 0;
+                        width: parent.width - 176px;
+                        height: 100%;
+                        spacing: 6px;
+
+                        MetricCell { label: "今日下载"; value: "18.4 GB"; horizontal-stretch: 1; }
+                        Rectangle { width: 1px; height: 18px; background: Aether.outline-faint; cross-axis-self-alignment: center; }
+                        MetricCell { label: "今日上传"; value: "2.1 GB"; horizontal-stretch: 1; }
+                        Rectangle { width: 1px; height: 18px; background: Aether.outline-faint; cross-axis-self-alignment: center; }
+                        MetricCell { label: "峰值速度"; value: "42.8 MB/s"; horizontal-stretch: 1; }
+                    }
+
+                    Rectangle {
+                        x: parent.width - 176px;
+                        y: (parent.height - 18px) / 2;
+                        width: 1px;
+                        height: 18px;
+                        background: Aether.outline-faint;
+                    }
+
+                    HorizontalLayout {
+                        x: parent.width - 168px;
+                        y: 0;
+                        width: 168px;
+                        height: 100%;
+                        spacing: 0;
+                        alignment: center;
+
+                        Text {
+                            text: "限速";
+                            color: Aether.on-surface-muted;
+                            font-size: Aether.text-caption;
+                            height: 24px;
+                            vertical-alignment: center;
+                            cross-axis-self-alignment: center;
+                        }
+
+                        for idx in [0, 1, 2, 3] : SpeedLimitPill {
+                            index: idx;
+                            mode: root.speed-limit-mode;
+                            clicked => { root.speed-limit-mode = idx; }
+                        }
+                    }
+                }
+            }
+        }
+
+        task-card := Card {
+            width: root.col-w;
+            title: "任务";
+            icon-source: AetherIcons.list;
+            tone: Aether.primary-bright;
+            action: "全部";
+            action-clicked => { root.open-downloads(0); }
+
+            HorizontalLayout {
+                height: 72px;
+                spacing: 12px;
+                alignment: center;
+
+                RingGauge {
+                    progress: root.count-all > 0
+                        ? 1.0 * root.count-active / root.count-all
+                        : 0;
+                    label: (root.count-all > 0
+                        ? round(100.0 * root.count-active / root.count-all)
+                        : 0) + "%";
+                    tone: Aether.primary-bright;
+                    size: Aether.viz-ring;
+                }
+
+                VerticalLayout {
+                    spacing: 1px;
+                    alignment: center;
+
+                    Text {
+                        text: "活跃任务";
+                        color: Aether.on-surface-muted;
+                        font-size: Aether.text-micro;
+                    }
+                    Text {
+                        text: "" + root.count-active + " / " + root.count-all;
+                        color: Aether.on-surface;
+                        font-size: Aether.text-title;
+                        font-weight: Aether.weight-semibold;
+                        font-family: "JetBrains Mono";
+                    }
+                    Text {
+                        text: "实时下载中";
+                        color: Aether.on-surface-muted;
+                        font-size: Aether.text-micro;
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                height: 8px;
+                spacing: 1px;
+
+                Rectangle {
+                    horizontal-stretch: root.count-active;
+                    height: 100%;
+                    background: Aether.primary-bright;
+                }
+                Rectangle {
+                    horizontal-stretch: root.count-done;
+                    height: 100%;
+                    background: Aether.success;
+                }
+                Rectangle {
+                    horizontal-stretch: root.count-paused;
+                    height: 100%;
+                    background: Aether.warning;
+                }
+                Rectangle {
+                    horizontal-stretch: root.count-failed;
+                    height: 100%;
+                    background: Aether.error;
+                }
+                Rectangle {
+                    horizontal-stretch: root.count-seed;
+                    height: 100%;
+                    background: Aether.info;
+                }
+            }
+
+            TaskStatusRow {
+                height: (task-card.height - 164px) / 4;
+                dot: Aether.success;
+                label: "已完成";
+                count: "" + root.count-done;
+                percent: (root.count-all > 0 ? round(100.0 * root.count-done / root.count-all) : 0) + "%";
+                clicked => { root.open-downloads(2); }
+            }
+            TaskStatusRow {
+                height: (task-card.height - 164px) / 4;
+                dot: Aether.warning;
+                label: "暂停";
+                count: "" + root.count-paused;
+                percent: (root.count-all > 0 ? round(100.0 * root.count-paused / root.count-all) : 0) + "%";
+                clicked => { root.open-downloads(3); }
+            }
+            TaskStatusRow {
+                height: (task-card.height - 164px) / 4;
+                dot: Aether.error;
+                label: "失败";
+                count: "" + root.count-failed;
+                percent: (root.count-all > 0 ? round(100.0 * root.count-failed / root.count-all) : 0) + "%";
+                clicked => { root.open-downloads(4); }
+            }
+            TaskStatusRow {
+                height: (task-card.height - 164px) / 4;
+                dot: Aether.info;
+                label: "种子";
+                count: "" + root.count-seed;
+                percent: (root.count-all > 0 ? round(100.0 * root.count-seed / root.count-all) : 0) + "%";
+                clicked => { root.open-downloads(5); }
+            }
+        }
+    }
+
+    // ---- row 2: weekly stats + storage breakdown + system/session ------------
+    HorizontalLayout {
+        x: root.pad;
+        y: root.pad + root.row-h + root.gap;
+        width: root.width - root.pad * 2;
+        height: root.row-h;
+        spacing: root.gap;
+
+        stats-card := Card {
+            width: root.col-w;
+            title: "数据统计";
+            icon-source: AetherIcons.gauge;
+            tone: Aether.primary-bright;
+
+            VerticalLayout {
+                width: 100%;
+                height: 100%;
+                spacing: 4px;
+
+                HorizontalLayout {
+                    spacing: 4px;
+                    alignment: end;
+
+                    VerticalLayout {
+                        spacing: 0;
+
+                        Text {
+                            text: "本周下载";
+                            color: Aether.on-surface-muted;
+                            font-size: Aether.text-micro;
+                        }
+                        Text {
+                            text: "104.4 GB";
+                            color: Aether.on-surface;
+                            font-size: Aether.text-headline;
+                            font-weight: Aether.weight-semibold;
+                            font-family: "JetBrains Mono";
+                        }
+                    }
+
+                    Rectangle { horizontal-stretch: 1; background: transparent; }
+
+                    Text {
+                        text: "+12%";
+                        color: Aether.success;
+                        font-size: Aether.text-micro;
+                        vertical-alignment: bottom;
+                    }
+                }
+
+                HorizontalLayout {
+                    height: Aether.viz-chart;
+                    spacing: 6px;
+
+                    DayBar { fraction: 0.36; label: "一"; horizontal-stretch: 1; }
+                    DayBar { fraction: 0.54; label: "二"; horizontal-stretch: 1; }
+                    DayBar { fraction: 0.43; label: "三"; horizontal-stretch: 1; }
+                    DayBar { fraction: 0.82; label: "四"; horizontal-stretch: 1; }
+                    DayBar { fraction: 0.62; label: "五"; horizontal-stretch: 1; }
+                    DayBar { fraction: 1.0; label: "六"; active: true; horizontal-stretch: 1; }
+                    DayBar { fraction: 0.81; label: "日"; horizontal-stretch: 1; }
+                }
+
+                Rectangle { vertical-stretch: 1; background: transparent; }
+
+                Rectangle {
+                    height: 1px;
+                    background: Aether.outline-faint.with-alpha(0.5);
+                }
+
+                HorizontalLayout {
+                    width: 100%;
+                    height: Aether.control-xs;
+                    spacing: 8px;
+
+                    MetricCell { label: "上传"; value: "9.6 GB"; horizontal-stretch: 1; }
+                    Rectangle { width: 1px; height: 14px; background: Aether.outline-faint; cross-axis-self-alignment: center; }
+                    MetricCell { label: "平均"; value: "21.3 MB/s"; horizontal-stretch: 1; }
+                    Rectangle { width: 1px; height: 14px; background: Aether.outline-faint; cross-axis-self-alignment: center; }
+                    MetricCell { label: "成功率"; value: "96%"; horizontal-stretch: 1; }
+                }
+            }
+        }
+
+        storage-card := Card {
+            width: root.col-w;
+            title: "存储与分类";
+            icon-source: AetherIcons.drive;
+            tone: Aether.success;
+
+            VerticalLayout {
+                width: 100%;
+                height: 100%;
+                spacing: 4px;
+
+                HorizontalLayout {
+                    height: 72px;
+                    spacing: 12px;
+                    alignment: center;
+
+                    RingGauge {
+                        progress: 0.62;
+                        label: "62%";
+                        tone: Aether.success;
+                        size: Aether.viz-ring;
+                    }
+
+                    VerticalLayout {
+                        spacing: 1px;
+                        alignment: center;
+
+                        Text {
+                            text: "磁盘使用";
+                            color: Aether.on-surface-muted;
+                            font-size: Aether.text-micro;
+                        }
+                        Text {
+                            text: "428 / 690 GB";
+                            color: Aether.on-surface;
+                            font-size: Aether.text-body;
+                            font-weight: Aether.weight-semibold;
+                            font-family: "JetBrains Mono";
+                        }
+                        Text {
+                            text: "剩余 262 GB";
+                            color: Aether.on-surface-muted;
+                            font-size: Aether.text-micro;
+                        }
+                    }
+                }
+
+                HorizontalLayout {
+                    height: 14px;
+                    spacing: 4px;
+
+                    Text {
+                        text: "本周入库";
+                        color: Aether.on-surface-muted;
+                        font-size: Aether.text-micro;
+                        vertical-alignment: center;
+                    }
+
+                    Rectangle { horizontal-stretch: 1; background: transparent; }
+
+                    Text {
+                        text: "27.5 GB · 4 类";
+                        color: Aether.on-surface;
+                        font-size: Aether.text-micro;
+                        font-family: "JetBrains Mono";
+                        vertical-alignment: center;
+                    }
+                }
+
+                Rectangle {
+                    height: 6px;
+                    border-radius: 3px;
+                    clip: true;
+                    background: Aether.surface-container-highest;
+
+                    Rectangle {
+                        x: 0;
+                        width: parent.width * 0.46;
+                        height: 100%;
+                        background: Aether.primary-bright;
+                    }
+                    Rectangle {
+                        x: parent.width * 0.46;
+                        width: parent.width * 0.31;
+                        height: 100%;
+                        background: Aether.live;
+                    }
+                    Rectangle {
+                        x: parent.width * 0.77;
+                        width: parent.width * 0.19;
+                        height: 100%;
+                        background: Aether.warning;
+                    }
+                    Rectangle {
+                        x: parent.width * 0.96;
+                        width: parent.width * 0.04;
+                        height: 100%;
+                        background: Aether.info;
+                    }
+                }
+
+                CategoryRow {
+                    height: (storage-card.height - 180px) / 4;
+                    dot: Aether.primary-bright;
+                    label: "视频";
+                    value: "12.8 GB";
+                    percent: "46%";
+                }
+                CategoryRow {
+                    height: (storage-card.height - 180px) / 4;
+                    dot: Aether.live;
+                    label: "压缩包";
+                    value: "8.4 GB";
+                    percent: "31%";
+                }
+                CategoryRow {
+                    height: (storage-card.height - 180px) / 4;
+                    dot: Aether.warning;
+                    label: "应用";
+                    value: "5.2 GB";
+                    percent: "19%";
+                }
+                CategoryRow {
+                    height: (storage-card.height - 180px) / 4;
+                    dot: Aether.info;
+                    label: "文档";
+                    value: "1.1 GB";
+                    percent: "4%";
+                }
+            }
+        }
+
+        system-card := Card {
+            width: root.col-w;
+            title: "系统与会话";
+            icon-source: AetherIcons.info;
+            tone: Aether.warning;
+            action: "插件";
+            action-clicked => { root.open-plugins(); }
+
+            VerticalLayout {
+                width: 100%;
+                height: 100%;
+                spacing: 1px;
+
+                InfoRow {
+                    icon-source: AetherIcons.info;
+                    label: "版本";
+                    value: "Aether v0.1.0";
+                }
+                InfoRow {
+                    icon-source: AetherIcons.layers;
+                    label: "引擎";
+                    value: "aria2";
+                }
+                InfoRow {
+                    icon-source: AetherIcons.link;
+                    label: "浏览器扩展";
+                    value: "已连接";
+                    connected: true;
+                }
+                InfoRow {
+                    icon-source: AetherIcons.layers;
+                    label: "插件";
+                    value: "18 个 · 3 可更新";
+                }
+                InfoRow {
+                    icon-source: AetherIcons.signal;
+                    label: "协议";
+                    value: "6 种 · 全可用";
+                }
+                InfoRow {
+                    icon-source: AetherIcons.clock;
+                    label: "运行 / 缓存";
+                    value: "2h 18m · 3.2 GB";
+                }
+
+                Rectangle { vertical-stretch: 1; background: transparent; }
+
+                InfoRow {
+                    icon-source: AetherIcons.tune;
+                    label: "下载设置";
+                    value: "";
+                    interactive: true;
+                    clicked => { root.open-download-settings(); }
+                }
+            }
+        }
+    }
+}

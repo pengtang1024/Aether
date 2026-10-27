@@ -1,6 +1,7 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
 // SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
+import { Aether } from "../theme.slint";
 import { ScrollView, Palette } from "std-widgets-impl.slint";
 
 export component AboutSlint {
@@ -23,7 +24,7 @@ export component AboutSlint {
 
         Text {
             text: "Version 1.18.1\nhttps://slint.dev/";
-            font-size: 10px;
+            font-size: Aether.text-micro;
             horizontal-alignment: center;
         }
     }

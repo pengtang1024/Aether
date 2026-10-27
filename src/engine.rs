@@ -4,26 +4,11 @@
 //! one-minute speed history per task. The UI never mutates tasks directly — it
 //! sends intents here and re-renders from the resulting state.
 
+use crate::model::{Status, Task, CHUNK_COUNT, HISTORY_LEN};
 use std::collections::VecDeque;
-use std::time::{SystemTime, UNIX_EPOCH};
-
-use crate::model::{format_size, Status, Task, CHUNK_COUNT, HISTORY_LEN};
 
 const MB: f64 = 1024.0 * 1024.0;
 const GB: f64 = 1024.0 * MB;
-
-pub struct Peer {
-    pub address: String,
-    pub speed: f64,
-    pub ratio: f32,
-    pub kind: i32,
-}
-
-pub struct LogEntry {
-    pub time: String,
-    pub level: &'static str,
-    pub message: String,
-}
 
 pub struct Engine {
     tasks: Vec<Task>,
@@ -33,6 +18,8 @@ pub struct Engine {
     sample_accum: f32,
     /// Monotonic time used to drive the ambient background.
     phase: f32,
+    /// Aggregate download speed over the last minute, for the home dashboard.
+    global_history: VecDeque<f64>,
 }
 
 impl Engine {
@@ -43,8 +30,10 @@ impl Engine {
             next_id: 1,
             sample_accum: 0.0,
             phase: 0.0,
+            global_history: VecDeque::new(),
         };
         engine.seed_demo_tasks();
+        engine.seed_global_history();
         engine
     }
 
@@ -58,30 +47,12 @@ impl Engine {
         self.tasks.iter().find(|t| t.id == id)
     }
 
-    pub fn active_count(&self) -> usize {
-        self.tasks
-            .iter()
-            .filter(|t| t.status == Status::Downloading)
-            .count()
-    }
-
-    pub fn completed_count(&self) -> usize {
-        self.tasks
-            .iter()
-            .filter(|t| t.status == Status::Completed)
-            .count()
-    }
-
-    pub fn total_speed(&self) -> f64 {
-        self.tasks
-            .iter()
-            .filter(|t| t.status == Status::Downloading)
-            .map(|t| t.speed)
-            .sum()
-    }
-
     pub fn drift(&self) -> f32 {
         (self.phase * 0.22).sin()
+    }
+
+    pub fn global_history(&self) -> &VecDeque<f64> {
+        &self.global_history
     }
 
     // -- intents -----------------------------------------------------------
@@ -126,6 +97,33 @@ impl Engine {
                 task.push_sample(task.speed);
             }
         }
+
+        if sample_due {
+            let total: f64 = self
+                .tasks
+                .iter()
+                .filter(|task| task.status == Status::Downloading)
+                .map(|task| task.speed)
+                .sum();
+            if self.global_history.len() == HISTORY_LEN {
+                self.global_history.pop_front();
+            }
+            self.global_history.push_back(total);
+        }
+    }
+
+    fn seed_global_history(&mut self) {
+        let mut history = VecDeque::new();
+        for index in 0..HISTORY_LEN {
+            let total: f64 = self
+                .tasks
+                .iter()
+                .filter(|task| task.status == Status::Downloading)
+                .map(|task| task.history.get(index).copied().unwrap_or(0.0))
+                .sum();
+            history.push_back(total);
+        }
+        self.global_history = history;
     }
 
     /// 0 = pause/resume, 1 = retry, 2 = remove, 3 = reveal in folder.
@@ -215,103 +213,6 @@ impl Engine {
         }
         self.tasks.insert(0, task);
         id
-    }
-
-    pub fn peers(&self, id: i32) -> Vec<Peer> {
-        let Some(task) = self.task(id) else {
-            return Vec::new();
-        };
-        if !task.torrent {
-            return Vec::new();
-        }
-        // Deterministic per task so the list does not reshuffle on every tick.
-        let mut rng = 0xC0FF_EE12_3456_789A ^ (id as u64).wrapping_mul(0x9E37_79B9);
-        let count = 6 + (id as usize % 4);
-        (0..count)
-            .map(|i| {
-                let a = 203;
-                let b = rand_u32(&mut rng) % 2;
-                let c = rand_u32(&mut rng) % 256;
-                let d = 1 + rand_u32(&mut rng) % 254;
-                let port = 51413 + i as u32 * 7;
-                Peer {
-                    address: format!("{a}.{b}.{c}.{d}:{port}"),
-                    speed: (0.4 + rand_f32(&mut rng) as f64 * 2.6) * MB,
-                    ratio: (task.progress() * (0.55 + rand_f32(&mut rng) * 0.45)).clamp(0.0, 1.0),
-                    kind: i32::from(i % 4 == 0),
-                }
-            })
-            .collect()
-    }
-
-    pub fn logs(&self, id: i32) -> Vec<LogEntry> {
-        let Some(task) = self.task(id) else {
-            return Vec::new();
-        };
-        let base = now_seconds();
-        let seed = 7 + (id as u64 % 5);
-        let mut lines = Vec::new();
-        let progress = task.progress();
-
-        lines.push(log_line(
-            base - 4,
-            "INF",
-            format!("已连接 {} 个节点，正在接收数据", 6 + id % 4),
-        ));
-        lines.push(log_line(
-            base - 11,
-            "INF",
-            format!(
-                "分片校验通过 {}/{}",
-                (progress * CHUNK_COUNT as f32) as u32,
-                CHUNK_COUNT
-            ),
-        ));
-        if task.status == Status::Downloading {
-            lines.push(log_line(
-                base - 19,
-                "INF",
-                format!("平均速度 {}，缓冲区正常", format_size(task.speed.max(1.0))),
-            ));
-        }
-        if task.status == Status::Paused {
-            lines.push(log_line(
-                base - 24,
-                "WRN",
-                "用户暂停了任务，连接已保留".to_string(),
-            ));
-        }
-        if task.status == Status::Failed {
-            lines.push(log_line(
-                base - 26,
-                "ERR",
-                "分片 SHA-1 校验失败，已停止写入".to_string(),
-            ));
-            lines.push(log_line(
-                base - 27,
-                "WRN",
-                "正在重试镜像源 mirrors.edge.example".to_string(),
-            ));
-        }
-        if task.status == Status::Seeding {
-            lines.push(log_line(
-                base - 31,
-                "INF",
-                "下载完成，进入做种状态".to_string(),
-            ));
-        }
-        lines.push(log_line(
-            base - 38,
-            "INF",
-            format!("开始任务，保存到 {}", shorten_path(&task.path)),
-        ));
-        lines.push(log_line(
-            base - 40,
-            "INF",
-            format!("创建 {} 个连接线程", seed),
-        ));
-        lines.push(log_line(base - 41, "INF", "读取任务元数据完成".to_string()));
-        lines
     }
 
     // -- demo data ---------------------------------------------------------
@@ -543,34 +444,6 @@ fn prefill_history(task: &mut Task) {
         task.push_sample(base * ramp * wobble);
     }
     task.push_sample(base);
-}
-
-fn log_line(at: u64, level: &'static str, message: String) -> LogEntry {
-    LogEntry {
-        time: format_clock(at),
-        level,
-        message,
-    }
-}
-
-fn format_clock(seconds: u64) -> String {
-    let s = seconds % 86_400;
-    format!("{:02}:{:02}:{:02}", s / 3600, (s % 3600) / 60, s % 60)
-}
-
-fn now_seconds() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
-}
-
-fn shorten_path(path: &str) -> String {
-    let parts: Vec<&str> = path.split('/').filter(|p| !p.is_empty()).collect();
-    if parts.len() <= 2 {
-        return path.to_string();
-    }
-    format!("…/{}", parts[parts.len() - 1])
 }
 
 fn file_name_from_url(url: &str) -> String {

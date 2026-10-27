@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 import { MaterialPalette, MaterialFontSettings } from "styling.slint";
+import { Aether } from "../theme.slint";
 import { LineEditBase, LineEditClearIcon, LineEditPasswordIcon } from "./lineedit-base.slint";
 
 import { LineEditInterface } from "./std-widget-interfaces.slint";
@@ -19,7 +20,8 @@ export component LineEdit {
     accessible-action-set-selection-offsets(anchor, focus) => { base.set-selection-offsets(anchor, focus); }
 
     min-width: max(120px, layout.min-width);
-    min-height: max(56px, layout.min-height);
+    min-height: Aether.control-md;
+    max-height: Aether.control-md;
     // Aether extension: let callers hide the trailing clear button.
     in property <bool> show-clear-button: true;
     forward-focus: base;
@@ -49,7 +51,7 @@ export component LineEdit {
 
             base := LineEditBase {
                 text-color: MaterialPalette.foreground;
-                font-size: MaterialFontSettings.body-large.font-size;
+                font-size: Aether.text-body;
                 font-weight: MaterialFontSettings.body-large.font-weight;
                 selection-foreground-color: MaterialPalette.selection-foreground;
                 margin: layout.padding-left + layout.padding-right;

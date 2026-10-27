@@ -1,13 +1,85 @@
-// Aether — "new download" modal dialog.
+// Aether — icon-only "new download" dialog.
+//
+// The form keeps its values, but every label is a hover tip. There is no
+// title, helper copy or persistent field label.
 
-import { Button, ComboBox, IconButton, LineEdit, Slider, StateLayer, TextButton } from "std-widgets.slint";
+import { ComboBox, IconButton, LineEdit, Slider, StateLayer } from "std-widgets.slint";
 import { Aether } from "theme.slint";
 import { AetherIcons } from "icons.slint";
+import { Tip } from "widgets.slint";
 
-component FieldLabel inherits Text {
-    color: Aether.on-surface-variant;
-    font-size: Aether.text-caption;
-    font-weight: Aether.weight-medium;
+component FieldIcon inherits Rectangle {
+    in property <image> icon-source;
+    in property <string> label: "";
+
+    height: 18px;
+    horizontal-stretch: 1;
+
+    HorizontalLayout {
+        spacing: 6px;
+
+        Image {
+            source: root.icon-source;
+            width: 15px;
+            height: 15px;
+            colorize: Aether.on-surface-muted;
+            cross-axis-self-alignment: center;
+        }
+
+        Text {
+            text: root.label;
+            color: Aether.on-surface-variant;
+            font-size: Aether.text-micro;
+            vertical-alignment: center;
+            opacity: touch.has-hover ? 1 : 0;
+
+            animate opacity { duration: Aether.motion-short; easing: ease; }
+        }
+    }
+
+    touch := TouchArea {}
+}
+
+component DialogIcon inherits Rectangle {
+    in property <image> icon-source;
+    in property <string> tip: "";
+    in property <bool> accent: false;
+    in property <bool> enabled: true;
+    callback clicked;
+
+    width: Aether.control-md;
+    height: Aether.control-md;
+    border-radius: Aether.radius-md;
+    border-width: 1px;
+    border-color: root.accent ? #FFFFFF.with-alpha(0.14) : Aether.outline-faint;
+    background: root.accent
+        ? @linear-gradient(135deg, Aether.accent-top, Aether.accent-bottom)
+        : touch.has-hover && root.enabled ? Aether.on-surface.with-alpha(0.07)
+        : Aether.surface-container-low;
+    opacity: root.enabled ? 1 : 0.35;
+
+    Image {
+        source: root.icon-source;
+        width: 18px;
+        height: 18px;
+        colorize: root.accent ? Aether.on-primary : Aether.on-surface-variant;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+    }
+
+    touch := TouchArea {
+        width: 100%;
+        height: 100%;
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+
+    Tip {
+        x: (parent.width - self.width) / 2;
+        y: -31px;
+        text: root.tip;
+        show: touch.has-hover && root.enabled;
+    }
 }
 
 export component NewDownloadDialog inherits FocusScope {
@@ -41,8 +113,6 @@ export component NewDownloadDialog inherits FocusScope {
         return reject;
     }
 
-    // Focus the URL field as soon as the dialog opens, so the keyboard flow
-    // is: paste URL, Tab through options, Enter on the primary action.
     init => {
         if (root.open) {
             url-field.focus();
@@ -52,6 +122,7 @@ export component NewDownloadDialog inherits FocusScope {
     changed open => {
         if (self.open) {
             url-field.focus();
+            path-menu.visible = false;
         }
     }
 
@@ -59,69 +130,88 @@ export component NewDownloadDialog inherits FocusScope {
     Rectangle {
         width: 100%;
         height: 100%;
-        background: #000000.with-alpha(0.55);
+        background: Aether.scrim;
 
         TouchArea {
             clicked => { root.dismissed(); }
         }
     }
 
+    Rectangle {
+        width: 100%;
+        height: 100%;
+        background: @radial-gradient(circle, Aether.primary.with-alpha(0.06) 0%, transparent 58%);
+    }
+
     // ---- dialog card -----------------------------------------------------
     Rectangle {
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
-        width: 500px;
-        height: 494px;
-        border-radius: Aether.radius-xl;
-        background: Aether.surface-container-high;
+        width: 560px;
+        height: 480px;
+        border-radius: 24px;
+        background: @linear-gradient(160deg, Aether.dialog-top, Aether.dialog-bottom 100%);
         border-width: 1px;
-        border-color: Aether.outline-faint;
-        drop-shadow-color: #000000.with-alpha(0.5);
-        drop-shadow-blur: 28px;
-        drop-shadow-offset-y: 8px;
+        border-color: Aether.outline-variant;
+        drop-shadow-color: Aether.shadow-popup;
+        drop-shadow-blur: 38px;
+        drop-shadow-offset-y: 14px;
+        clip: true;
 
-        // Swallow clicks that land on the card itself; without this they would
-        // fall through to the dismiss-on-click scrim behind the dialog.
+        Rectangle {
+            x: 0;
+            y: 0;
+            width: 100%;
+            height: 1px;
+            background: @linear-gradient(90deg,
+                transparent,
+                Aether.primary.with-alpha(0.60) 24%,
+                Aether.live.with-alpha(0.34) 76%,
+                transparent);
+        }
+
+        Rectangle {
+            x: parent.width - 340px;
+            y: -220px;
+            width: 420px;
+            height: 380px;
+            background: @radial-gradient(circle, Aether.glow-primary 0%, transparent 68%);
+        }
+
         TouchArea {}
 
         VerticalLayout {
             padding: 20px;
-            spacing: 14px;
+            spacing: 12px;
 
-            // ---- header -----------------------------------------------
+            // ---- header: icon + close only ---------------------------
             HorizontalLayout {
-                spacing: 12px;
+                height: Aether.control-lg;
 
                 Rectangle {
-                    width: 32px;
-                    height: 32px;
-                    border-radius: 9px;
-                    background: Aether.primary-soft;
+                    width: Aether.control-lg;
+                    height: Aether.control-lg;
+                    border-radius: Aether.radius-md;
+                    background: @linear-gradient(135deg, Aether.accent-top, Aether.accent-bottom);
                     border-width: 1px;
-                    border-color: Aether.primary.with-alpha(0.22);
+                    border-color: #FFFFFF.with-alpha(0.14);
                     cross-axis-self-alignment: center;
 
                     Image {
                         source: AetherIcons.download;
-                        width: 18px;
-                        height: 18px;
-                        colorize: Aether.primary-bright;
+                        width: 20px;
+                        height: 20px;
+                        colorize: Aether.on-primary;
                         x: (parent.width - self.width) / 2;
                         y: (parent.height - self.height) / 2;
                     }
                 }
 
-                Text {
-                    text: "新建下载任务";
-                    color: Aether.on-surface;
-                    font-size: Aether.text-headline;
-                    font-weight: Aether.weight-medium;
-                    horizontal-stretch: 1;
-                    cross-axis-self-alignment: center;
-                }
+                Rectangle { horizontal-stretch: 1; background: transparent; }
 
                 IconButton {
                     icon: AetherIcons.close;
+                    cross-axis-self-alignment: center;
                     clicked => { root.dismissed(); }
                 }
             }
@@ -130,33 +220,32 @@ export component NewDownloadDialog inherits FocusScope {
             VerticalLayout {
                 spacing: 6px;
 
-                HorizontalLayout {
-                    spacing: 8px;
-
-                    FieldLabel { text: "下载地址"; horizontal-stretch: 1; }
-
-                    Text {
-                        text: "HTTP · HTTPS · FTP · BT";
-                        color: Aether.on-surface-muted;
-                        font-size: Aether.text-micro;
-                        cross-axis-self-alignment: center;
-                    }
+                FieldIcon {
+                    icon-source: AetherIcons.link;
+                    label: "下载地址";
                 }
 
                 url-field := LineEdit {
                     width: 100%;
-                    placeholder-text: "https://example.com/archive.iso";
                     text: root.url;
                     edited => { root.url = self.text; }
                     accepted => { root.submit(); }
                 }
             }
 
+            Rectangle {
+                height: 1px;
+                background: Aether.outline-variant.with-alpha(0.55);
+            }
+
             // ---- save path --------------------------------------------
             VerticalLayout {
                 spacing: 6px;
 
-                FieldLabel { text: "保存路径"; }
+                FieldIcon {
+                    icon-source: AetherIcons.folder;
+                    label: "保存路径";
+                }
 
                 HorizontalLayout {
                     spacing: 8px;
@@ -170,56 +259,77 @@ export component NewDownloadDialog inherits FocusScope {
 
                     IconButton {
                         icon: AetherIcons.folder;
+                        cross-axis-self-alignment: center;
                         clicked => { path-menu.visible = !path-menu.visible; }
                     }
                 }
-
             }
 
-            // ---- segments ---------------------------------------------
-            HorizontalLayout {
-                spacing: 20px;
+            // ---- segmented options ------------------------------------
+            Rectangle {
+                border-radius: Aether.radius-md;
+                background: Aether.surface-container-low;
+                border-width: 1px;
+                border-color: Aether.outline-faint;
 
                 VerticalLayout {
-                    spacing: 6px;
-
-                    FieldLabel { text: "分段数"; }
-
-                    ComboBox {
-                        model: ["自动", "1", "4", "8", "16", "32"];
-                        current-index: root.segments-index;
-                        min-width: 160px;
-                        max-width: 160px;
-                        selected => { root.segments-index = self.current-index; }
-                    }
-                }
-
-                VerticalLayout {
-                    horizontal-stretch: 1;
-                    spacing: 6px;
-
-                    FieldLabel { text: "单任务限速"; }
+                    padding: Aether.space-md;
+                    spacing: Aether.space-sm;
 
                     HorizontalLayout {
-                        spacing: 12px;
+                        spacing: 22px;
 
-                        Slider {
-                            horizontal-stretch: 1;
-                            value: root.speed-limit;
-                            minimum: 0;
-                            maximum: 2048;
-                            step: 64;
-                            changed => { root.speed-limit = self.value; }
+                        VerticalLayout {
+                            width: 160px;
+                            spacing: 6px;
+
+                            FieldIcon {
+                                icon-source: AetherIcons.layers;
+                                label: "分段数";
+                            }
+
+                            ComboBox {
+                                model: ["自动", "1", "4", "8", "16", "32"];
+                                current-index: root.segments-index;
+                                min-width: 160px;
+                                max-width: 160px;
+                                selected => { root.segments-index = self.current-index; }
+                            }
                         }
 
-                        Text {
-                            text: root.speed-limit <= 0 ? "不限" : root.speed-limit + " KB/s";
-                            color: Aether.on-surface;
-                            font-size: Aether.text-caption;
-                            font-weight: Aether.weight-medium;
-                            min-width: 84px;
-                            horizontal-alignment: right;
-                            cross-axis-self-alignment: center;
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            spacing: 6px;
+
+                            FieldIcon {
+                                icon-source: AetherIcons.gauge;
+                                label: "单任务限速";
+                            }
+
+                            HorizontalLayout {
+                                spacing: 12px;
+                                height: Aether.control-md;
+
+                                Slider {
+                                    horizontal-stretch: 1;
+                                    value: root.speed-limit;
+                                    minimum: 0;
+                                    maximum: 2048;
+                                    step: 64;
+                                    changed => { root.speed-limit = self.value; }
+                                }
+
+                                Text {
+                                    text: root.speed-limit <= 0 ? "不限" : root.speed-limit + " KB/s";
+                                    color: root.speed-limit <= 0 ? Aether.on-surface-muted : Aether.on-surface;
+                                    font-size: Aether.text-caption;
+                                    font-weight: Aether.weight-medium;
+                                    min-width: 78px;
+                                    horizontal-alignment: right;
+                                    vertical-alignment: center;
+                                    cross-axis-self-alignment: center;
+                                }
+                            }
                         }
                     }
                 }
@@ -229,39 +339,40 @@ export component NewDownloadDialog inherits FocusScope {
             VerticalLayout {
                 spacing: 6px;
 
-                FieldLabel { text: "备注"; }
+                FieldIcon {
+                    icon-source: AetherIcons.note;
+                    label: "备注";
+                }
 
                 LineEdit {
                     width: 100%;
-                    placeholder-text: "可选，用于标记此任务";
                     text: root.note;
                     edited => { root.note = self.text; }
                 }
             }
 
-            // ---- footer -----------------------------------------------
+            Rectangle { vertical-stretch: 1; background: transparent; }
+
+            Rectangle {
+                height: 1px;
+                background: Aether.outline-variant.with-alpha(0.55);
+            }
+
+            // ---- footer: two icon actions ----------------------------
             HorizontalLayout {
                 alignment: end;
                 spacing: 8px;
 
-                Text {
-                    text: root.url == "" ? "请输入下载地址后开始" : "确认后将立即开始下载";
-                    color: Aether.on-surface-muted;
-                    font-size: Aether.text-micro;
-                    horizontal-stretch: 1;
-                    vertical-alignment: center;
-                }
-
-                TextButton {
-                    text: "取消";
-                    min-width: 80px;
+                DialogIcon {
+                    icon-source: AetherIcons.close;
+                    tip: "取消";
                     clicked => { root.dismissed(); }
                 }
 
-                Button {
-                    text: "开始下载";
-                    primary: true;
-                    min-width: 118px;
+                DialogIcon {
+                    icon-source: AetherIcons.download;
+                    tip: "开始下载";
+                    accent: true;
                     enabled: root.url != "";
                     clicked => { root.submit(); }
                 }
@@ -271,39 +382,49 @@ export component NewDownloadDialog inherits FocusScope {
         path-menu := Rectangle {
             visible: false;
             x: 20px;
-            y: 244px;
+            y: 221px;
             width: parent.width - 88px;
-            height: path-menu.visible ? 140px : 0px;
-            border-radius: Aether.radius-md;
+            height: path-menu.visible ? 148px : 0px;
+            border-radius: 12px;
             background: Aether.surface-container-highest;
             border-width: 1px;
             border-color: Aether.outline-variant;
-            drop-shadow-color: #000000.with-alpha(0.4);
-            drop-shadow-blur: 16px;
-            drop-shadow-offset-y: 4px;
+            drop-shadow-color: Aether.shadow-popup;
+            drop-shadow-blur: 18px;
+            drop-shadow-offset-y: 6px;
 
             VerticalLayout {
                 padding: 6px;
                 spacing: 2px;
 
                 for p in ["/home/aether/Downloads", "/home/aether/Videos", "/mnt/data/iso", "/home/aether/Documents"] : Rectangle {
-                    height: 30px;
-                    border-radius: Aether.radius-xs;
+                    height: 32px;
+                    border-radius: 8px;
+                    background: p == root.path ? Aether.primary.with-alpha(0.12) : transparent;
+
+                    Image {
+                        source: AetherIcons.folder;
+                        width: 14px;
+                        height: 14px;
+                        colorize: p == root.path ? Aether.primary-bright : Aether.on-surface-muted;
+                        x: 10px;
+                        y: (parent.height - self.height) / 2;
+                    }
 
                     Text {
                         text: p;
-                        color: p == root.path ? Aether.on-primary-container : Aether.on-surface-variant;
+                        color: p == root.path ? Aether.primary-bright : Aether.on-surface-variant;
                         font-size: Aether.text-caption;
                         font-weight: p == root.path ? Aether.weight-medium : Aether.weight-regular;
-                        x: 10px;
+                        x: 32px;
                         y: (parent.height - self.height) / 2;
                     }
 
                     if p == root.path: Image {
                         source: AetherIcons.check;
-                        width: 12px;
-                        height: 12px;
-                        colorize: Aether.primary;
+                        width: 13px;
+                        height: 13px;
+                        colorize: Aether.primary-bright;
                         x: parent.width - self.width - 10px;
                         y: (parent.height - self.height) / 2;
                     }
@@ -311,7 +432,7 @@ export component NewDownloadDialog inherits FocusScope {
                     StateLayer {
                         width: 100%;
                         height: 100%;
-                        border-radius: Aether.radius-xs;
+                        border-radius: 8px;
                         background: Aether.on-surface;
                         ripple-color: Aether.on-surface;
                         has-ripple: true;

@@ -11,12 +11,15 @@ mod model;
 slint::include_modules!();
 
 use std::cell::RefCell;
+use std::fs;
+use std::path::PathBuf;
+use std::process::Command;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use slint::{Model, ModelRc, Timer, TimerMode, VecModel};
 
-use engine::{chart_paths, chart_peak, Engine, LogEntry, Peer};
+use engine::{chart_paths, chart_peak, Engine};
 use model::{format_eta, format_pair, format_size, format_speed, Status, CHUNK_COUNT};
 
 struct State {
@@ -25,34 +28,31 @@ struct State {
     query: String,
     detail_id: i32,
     rows: Rc<VecModel<TaskRow>>,
-    peers: Rc<VecModel<PeerRow>>,
-    logs: Rc<VecModel<LogRow>>,
+    records: Rc<VecModel<RecordRow>>,
     chunks: Rc<VecModel<f32>>,
     /// Ids of the rows currently materialised in `rows`, in order.
     row_ids: Vec<i32>,
+    /// Ids of the records currently materialised in `records`, in order.
+    record_ids: Vec<i32>,
     /// When the current toast should disappear.
     toast_until: Option<Instant>,
-    /// Task id the chunk/peer/log models were seeded for. The peers and logs
-    /// are static for a task, so refreshing them every tick would reset their
-    /// repeaters and make the drawer content height pulse.
+    /// Task id the chunk model was seeded for.
     detail_data_for: i32,
 }
 
 impl State {
     fn new() -> Self {
         let engine = Engine::new();
-        let rows: Vec<TaskRow> = Vec::new().into();
-        let _ = rows;
         State {
             engine,
             filter: 0,
             query: String::new(),
             detail_id: -1,
             rows: Rc::new(VecModel::default()),
-            peers: Rc::new(VecModel::default()),
-            logs: Rc::new(VecModel::default()),
+            records: Rc::new(VecModel::default()),
             chunks: Rc::new(VecModel::from(vec![0.0_f32; CHUNK_COUNT])),
             row_ids: Vec::new(),
+            record_ids: Vec::new(),
             toast_until: None,
             detail_data_for: -1,
         }
@@ -90,53 +90,24 @@ impl State {
     }
 }
 
-/// Extension label shown in the row's leading badge plus its colour family.
-fn file_badge(name: &str) -> (String, i32) {
+/// Category tone for the row glyph. The extension text is never displayed;
+/// the filename is revealed in the hover card instead.
+fn file_tone(name: &str) -> i32 {
     let lower = name.to_ascii_lowercase();
     if lower.ends_with(".tar.gz")
         || lower.ends_with(".tar.xz")
         || lower.ends_with(".tar.bz2")
         || lower.ends_with(".tar.zst")
     {
-        return ("TAR".to_string(), 1);
+        return 1;
     }
     let ext = name.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
-    let (label, tone) = match ext.as_str() {
-        "iso" => ("ISO", 2),
-        "img" => ("IMG", 2),
-        "dmg" => ("DMG", 2),
-        "zip" => ("ZIP", 1),
-        "tar" => ("TAR", 1),
-        "gz" => ("GZ", 1),
-        "xz" => ("XZ", 1),
-        "7z" => ("7Z", 1),
-        "rar" => ("RAR", 1),
-        "mkv" => ("MKV", 3),
-        "mp4" => ("MP4", 3),
-        "avi" => ("AVI", 3),
-        "mov" => ("MOV", 3),
-        "webm" => ("WEBM", 3),
-        "appimage" => ("APP", 4),
-        "exe" => ("EXE", 4),
-        "deb" => ("DEB", 4),
-        "rpm" => ("RPM", 4),
-        "pdf" => ("PDF", 0),
-        "epub" => ("EPUB", 0),
-        _ => ("FILE", 0),
-    };
-    (label.to_string(), tone)
-}
-
-/// Secondary line under the speed read-out. Kept in Rust so the table does not
-/// accumulate a long conditional chain for every task state.
-fn speed_label(status: Status) -> &'static str {
-    match status {
-        Status::Downloading => "实时速度",
-        Status::Seeding => "上传速度",
-        Status::Completed => "已保存",
-        Status::Paused => "进度已保留",
-        Status::Failed => "已停止",
-        Status::Queued => "队列中",
+    match ext.as_str() {
+        "iso" | "img" | "dmg" => 2,
+        "zip" | "tar" | "gz" | "xz" | "7z" | "rar" => 1,
+        "mkv" | "mp4" | "avi" | "mov" | "webm" => 3,
+        "appimage" | "exe" | "deb" | "rpm" => 4,
+        _ => 0,
     }
 }
 
@@ -149,12 +120,11 @@ fn to_row(task: &model::Task, detail_id: i32) -> TaskRow {
         Status::Queued => "等待开始".to_string(),
         _ => String::new(),
     };
-    let (kind, kind_tone) = file_badge(&task.name);
+    let kind_tone = file_tone(&task.name);
     TaskRow {
         id: task.id,
         name: task.name.clone().into(),
-        subtitle: task.subtitle().into(),
-        kind: kind.into(),
+        source: task.source.clone().into(),
         kind_tone,
         progress: task.progress(),
         progress_text: format_pair(task.done, task.total).into(),
@@ -163,15 +133,12 @@ fn to_row(task: &model::Task, detail_id: i32) -> TaskRow {
         } else {
             "—".into()
         },
-        speed_label: speed_label(status).into(),
         eta: eta.into(),
         status: status.code(),
         status_text: status.label().into(),
         paused: status == Status::Paused,
         completed: status == Status::Completed,
         failed: status == Status::Failed,
-        torrent: task.torrent,
-        note: task.note.clone().into(),
         selected: task.id == detail_id,
     }
 }
@@ -197,13 +164,73 @@ fn refresh_rows(ui: &AppWindow, state: &Rc<RefCell<State>>) {
     }
 
     ui.set_tasks(ModelRc::from(st.rows.clone()));
-    let total = st.engine.tasks().len();
-    let active = st.engine.active_count();
-    ui.set_stat_active(active.to_string().into());
-    ui.set_stat_done(st.engine.completed_count().to_string().into());
-    ui.set_stat_total(total.to_string().into());
-    ui.set_total_speed(format_speed(st.engine.total_speed()).into());
-    ui.set_page_subtitle(format!("{total} 个任务 · {active} 个正在传输").into());
+
+    let tasks = st.engine.tasks();
+    let total = tasks.len() as i32;
+    let active = tasks
+        .iter()
+        .filter(|task| task.status == Status::Downloading)
+        .count() as i32;
+    let done = tasks
+        .iter()
+        .filter(|task| task.status == Status::Completed)
+        .count() as i32;
+    let paused = tasks
+        .iter()
+        .filter(|task| task.status == Status::Paused)
+        .count() as i32;
+    let failed = tasks
+        .iter()
+        .filter(|task| task.status == Status::Failed)
+        .count() as i32;
+    let seed = tasks.iter().filter(|task| task.torrent).count() as i32;
+    let speed: f64 = tasks
+        .iter()
+        .filter(|task| task.status == Status::Downloading)
+        .map(|task| task.speed)
+        .sum();
+
+    ui.set_count_all(total);
+    ui.set_count_active(active);
+    ui.set_count_done(done);
+    ui.set_count_paused(paused);
+    ui.set_count_failed(failed);
+    ui.set_count_seed(seed);
+    ui.set_total_speed(format_speed(speed).into());
+
+    let history = st.engine.global_history();
+    let (line, area) = chart_paths(history);
+    let peak = chart_peak(history).max(1.0);
+    let latest = (history.back().copied().unwrap_or(0.0) / peak).clamp(0.0, 1.0) as f32;
+    ui.set_chart_line(line.into());
+    ui.set_chart_area(area.into());
+    ui.set_chart_latest(latest);
+
+    let times = ["刚刚", "3 分钟前", "今天 09:12", "今天 08:40", "昨天 22:18"];
+    let record_ids: Vec<i32> = tasks.iter().take(times.len()).map(|task| task.id).collect();
+    let records: Vec<RecordRow> = tasks
+        .iter()
+        .take(times.len())
+        .enumerate()
+        .map(|(index, task)| RecordRow {
+            id: task.id,
+            name: task.name.clone().into(),
+            kind_tone: file_tone(&task.name),
+            status: task.status.code(),
+            status_text: task.status.label().into(),
+            time: times[index].into(),
+        })
+        .collect();
+    // Keep the repeater stable so hover tips are not reset on every tick.
+    if record_ids == st.record_ids {
+        for (index, record) in records.into_iter().enumerate() {
+            st.records.set_row_data(index, record);
+        }
+    } else {
+        st.record_ids = record_ids;
+        st.records.set_vec(records);
+    }
+    ui.set_records(ModelRc::from(st.records.clone()));
 }
 
 fn refresh_detail(ui: &AppWindow, state: &Rc<RefCell<State>>) {
@@ -222,11 +249,10 @@ fn refresh_detail(ui: &AppWindow, state: &Rc<RefCell<State>>) {
         task.note.clone()
     };
 
-    let (kind, kind_tone) = file_badge(&task.name);
+    let kind_tone = file_tone(&task.name);
     ui.set_detail(TaskDetail {
+        id: task.id,
         name: task.name.clone().into(),
-        subtitle: task.subtitle().into(),
-        kind: kind.into(),
         kind_tone,
         status: task.status.code(),
         status_text: task.status.label().into(),
@@ -252,33 +278,11 @@ fn refresh_detail(ui: &AppWindow, state: &Rc<RefCell<State>>) {
     });
 
     if st.detail_data_for != st.detail_id {
-        // Opening (or switching) a task: seed the repeater models once. Keeping
-        // the models stable afterwards avoids per-tick repeater resets, which
-        // would collapse the peers/log sections and clamp the scroll offset.
+        // Opening (or switching) a task: seed the chunk model once. Keeping
+        // it stable afterwards avoids per-tick repeater resets.
         st.chunks.set_vec(task.chunks());
-        let peers: Vec<PeerRow> = if task.torrent {
-            st.engine
-                .peers(st.detail_id)
-                .into_iter()
-                .map(peer_row)
-                .collect()
-        } else {
-            Vec::new()
-        };
-        st.peers.set_vec(peers);
-        let logs: Vec<LogRow> = st
-            .engine
-            .logs(st.detail_id)
-            .into_iter()
-            .map(log_row)
-            .collect();
-        st.logs.set_vec(logs);
-
         st.detail_data_for = st.detail_id;
-
         ui.set_chunks(ModelRc::from(st.chunks.clone()));
-        ui.set_peers(ModelRc::from(st.peers.clone()));
-        ui.set_logs(ModelRc::from(st.logs.clone()));
     } else {
         // The chunk grid is the only per-tick model: update cells in place so
         // the repeater keeps its layout.
@@ -290,28 +294,10 @@ fn refresh_detail(ui: &AppWindow, state: &Rc<RefCell<State>>) {
     }
 }
 
-fn peer_row(peer: Peer) -> PeerRow {
-    PeerRow {
-        address: peer.address.into(),
-        speed: format_speed(peer.speed).into(),
-        ratio: peer.ratio,
-        kind: peer.kind,
-    }
-}
-
-fn log_row(entry: LogEntry) -> LogRow {
-    LogRow {
-        time: entry.time.into(),
-        level: entry.level.into(),
-        message: entry.message.into(),
-    }
-}
-
 fn open_detail(ui: &AppWindow, state: &Rc<RefCell<State>>, id: i32) {
     {
         let mut st = state.borrow_mut();
         st.detail_id = id;
-        st.peers.set_vec(Vec::new());
     }
     refresh_detail(ui, state);
     refresh_rows(ui, state);
@@ -325,6 +311,103 @@ fn show_toast(ui: &AppWindow, state: &Rc<RefCell<State>>, message: &str) {
     ui.set_toast_open(true);
 }
 
+fn theme_config_path() -> Option<PathBuf> {
+    #[cfg(target_os = "windows")]
+    let base = std::env::var("APPDATA").ok()?;
+    #[cfg(target_os = "macos")]
+    let base = format!(
+        "{}/Library/Application Support",
+        std::env::var("HOME").ok()?
+    );
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let base = std::env::var("XDG_CONFIG_HOME").ok().or_else(|| {
+        std::env::var("HOME")
+            .ok()
+            .map(|home| format!("{home}/.config"))
+    })?;
+    Some(PathBuf::from(base).join("aether").join("theme"))
+}
+
+fn read_theme_mode() -> Option<i32> {
+    let value = fs::read_to_string(theme_config_path()?).ok()?;
+    match value.trim() {
+        "0" => Some(0),
+        "1" => Some(1),
+        "2" => Some(2),
+        _ => None,
+    }
+}
+
+fn save_theme_mode(mode: i32) {
+    let Some(path) = theme_config_path() else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let _ = fs::write(path, mode.to_string());
+}
+
+/// Resolve the desktop's light/dark preference without pulling in a
+/// platform-specific theme crate. Unknown systems fall back to light.
+fn system_is_dark() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(output) = Command::new("gsettings")
+            .args(["get", "org.gnome.desktop.interface", "color-scheme"])
+            .output()
+        {
+            let value = String::from_utf8_lossy(&output.stdout).to_lowercase();
+            if value.contains("prefer-dark") {
+                return true;
+            }
+            if value.contains("prefer-light") {
+                return false;
+            }
+            if value.contains("default") {
+                if let Ok(theme) = Command::new("gsettings")
+                    .args(["get", "org.gnome.desktop.interface", "gtk-theme"])
+                    .output()
+                {
+                    return String::from_utf8_lossy(&theme.stdout)
+                        .to_lowercase()
+                        .contains("dark");
+                }
+            }
+        }
+        if let Ok(theme) = std::env::var("GTK_THEME") {
+            return theme.to_lowercase().contains("dark");
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(output) = Command::new("reg")
+            .args([
+                "query",
+                r"HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+                "/v",
+                "AppsUseLightTheme",
+            ])
+            .output()
+        {
+            return String::from_utf8_lossy(&output.stdout).contains("0x0");
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(output) = Command::new("defaults")
+            .args(["read", "-g", "AppleInterfaceStyle"])
+            .output()
+        {
+            return String::from_utf8_lossy(&output.stdout).contains("Dark");
+        }
+    }
+
+    false
+}
+
 fn main() -> Result<(), slint::PlatformError> {
     let ui = AppWindow::new()?;
 
@@ -334,16 +417,30 @@ fn main() -> Result<(), slint::PlatformError> {
 
     let state = Rc::new(RefCell::new(State::new()));
 
+    // Theme: follow the desktop by default; AETHER_THEME can pin it for
+    // screenshots and development (`light` or `dark`).
+    ui.set_system_dark(system_is_dark());
+    let env_theme = match std::env::var("AETHER_THEME").as_deref() {
+        Ok("light") => Some(1),
+        Ok("dark") => Some(2),
+        _ => None,
+    };
+    if let Some(mode) = env_theme.or_else(read_theme_mode) {
+        ui.set_theme_mode(mode);
+    }
+
     // Initial data.
     refresh_rows(&ui, &state);
 
     // Screenshot helper: open a specific surface on startup so the mockup can
     // be captured in every state without driving the mouse.
     match std::env::var("AETHER_VIEW").as_deref() {
-        Ok("settings") => ui.set_page(1),
+        Ok("settings") => ui.set_page(2),
+        Ok("downloads") => ui.set_page(1),
         Ok("dialog") => ui.set_dialog_open(true),
         Ok("drawer") => {
-            // Prefer an active torrent: it exercises chunks, peers and logs.
+            ui.set_page(1);
+            // Prefer an active torrent: it exercises the chart and chunk grid.
             let id = {
                 let st = state.borrow();
                 let tasks = st.engine.tasks();
@@ -473,6 +570,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 st.query = String::new();
                 st.engine.add_task(&url, &path, limit_kb, &note);
             }
+            ui.set_page(1);
             ui.set_active_filter(0);
             ui.set_search_text("".into());
             refresh_rows(&ui, &state);
@@ -484,9 +582,77 @@ fn main() -> Result<(), slint::PlatformError> {
     {
         let state = state.clone();
         ui.on_settings_changed(move |key, value| {
-            // A mockup stores settings in memory; a real build would persist them.
+            if key.as_str() == "theme" {
+                let mode = match value.as_str() {
+                    "浅色" => 1,
+                    "深色" => 2,
+                    _ => 0,
+                };
+                save_theme_mode(mode);
+            }
+            // Other settings are kept in memory by this mockup.
             let _ = &state;
             println!("[settings] {key} = {value}");
+        });
+    }
+
+    // ---- plugin feedback (catalogue lives in the UI mockup) ----------------
+    {
+        let ui_handle = ui.as_weak();
+        let state = state.clone();
+        ui.on_plugin_toggled(move |_id, enabled| {
+            let Some(ui) = ui_handle.upgrade() else {
+                return;
+            };
+            show_toast(
+                &ui,
+                &state,
+                if enabled {
+                    "插件已启用（原型）"
+                } else {
+                    "插件已停用（原型）"
+                },
+            );
+        });
+    }
+
+    {
+        let ui_handle = ui.as_weak();
+        let state = state.clone();
+        ui.on_plugin_action(move |action| {
+            let Some(ui) = ui_handle.upgrade() else {
+                return;
+            };
+            let message = match action.as_str() {
+                "install" => "插件安装器已打开（原型）",
+                "update-all" => "已开始更新全部可更新插件",
+                "reload" => "插件已重新加载（原型）",
+                _ => "插件操作已记录",
+            };
+            show_toast(&ui, &state, message);
+        });
+    }
+
+    // ---- support actions ---------------------------------------------------
+    {
+        let ui_handle = ui.as_weak();
+        let state = state.clone();
+        ui.on_support_action(move |key| {
+            let Some(ui) = ui_handle.upgrade() else {
+                return;
+            };
+            let message = match key.as_str() {
+                "docs" => "文档 · docs.aether.dev（原型）",
+                "community" => "社区 · forum.aether.dev（原型）",
+                "feedback" => "反馈 · github.com/pengtang1024/aether/issues（原型）",
+                "update" => "已检查更新：当前已是最新版本 0.1.0",
+                "channel" => "更新通道已更新",
+                "auto-update" => "自动更新设置已保存",
+                "changelog" => "版本说明 · 0.1.0（原型）",
+                "license" => "MIT License · Slint Royalty-free 2.0",
+                _ => "操作已记录",
+            };
+            show_toast(&ui, &state, message);
         });
     }
 
@@ -517,6 +683,23 @@ fn main() -> Result<(), slint::PlatformError> {
             refresh_rows(&ui, &state);
             if drawer_open {
                 refresh_detail(&ui, &state);
+            }
+        });
+    }
+
+    // Follow live desktop theme changes while the user chose "follow system".
+    let theme_timer = Timer::default();
+    {
+        let ui_handle = ui.as_weak();
+        theme_timer.start(TimerMode::Repeated, Duration::from_secs(10), move || {
+            let Some(ui) = ui_handle.upgrade() else {
+                return;
+            };
+            if ui.get_theme_mode() == 0 {
+                let dark = system_is_dark();
+                if ui.get_system_dark() != dark {
+                    ui.set_system_dark(dark);
+                }
             }
         });
     }

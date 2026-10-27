@@ -103,14 +103,6 @@ impl Task {
         }
         self.history.push_back(sample);
     }
-
-    pub fn subtitle(&self) -> String {
-        if self.torrent {
-            format!("BT · {} · {} 个分片", self.source, CHUNK_COUNT)
-        } else {
-            format!("HTTP · {}", self.source)
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------

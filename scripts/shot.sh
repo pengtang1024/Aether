@@ -6,8 +6,8 @@ set -euo pipefail
 
 OUT="${1:-/tmp/opencode/aether.png}"
 WAIT="${2:-6}"
-W="${3:-1040}"
-H="${4:-700}"
+W="${3:-900}"
+H="${4:-600}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DISP="${AETHER_DISPLAY:-:97}"
 
@@ -29,6 +29,13 @@ env -u WAYLAND_DISPLAY DISPLAY="$DISP" \
 APP_PID=$!
 
 sleep "$WAIT"
+
+# Park the pointer outside the list: a fresh Xvfb puts it in the middle of the
+# window, which would capture an accidental row hover in the screenshot.
+if command -v xdotool >/dev/null 2>&1; then
+    env -u WAYLAND_DISPLAY DISPLAY="$DISP" xdotool mousemove 1 1 2>/dev/null || true
+    sleep 0.2
+fi
 
 env -u WAYLAND_DISPLAY DISPLAY="$DISP" import -window root "$OUT" 2>/dev/null || true
 

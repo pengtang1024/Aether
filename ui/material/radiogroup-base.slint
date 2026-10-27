@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 import { RadioButtonBase } from "radiobutton-base.slint";
+import { Aether } from "../theme.slint";
 
 export component RadioGroupBase {
     in property <bool> enabled: true;
@@ -122,7 +123,7 @@ export component RadioGroupImplBase {
     in property <brush> title-color;
     // Sensible defaults for styles that don't customize the title typography
     // (e.g. qt, which inherits the system font).
-    in property <length> title-font-size: 13px;
+    in property <length> title-font-size: Aether.text-body;
     in property <int> title-font-weight: 400;
 
     in-out property <int> current-index <=> sel.current-index;
