@@ -78,6 +78,7 @@ fn run() -> Result<(), String> {
             let forced = option(&args, "--plugin");
             download(url, Path::new(&output), &root, forced.as_deref())
         }
+        #[cfg(unix)]
         "import" => {
             let source = args
                 .get(1)
