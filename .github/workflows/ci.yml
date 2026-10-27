@@ -37,6 +37,8 @@ jobs:
       - run: cargo fmt --all --check
       - run: make check-licenses
       - run: cargo test --workspace
+        env:
+          AETHER_FAKE_TRACE: "1"
       - run: cargo build --release --workspace
       - name: Check package license bundle
         run: |

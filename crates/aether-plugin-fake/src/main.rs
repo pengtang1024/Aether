@@ -65,6 +65,11 @@ impl Plugin for FakePlugin {
                     .get("fail")
                     .and_then(serde_json::Value::as_bool)
                     .unwrap_or(false);
+                let fail_always = task
+                    .settings
+                    .get("fail_always")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false);
                 let retryable = task
                     .settings
                     .get("retryable")
@@ -72,9 +77,16 @@ impl Plugin for FakePlugin {
                     .unwrap_or(true);
                 let sender = ctx.sender();
                 thread::spawn(move || {
-                    if let Err(error) =
-                        run_fake_task(sender, task.task_id, task.url, paths, hold, fail, retryable)
-                    {
+                    if let Err(error) = run_fake_task(
+                        sender,
+                        task.task_id,
+                        task.url,
+                        paths,
+                        hold,
+                        fail,
+                        fail_always,
+                        retryable,
+                    ) {
                         eprintln!("aether-plugin-fake: task failed: {error}");
                     }
                 });
@@ -119,6 +131,12 @@ impl Plugin for FakePlugin {
     }
 }
 
+fn trace(message: String) {
+    if std::env::var_os("AETHER_FAKE_TRACE").is_some() {
+        eprintln!("aether-plugin-fake: {message}");
+    }
+}
+
 fn run_fake_task(
     sender: PluginSender,
     task_id: String,
@@ -126,25 +144,37 @@ fn run_fake_task(
     paths: TaskPaths,
     hold_ms: u64,
     fail: bool,
+    fail_always: bool,
     retryable: bool,
 ) -> Result<(), SdkError> {
+    trace(format!(
+        "task {task_id}: hold={hold_ms} fail={fail} fail_always={fail_always} retryable={retryable}"
+    ));
     std::fs::create_dir_all(&paths.staging)?;
     // A sentinel in staging survives plugin restarts, so `fail` can model a
-    // "fails once, then succeeds" task for resume testing.
+    // "fails once, then succeeds" task for resume testing while `fail_always`
+    // models a persistent failure for retry-cap tests.
     let sentinel = paths.staging.join(".fake-attempted");
     let attempted = sentinel.exists();
     std::fs::write(&sentinel, b"1")?;
-    if fail && !attempted {
+    if fail_always || (fail && !attempted) {
+        trace(format!(
+            "task {task_id}: sending Failed (attempted={attempted})"
+        ));
         sender.send(&PluginEvent::Failed {
-            task_id,
+            task_id: task_id.clone(),
             error: aether_plugin_sdk::PluginError::new(
                 aether_plugin_sdk::ErrorKind::Protocol,
                 "fake intentional failure",
             )
             .retryable(retryable),
         })?;
+        trace(format!("task {task_id}: Failed sent"));
         return Ok(());
     }
+    trace(format!(
+        "task {task_id}: proceeding to completion (attempted={attempted})"
+    ));
     let payload = vec![0xA5_u8; FILE_SIZE as usize];
     std::fs::write(paths.staging.join(FILE_NAME), &payload)?;
 
