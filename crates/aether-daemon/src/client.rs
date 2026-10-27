@@ -123,6 +123,29 @@ impl Client {
         )?)
     }
 
+    /// Task log lines, oldest first (this is what the UI shows in a task
+    /// detail pane). `limit` keeps the newest lines.
+    pub fn logs(
+        &mut self,
+        task_id: &str,
+        limit: usize,
+    ) -> Result<Vec<aether_host::TaskLog>, DaemonError> {
+        let value = self.call(
+            "logs",
+            None,
+            None,
+            None,
+            Some(task_id),
+            json!({ "limit": limit }),
+        )?;
+        Ok(serde_json::from_value(
+            value
+                .get("logs")
+                .cloned()
+                .unwrap_or(Value::Array(Vec::new())),
+        )?)
+    }
+
     pub fn add_task(
         &mut self,
         url: &str,

@@ -46,6 +46,10 @@ versioning; this is a UI mockup, so 0.x versions may change visual structure.
 - Completed downloads now land directly in the download directory (previously
   buried under `.aether/<task>/final/`), with automatic `-1`, `-2`… renaming on
   filename conflicts instead of a hard error.
+- Task logs API: daemon `logs` method, typed `Client::logs` (`TaskLog` with
+  level/message/timestamp/fields, oldest first) and `aether-cli logs`. The
+  daemon now records start/queue/completion/failure/finalize/retry/pause/
+  resume/cancel lines, so the UI can show a task detail log.
 - Daemon `delete` method for terminal tasks (record + staging removed, files
   kept) with a `task_deleted` event.
 - Automatic retry for retryable failures: exponential backoff

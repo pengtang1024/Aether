@@ -429,6 +429,21 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
                 .ok_or_else(|| DaemonError::Protocol(format!("task {task_id} not found")))?;
             Ok(json!({ "task": task }))
         }
+        "logs" => {
+            let task_id = task_id(&request)?;
+            // 404-style error keeps the UI honest when a task was deleted.
+            state
+                .store
+                .task(&task_id)?
+                .ok_or_else(|| DaemonError::Protocol(format!("task {task_id} not found")))?;
+            let limit = request
+                .settings
+                .get("limit")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(200)
+                .clamp(1, 1000) as usize;
+            Ok(json!({ "task_id": task_id, "logs": state.store.logs(&task_id, limit)? }))
+        }
         "pause" => {
             let task_id = task_id(&request)?;
             let task = state
@@ -445,6 +460,9 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
                     );
                     state.store.set_state(&task_id, TaskState::Paused)?;
                     state.active.remove(&task_id);
+                    let _ = state
+                        .store
+                        .append_log(&task_id, "info", "paused by user", None);
                     broadcast(
                         state,
                         json!({"event": "task_state", "task_id": task_id, "state": "paused"}),
@@ -455,6 +473,9 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
                 // keeps it out of the promotion path.
                 TaskState::Queued => {
                     state.store.set_state(&task_id, TaskState::Paused)?;
+                    let _ = state
+                        .store
+                        .append_log(&task_id, "info", "paused by user", None);
                     broadcast(
                         state,
                         json!({"event": "task_state", "task_id": task_id, "state": "paused"}),
@@ -494,6 +515,9 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
                         );
                         state.store.set_state(&task_id, TaskState::Running)?;
                         state.active.insert(task_id.clone());
+                        let _ = state
+                            .store
+                            .append_log(&task_id, "info", "resumed by user", None);
                         broadcast(
                             state,
                             json!({"event": "task_state", "task_id": task_id, "state": "running"}),
@@ -504,6 +528,12 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
                         Ok(started) => {
                             if !started {
                                 let _ = state.store.set_state(&task_id, TaskState::Queued);
+                                let _ = state.store.append_log(
+                                    &task_id,
+                                    "info",
+                                    "resumed by user",
+                                    None,
+                                );
                                 broadcast(
                                     state,
                                     json!({"event": "task_state", "task_id": task_id, "state": "queued"}),
@@ -545,6 +575,9 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
             }
             state.canceling.insert(task_id.clone());
             state.store.set_state(&task_id, TaskState::Canceled)?;
+            let _ = state
+                .store
+                .append_log(&task_id, "info", "canceled by user", None);
             state.active.remove(&task_id);
             state.live.remove(&task_id);
             state.retries.remove(&task_id);
@@ -663,6 +696,18 @@ fn add_task(state: &mut State, request: Request) -> Result<Value, DaemonError> {
     if let Ok(Some(task)) = state.store.task(&task_id) {
         broadcast(state, json!({"event": "task_added", "task": task}));
     }
+    if !started {
+        let _ = state.store.append_log(
+            &task_id,
+            "info",
+            &format!(
+                "queued: {} task(s) already running (max {})",
+                state.active.len(),
+                state.max_concurrent
+            ),
+            None,
+        );
+    }
 
     Ok(json!({
         "task_id": task_id,
@@ -707,6 +752,12 @@ fn try_launch(
         .start(plugin_id, task, TaskPaths { staging, final_dir }, budget)
         .map_err(DaemonError::Host)?;
     state.store.set_state(&task_id, TaskState::Running)?;
+    let _ = state.store.append_log(
+        &task_id,
+        "info",
+        &format!("running with plugin {plugin_id}"),
+        None,
+    );
     state.active.insert(task_id.clone());
     state.live.insert(task_id.clone());
     broadcast(
@@ -872,8 +923,19 @@ fn handle_event(state: &mut State, envelope: PluginEventEnvelope) {
             let staging = task_root.join("staging");
             let final_dir = state.download_dir.clone();
             match finalize_task(&staging, &final_dir, &files) {
-                Ok(_) => {
+                Ok(moved) => {
                     let _ = state.store.complete_task(&task_id, &files);
+                    let names = moved
+                        .iter()
+                        .filter_map(|path| path.file_name())
+                        .map(|name| name.to_string_lossy().into_owned())
+                        .collect::<Vec<_>>();
+                    let _ = state.store.append_log(
+                        &task_id,
+                        "info",
+                        &format!("completed: {}", names.join(", ")),
+                        Some(&json!({"files": names})),
+                    );
                     broadcast(
                         state,
                         json!({"event": "completed", "task_id": task_id, "files": files}),
@@ -883,6 +945,12 @@ fn handle_event(state: &mut State, envelope: PluginEventEnvelope) {
                     let _ = state
                         .store
                         .fail_task(&task_id, "finalize", &error.to_string(), false);
+                    let _ = state.store.append_log(
+                        &task_id,
+                        "error",
+                        &format!("finalize failed: {error}"),
+                        None,
+                    );
                     broadcast(
                         state,
                         json!({"event": "failed", "task_id": task_id, "error": error.to_string()}),
@@ -897,12 +965,24 @@ fn handle_event(state: &mut State, envelope: PluginEventEnvelope) {
             state.canceling.remove(&task_id);
             if error.kind == aether_plugin_sdk::ErrorKind::Canceled {
                 let _ = state.store.set_state(&task_id, TaskState::Canceled);
+                let _ = state
+                    .store
+                    .append_log(&task_id, "info", "canceled by plugin", None);
             } else {
                 let _ = state.store.fail_task(
                     &task_id,
                     &format!("{:?}", error.kind).to_ascii_lowercase(),
                     &error.message,
                     error.retryable,
+                );
+                let _ = state.store.append_log(
+                    &task_id,
+                    "error",
+                    &error.message,
+                    Some(&json!({
+                        "kind": format!("{:?}", error.kind).to_ascii_lowercase(),
+                        "retryable": error.retryable,
+                    })),
                 );
                 schedule_retry(state, &task_id, &error.message);
             }

@@ -40,7 +40,9 @@ aether-daemon
 | `add` | `url`, `plugin?`, `settings?` | 创建任务、Probe、启动插件 |
 | `list` | — | 最近 100 个任务 |
 | `get` | `task_id` | 单任务 + 文件 |
+| `logs` | `task_id`, `settings.limit?` | 任务日志（默认 200 条，上限 1000，旧→新） |
 | `pause` / `resume` / `cancel` | `task_id` | 生命周期 |
+| `delete` | `task_id` | 删除终态任务（保留已下载文件） |
 | `shutdown` | — | 停止 daemon |
 
 示例：
@@ -50,7 +52,8 @@ printf '%s\n' '{"id":1,"method":"add","url":"https://example.com/file.bin"}' \
   | socat - UNIX-CONNECT:$XDG_RUNTIME_DIR/aether/daemon.sock
 ```
 
-Rust 客户端：`aether_daemon::Client`（`ping/add/list/task/pause/resume/cancel/shutdown`）。
+Rust 客户端：`aether_daemon::Client`
+（`ping/add/list/task/logs/pause/resume/cancel/delete/shutdown`）。
 
 ## 3. 启动
 
@@ -112,7 +115,27 @@ unit 文件：`packaging/aether-daemon.service`，安装到
 - 重试计划目前仅存内存：daemon 重启后 failed 任务不再自动重试，需要手动
   `resume`（这是已知限制）。
 
-## 5.3 删除任务
+## 5.3 任务日志
+
+daemon 自己写入的日志行（`task_logs` 表，`level` 为 `info`/`warn`/`error`）：
+
+| 时机 | 内容 |
+| --- | --- |
+| 启动插件执行 | `running with plugin <id>` |
+| 并发已满 | `queued: N task(s) already running (max M)` |
+| 完成 | `completed: a.bin, b.bin`（`fields.files` 为文件名数组） |
+| 插件失败 | 插件给的错误消息（`fields` 含 `kind`/`retryable`） |
+| finalize 失败 | `finalize failed: ...` |
+| 自动重试 | `auto-retry 2/5 in 60 s`；用尽时 `auto-retry exhausted after 6 attempts: ...` |
+| 用户操作 | `paused by user` / `resumed by user` / `canceled by user` |
+
+`logs` 返回 `{"task_id": "...", "logs": [{"level","message","created_at","fields?"}]}`，
+按时间升序。任务不存在时返回错误（不返回空数组），已删除任务的日志随记录级联删除。
+
+CLI 对等命令：`aether-cli logs <task-id> --dir <dir> [--limit <n>]`（直接读 SQLite，
+时间戳按 UTC 打印）。
+
+## 5.4 删除任务
 
 - `delete` 只接受终态任务（completed/failed/canceled）；运行中任务需先 cancel。
 - 删除会清掉 `.aether/<task_id>/`（staging 与续传状态）和数据库记录；已完成的

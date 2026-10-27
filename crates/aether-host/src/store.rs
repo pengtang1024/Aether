@@ -81,6 +81,16 @@ pub struct StoredTask {
     pub files: Vec<StoredFile>,
 }
 
+/// One `task_logs` row, oldest first when returned from [`TaskStore::logs`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskLog {
+    pub level: String,
+    pub message: String,
+    pub created_at: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fields: Option<Value>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoredFile {
     pub relative_path: String,
@@ -414,18 +424,25 @@ impl TaskStore {
         Ok(())
     }
 
-    pub fn recent_logs(
-        &self,
-        task_id: &str,
-        limit: usize,
-    ) -> Result<Vec<(String, String)>, StoreError> {
+    /// The last `limit` log lines for a task, oldest first so callers can print
+    /// them in reading order without reversing.
+    pub fn logs(&self, task_id: &str, limit: usize) -> Result<Vec<TaskLog>, StoreError> {
         let mut statement = self.connection.prepare(
-            "SELECT level, message FROM task_logs WHERE task_id = ?1 ORDER BY id DESC LIMIT ?2",
+            "SELECT level, message, fields, created_at FROM task_logs
+             WHERE task_id = ?1 ORDER BY id DESC LIMIT ?2",
         )?;
         let rows = statement.query_map(params![task_id, limit as i64], |row| {
-            Ok((row.get(0)?, row.get(1)?))
+            let fields: Option<String> = row.get(2)?;
+            Ok(TaskLog {
+                level: row.get(0)?,
+                message: row.get(1)?,
+                fields: fields.and_then(|raw| serde_json::from_str(&raw).ok()),
+                created_at: row.get(3)?,
+            })
         })?;
-        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+        let mut logs = rows.collect::<Result<Vec<_>, _>>()?;
+        logs.reverse();
+        Ok(logs)
     }
 }
 
@@ -562,6 +579,34 @@ mod tests {
         let task = store.task("t1").unwrap().unwrap();
         assert_eq!(task.state, TaskState::Failed);
         assert!(task.error_retryable);
-        assert_eq!(store.recent_logs("t1", 10).unwrap().len(), 1);
+        assert_eq!(store.logs("t1", 10).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn returns_logs_oldest_first_with_fields() {
+        let mut store = TaskStore::open_in_memory().unwrap();
+        store.create_task(&new_task("t1")).unwrap();
+        store.append_log("t1", "info", "first", None).unwrap();
+        store
+            .append_log(
+                "t1",
+                "warn",
+                "second",
+                Some(&serde_json::json!({"attempt": 2})),
+            )
+            .unwrap();
+        store.append_log("t1", "error", "third", None).unwrap();
+
+        let logs = store.logs("t1", 10).unwrap();
+        let messages: Vec<_> = logs.iter().map(|log| log.message.as_str()).collect();
+        assert_eq!(messages, ["first", "second", "third"]);
+        assert_eq!(logs[1].level, "warn");
+        assert_eq!(logs[1].fields, Some(serde_json::json!({"attempt": 2})));
+        assert_eq!(logs[0].fields, None);
+
+        // The limit keeps the newest lines, still in reading order.
+        let recent = store.logs("t1", 2).unwrap();
+        let messages: Vec<_> = recent.iter().map(|log| log.message.as_str()).collect();
+        assert_eq!(messages, ["second", "third"]);
     }
 }

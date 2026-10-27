@@ -75,6 +75,7 @@ client.resume(task_id)?;  // paused -> 原地恢复或重新启动；failed/canc
 client.cancel(task_id)?;  // -> canceled（终态，可再 resume 重新下载）
 client.delete(task_id)?;  // 仅终态可删；清记录/staging，已下载文件保留
 client.task_record(task_id)?;
+client.logs(task_id, 200)?; // Vec<TaskLog> { level, message, created_at, fields? }，旧→新
 ```
 
 `add_task` 会 Probe 后选择插件；想强制插件用 `plugin: Some("http")`。

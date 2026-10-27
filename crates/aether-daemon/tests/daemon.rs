@@ -488,3 +488,42 @@ fn daemon_deletes_terminal_tasks_but_keeps_files() {
     client.shutdown().unwrap();
     daemon.shutdown();
 }
+
+#[test]
+fn daemon_exposes_task_logs() {
+    let Some(daemon) = spawn_daemon("logs", 1, None) else {
+        eprintln!("fake plugin binary is not built; skipping");
+        return;
+    };
+    let socket = daemon.socket.clone();
+
+    let mut client = connect(&socket);
+    let added = client
+        .add("https://example.com/logged.bin", None, None)
+        .unwrap();
+    let task_id = added["task_id"].as_str().unwrap().to_string();
+    assert_reaches(&mut client, &task_id, "completed", 300);
+
+    let logs = client.logs(&task_id, 50).unwrap();
+    let messages: Vec<_> = logs.iter().map(|log| log.message.as_str()).collect();
+    assert!(
+        messages
+            .iter()
+            .any(|line| line.contains("running with plugin fake")),
+        "missing start line: {messages:?}"
+    );
+    assert!(
+        messages.iter().any(|line| line.starts_with("completed:")),
+        "missing completion line: {messages:?}"
+    );
+    // Oldest first, and every line carries a timestamp.
+    assert!(logs
+        .windows(2)
+        .all(|pair| pair[0].created_at <= pair[1].created_at));
+
+    // Unknown tasks are an error, not an empty list.
+    assert!(client.logs("task-missing", 10).is_err());
+
+    client.shutdown().unwrap();
+    daemon.shutdown();
+}

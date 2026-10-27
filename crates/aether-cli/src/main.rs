@@ -93,6 +93,14 @@ fn run() -> Result<(), String> {
             let output = option(&args, "--dir").unwrap_or_else(|| "downloads".into());
             list_tasks(Path::new(&output))
         }
+        "logs" => {
+            let task_id = args.get(1).ok_or("logs needs a task id")?;
+            let output = option(&args, "--dir").unwrap_or_else(|| "downloads".into());
+            let limit = option(&args, "--limit")
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(50);
+            show_logs(Path::new(&output), task_id, limit)
+        }
         "resume" => {
             let task_id = args.get(1).ok_or("resume needs a task id")?;
             let output = option(&args, "--dir").unwrap_or_else(|| "downloads".into());
@@ -344,6 +352,35 @@ fn list_tasks(output: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Print a task's log lines, oldest first. Timestamps are UTC (the CLI does
+/// not pull in a timezone database); the UI formats them locally.
+fn show_logs(output: &Path, task_id: &str, limit: usize) -> Result<(), String> {
+    let store = TaskStore::open(output.join(".aether").join("aether.db"))
+        .map_err(|error| error.to_string())?;
+    store
+        .task(task_id)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| format!("task {task_id} not found"))?;
+    for log in store
+        .logs(task_id, limit)
+        .map_err(|error| error.to_string())?
+    {
+        println!("{} {:<5} {}", clock(log.created_at), log.level, log.message);
+    }
+    Ok(())
+}
+
+/// `HH:MM:SS` in UTC from an epoch-millisecond timestamp.
+fn clock(ms: i64) -> String {
+    let secs = ms.div_euclid(1000).rem_euclid(86_400);
+    format!(
+        "{:02}:{:02}:{:02}Z",
+        secs / 3600,
+        (secs % 3600) / 60,
+        secs % 60
+    )
+}
+
 fn manager(plugins: &Path, data_dir: &Path) -> Result<PluginManager, String> {
     let registry =
         PluginRegistry::discover(&[plugins.to_path_buf()]).map_err(|error| error.to_string())?;
@@ -365,7 +402,7 @@ fn option(args: &[String], name: &str) -> Option<String> {
 
 fn usage() -> Result<(), String> {
     Err(format!(
-        "usage:\n  aether-cli list --plugins <dir>\n  aether-cli probe <url> --plugins <dir>\n  aether-cli download <url> --dir <dir> --plugins <dir> [--plugin <id>]\n  aether-cli tasks --dir <dir>\n  aether-cli resume <task-id> --dir <dir> --plugins <dir>{}",
+        "usage:\n  aether-cli list --plugins <dir>\n  aether-cli probe <url> --plugins <dir>\n  aether-cli download <url> --dir <dir> --plugins <dir> [--plugin <id>]\n  aether-cli tasks --dir <dir>\n  aether-cli logs <task-id> --dir <dir> [--limit <n>]\n  aether-cli resume <task-id> --dir <dir> --plugins <dir>{}",
         import_usage(),
     ))
 }
