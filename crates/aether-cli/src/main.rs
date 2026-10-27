@@ -399,7 +399,11 @@ fn clock(ms: i64) -> String {
 fn manager(plugins: &Path, data_dir: &Path) -> Result<PluginManager, String> {
     let registry =
         PluginRegistry::discover(&[plugins.to_path_buf()]).map_err(|error| error.to_string())?;
-    Ok(PluginManager::new(registry, data_dir, "0.2.0"))
+    Ok(PluginManager::new(
+        registry,
+        data_dir,
+        env!("CARGO_PKG_VERSION"),
+    ))
 }
 
 fn plugin_dir(args: &[String]) -> PathBuf {
