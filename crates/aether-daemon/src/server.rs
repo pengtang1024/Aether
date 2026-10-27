@@ -124,7 +124,6 @@ struct State {
 
 #[derive(Debug, Clone, Copy)]
 struct RetrySchedule {
-    attempts: u32,
     next: Instant,
 }
 
@@ -208,6 +207,7 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
     };
 
     recover_tasks(&mut state);
+    restore_retries(&mut state);
 
     let (command_tx, command_rx) = mpsc::channel::<Command>();
     let accept_tx = command_tx.clone();
@@ -538,8 +538,9 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
                 )),
                 _ => {
                     // A manual resume is an explicit "try again": reset the
-                    // automatic retry bookkeeping.
+                    // automatic retry bookkeeping (in memory and in the store).
                     state.retries.remove(&task_id);
+                    let _ = state.store.reset_retry(&task_id);
                     if state.live.contains(&task_id) {
                         // The plugin still owns a live (paused or stopping)
                         // execution; resume it in place.
@@ -611,6 +612,7 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
             }
             state.canceling.insert(task_id.clone());
             state.store.set_state(&task_id, TaskState::Canceled)?;
+            let _ = state.store.reset_retry(&task_id);
             let _ = state
                 .store
                 .append_log(&task_id, "info", "canceled by user", None);
@@ -885,17 +887,25 @@ fn schedule_retry(state: &mut State, task_id: &str, message: &str) {
     if state.retry_max == 0 {
         return;
     }
-    let attempts = state
-        .retries
-        .get(task_id)
-        .map(|schedule| schedule.attempts + 1)
-        .unwrap_or(1);
+    // The attempt counter lives in the database so it survives restarts and so
+    // a retry cycle cannot reset itself to "first attempt" every time.
+    let previous = state
+        .store
+        .task(task_id)
+        .ok()
+        .flatten()
+        .map(|task| task.retry_attempts)
+        .unwrap_or(0);
+    let attempts = previous.saturating_add(1);
     if attempts > state.retry_max {
         state.retries.remove(task_id);
+        // Keep the counter: "failed after N retries" is information worth
+        // showing; `retry_at = NULL` already means "nothing scheduled".
+        let _ = state.store.clear_pending_retry(task_id);
         let _ = state.store.append_log(
             task_id,
             "warn",
-            &format!("auto-retry exhausted after {attempts} attempts: {message}"),
+            &format!("auto-retry exhausted after {previous} retries: {message}"),
             None,
         );
         return;
@@ -906,9 +916,12 @@ fn schedule_retry(state: &mut State, task_id: &str, message: &str) {
             .saturating_mul(1_u64 << (attempts - 1).min(6)),
     );
     let next = Instant::now() + delay;
+    let _ = state
+        .store
+        .set_retry(task_id, attempts, now_ms() + delay.as_millis() as i64);
     state
         .retries
-        .insert(task_id.to_string(), RetrySchedule { attempts, next });
+        .insert(task_id.to_string(), RetrySchedule { next });
     let _ = state.store.append_log(
         task_id,
         "info",
@@ -948,6 +961,7 @@ fn check_retries(state: &mut State) {
     }
     for task_id in due {
         state.retries.remove(&task_id);
+        let _ = state.store.clear_pending_retry(&task_id);
         let result = state.store.set_state(&task_id, TaskState::Queued);
         if result.is_ok() {
             broadcast(
@@ -1066,6 +1080,7 @@ fn handle_event(state: &mut State, envelope: PluginEventEnvelope) {
             state.canceling.remove(&task_id);
             if error.kind == aether_plugin_sdk::ErrorKind::Canceled {
                 let _ = state.store.set_state(&task_id, TaskState::Canceled);
+                let _ = state.store.reset_retry(&task_id);
                 let _ = state
                     .store
                     .append_log(&task_id, "info", "canceled by plugin", None);
@@ -1170,6 +1185,62 @@ fn resolve_target_dir(state: &State, requested: Option<&str>) -> Result<PathBuf,
         )));
     }
     Ok(state.download_dir.join(path))
+}
+
+/// Reload automatic retries that were pending when the daemon last stopped.
+/// Due entries go straight back to the queue; future ones keep their remaining
+/// delay so a restart does not restart the backoff from scratch.
+fn restore_retries(state: &mut State) {
+    let pending = match state.store.pending_retries() {
+        Ok(pending) => pending,
+        Err(error) => {
+            eprintln!("aether-daemon: cannot load pending retries: {error}");
+            return;
+        }
+    };
+    if pending.is_empty() {
+        return;
+    }
+    let now = now_ms();
+    for (task_id, attempts, at) in pending {
+        let remaining = at.saturating_sub(now);
+        if remaining <= 0 {
+            let _ = state.store.clear_pending_retry(&task_id);
+            if state.store.set_state(&task_id, TaskState::Queued).is_ok() {
+                let _ = state.store.append_log(
+                    &task_id,
+                    "info",
+                    "auto-retry resumed after restart",
+                    None,
+                );
+            }
+        } else {
+            state.retries.insert(
+                task_id.clone(),
+                RetrySchedule {
+                    next: Instant::now() + Duration::from_millis(remaining as u64),
+                },
+            );
+            let _ = state.store.append_log(
+                &task_id,
+                "info",
+                &format!(
+                    "auto-retry {attempts}/{} resumes in {} s after restart",
+                    state.retry_max,
+                    remaining / 1000
+                ),
+                None,
+            );
+        }
+    }
+    promote_queued(state);
+}
+
+fn now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64
 }
 
 fn task_id(request: &Request) -> Result<String, DaemonError> {

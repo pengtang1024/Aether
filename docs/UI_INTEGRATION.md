@@ -102,6 +102,9 @@ let resolved = client.resolve_proxy("https://example.com/file.zip")?;
 
 - `daemon` 不在：连接错误；UI 显示“后台服务未启动”。
 - 插件失败：`failed` 事件 + `StoredTask.error_message`；可提供“重试”。
+  自动重试中：`retry_scheduled` 事件，`StoredTask.retry_at` 为下次尝试时间
+  （epoch ms，NULL 表示没有待执行的重试），`retry_attempts` 为已失败次数；
+  列表页可显示“N 秒后重试”。
 - 升级：`update_status` 显示 `ready`，由 daemon/包管理器处理；UI 只做提示。
 - 代理设置变更不影响已经在跑的任务（插件进程持有启动时的配置）；设置页保存后
   提示“对之后开始的任务生效”。

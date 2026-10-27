@@ -38,8 +38,14 @@ struct Daemon {
 
 impl Daemon {
     fn shutdown(self) {
+        let root = self.root.clone();
+        self.stop();
+        fs::remove_dir_all(&root).ok();
+    }
+
+    /// Stop the daemon but keep its directory, to simulate a restart.
+    fn stop(self) {
         let _ = self.handle.join();
-        fs::remove_dir_all(&self.root).ok();
     }
 }
 
@@ -74,8 +80,26 @@ fn spawn_daemon_full(
     retry_base_secs: u64,
     proxy: Option<&str>,
 ) -> Option<Daemon> {
+    spawn_daemon_at(
+        temp_dir(label),
+        max_concurrent,
+        max_speed_bps,
+        retry_max,
+        retry_base_secs,
+        proxy,
+    )
+}
+
+/// Start a daemon over an existing root; used to simulate a restart.
+fn spawn_daemon_at(
+    root: PathBuf,
+    max_concurrent: usize,
+    max_speed_bps: Option<u64>,
+    retry_max: u32,
+    retry_base_secs: u64,
+    proxy: Option<&str>,
+) -> Option<Daemon> {
     let fake = fake_binary()?;
-    let root = temp_dir(label);
     let package = root.join("plugins").join("fake");
     fs::create_dir_all(package.join("bin")).unwrap();
     let executable_name = format!("aether-plugin-fake{}", std::env::consts::EXE_SUFFIX);
@@ -418,10 +442,33 @@ fn daemon_stops_retrying_after_the_cap() {
     assert_reaches(&mut client, &task_id, "failed", 300);
 
     // Attempt 2 (cap 1) also fails; the task must stay failed afterwards.
-    // The brief "running" blip between retries is not observable reliably.
-    assert_reaches(&mut client, &task_id, "failed", 300);
-    thread::sleep(Duration::from_secs(3));
-    assert_eq!(task_state(&mut client, &task_id), "failed");
+    // The brief "running" blip between retries is not observable reliably, so
+    // wait for the record to lose its pending-retry deadline instead: that is
+    // what "the cap was hit" looks like.
+    for _ in 0..100 {
+        if let Ok(record) = client.task_record(&task_id) {
+            if record.retry_at.is_none() && record.retry_attempts > 0 {
+                break;
+            }
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+    let record = client.task_record(&task_id).unwrap();
+    assert_eq!(record.state, aether_host::TaskState::Failed);
+    assert_eq!(record.retry_attempts, 1, "cap must stop after one retry");
+    assert!(record.retry_at.is_none(), "no retry may stay pending");
+    let starts = client
+        .logs(&task_id, 100)
+        .unwrap()
+        .iter()
+        .filter(|log| log.message.starts_with("running with plugin"))
+        .count();
+    assert_eq!(starts, 2, "exactly one retry may run");
+    assert!(client
+        .logs(&task_id, 100)
+        .unwrap()
+        .iter()
+        .any(|log| log.message.contains("auto-retry exhausted")));
 
     // Manual resume still works and resets the bookkeeping.
     let resumed = client.resume(&task_id).unwrap();
@@ -757,6 +804,110 @@ fn daemon_resolves_pac_per_url() {
         .as_str()
         .unwrap_or_default()
         .contains("script"));
+
+    client.shutdown().unwrap();
+    daemon.shutdown();
+}
+
+#[test]
+fn daemon_resumes_pending_retries_after_a_restart() {
+    let root = temp_dir("retryrestart");
+    let Some(daemon) = spawn_daemon_at(root.clone(), 1, None, 1, 2, None) else {
+        eprintln!("fake plugin binary is not built; skipping");
+        return;
+    };
+    let socket = daemon.socket.clone();
+
+    let mut client = connect(&socket);
+    let added = client
+        .add_with_settings(
+            "https://example.com/broken.bin",
+            None,
+            None,
+            json!({"fail_always": true, "retryable": true}),
+        )
+        .unwrap();
+    let task_id = added["task_id"].as_str().unwrap().to_string();
+    assert_reaches(&mut client, &task_id, "failed", 300);
+
+    // A retry is scheduled two seconds out; stop the daemon before it fires.
+    let record = client.task_record(&task_id).unwrap();
+    assert_eq!(record.retry_attempts, 1);
+    assert!(record.retry_at.is_some(), "retry must be pending");
+    client.shutdown().unwrap();
+    daemon.stop();
+
+    // The restarted daemon must pick the schedule up and run the retry.
+    let Some(daemon) = spawn_daemon_at(root, 1, None, 1, 2, None) else {
+        eprintln!("fake plugin binary is not built; skipping");
+        return;
+    };
+    let socket = daemon.socket.clone();
+    let mut client = connect(&socket);
+
+    let mut restored = false;
+    for _ in 0..150 {
+        if let Ok(record) = client.task_record(&task_id) {
+            if record.state == aether_host::TaskState::Failed && record.retry_at.is_none() {
+                restored = true;
+                break;
+            }
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+    assert!(restored, "retry did not complete after restart");
+
+    let logs = client.logs(&task_id, 200).unwrap();
+    assert!(
+        logs.iter().any(|log| log.message.contains("after restart")),
+        "missing restore log: {:?}",
+        logs.iter().map(|log| &log.message).collect::<Vec<_>>()
+    );
+    let starts = logs
+        .iter()
+        .filter(|log| log.message.starts_with("running with plugin"))
+        .count();
+    assert_eq!(starts, 2, "one attempt before, one after the restart");
+
+    client.shutdown().unwrap();
+    daemon.shutdown();
+}
+
+#[test]
+fn daemon_manual_resume_drops_a_pending_retry() {
+    let Some(daemon) = spawn_daemon_at(temp_dir("retryresume"), 1, None, 5, 60, None) else {
+        eprintln!("fake plugin binary is not built; skipping");
+        return;
+    };
+    let socket = daemon.socket.clone();
+
+    let mut client = connect(&socket);
+    // `fail` fails exactly once: the plugin records that it already tried, so
+    // the manual resume succeeds and we can observe a cleared retry state.
+    let added = client
+        .add_with_settings(
+            "https://example.com/flaky.bin",
+            None,
+            None,
+            json!({"fail": true, "retryable": true}),
+        )
+        .unwrap();
+    let task_id = added["task_id"].as_str().unwrap().to_string();
+    assert_reaches(&mut client, &task_id, "failed", 300);
+    let record = client.task_record(&task_id).unwrap();
+    assert_eq!(record.retry_attempts, 1);
+    assert_eq!(record.retry_at.is_some(), true);
+
+    // An explicit resume clears the pending schedule and restarts the counter,
+    // so the retry does not fire a second time behind the user's back.
+    client.resume(&task_id).unwrap();
+    let record = client.task_record(&task_id).unwrap();
+    assert!(record.retry_at.is_none());
+    assert_eq!(record.retry_attempts, 0);
+    assert_reaches(&mut client, &task_id, "completed", 300);
+    let record = client.task_record(&task_id).unwrap();
+    assert_eq!(record.retry_attempts, 0);
+    assert!(record.retry_at.is_none());
 
     client.shutdown().unwrap();
     daemon.shutdown();

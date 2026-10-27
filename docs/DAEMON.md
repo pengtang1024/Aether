@@ -115,8 +115,17 @@ unit 文件：`packaging/aether-daemon.service`，安装到
   failed 任务也允许取消）。
 - 每次调度/耗尽都写入 `task_logs` 并广播 `retry_scheduled` 事件
   （`{attempt, delay_secs}`）。
-- 重试计划目前仅存内存：daemon 重启后 failed 任务不再自动重试，需要手动
-  `resume`（这是已知限制）。
+- 重试计划**持久化**在 `tasks.retry_attempts` / `tasks.retry_at`（schema v3）：
+  daemon 重启后未到期的重试按剩余时间恢复，已到期的立即回队列。日志会写明
+  `auto-retry N/M resumes in K s after restart`。
+- 计数语义：`retry_attempts` 是「上次手动操作以来失败的次数」，决定退避档位。
+  重试真正开跑时只清 `retry_at`、保留计数，所以一个重试周期不会把自己重置成
+  「第一次尝试」；达到上限后保留计数（UI 可显示「已重试 N 次后放弃」），
+  `retry_at = NULL` 表示没有待执行的重试。
+- 手动 `resume` / `cancel` / 完成都会清零计数并清掉待执行的重试；`resume` 之后
+  的再次失败从「第 1 次重试」重新开始。
+- 事件 `retry_scheduled` 带 `attempt` 与 `delay_secs`；`StoredTask` 也暴露
+  `retry_attempts` / `retry_at`（epoch ms），UI 可做倒计时。
 
 ## 5.3 任务日志
 

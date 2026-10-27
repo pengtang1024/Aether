@@ -46,6 +46,12 @@ versioning; this is a UI mockup, so 0.x versions may change visual structure.
 - Completed downloads now land directly in the download directory (previously
   buried under `.aether/<task>/final/`), with automatic `-1`, `-2`… renaming on
   filename conflicts instead of a hard error.
+- Automatic retries are now durable (schema v3, `retry_attempts`/`retry_at`):
+  a daemon restart resumes pending retries with their remaining delay instead of
+  dropping them. This also fixes the attempt counter resetting on every retry,
+  which made `AETHER_RETRY_MAX` ineffective (retries could loop forever). The
+  counter is kept when the cap is hit, cleared by resume/cancel/completion, and
+  exposed on `StoredTask` for a UI countdown.
 - PAC (auto-proxy): the Host evaluates `FindProxyForURL` in a `rquickjs`
   sandbox (16 MiB heap, 300 ms deadline, no host APIs) from a script URL,
   `file://`/local path or inline script, caches it for 30 minutes and keeps the

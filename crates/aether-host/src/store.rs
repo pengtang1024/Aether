@@ -79,6 +79,10 @@ pub struct StoredTask {
     pub settings: Value,
     pub plugin_state: Option<Value>,
     pub target_dir: Option<String>,
+    /// Failed attempts so far; drives the exponential backoff and its cap.
+    pub retry_attempts: u32,
+    /// Wall-clock deadline of a pending automatic retry (epoch ms).
+    pub retry_at: Option<i64>,
     pub created_at: i64,
     pub updated_at: i64,
     pub completed_at: Option<i64>,
@@ -224,6 +228,18 @@ impl TaskStore {
                 "#,
             )?;
         }
+        if version < 3 {
+            // v3: durable automatic-retry bookkeeping across restarts.
+            connection.execute_batch(
+                r#"
+                BEGIN;
+                ALTER TABLE tasks ADD COLUMN retry_attempts INTEGER NOT NULL DEFAULT 0;
+                ALTER TABLE tasks ADD COLUMN retry_at INTEGER;
+                PRAGMA user_version = 3;
+                COMMIT;
+                "#,
+            )?;
+        }
         Ok(())
     }
 
@@ -252,7 +268,8 @@ impl TaskStore {
             .query_row(
                 "SELECT id, url, plugin_id, filename, state, downloaded, total, speed_bps,
                         error_kind, error_message, error_retryable, settings, plugin_state,
-                        created_at, updated_at, completed_at, target_dir
+                        created_at, updated_at, completed_at, target_dir,
+                        retry_attempts, retry_at
                  FROM tasks WHERE id = ?1",
                 [id],
                 row_to_task,
@@ -268,7 +285,8 @@ impl TaskStore {
         let mut statement = self.connection.prepare(
             "SELECT id, url, plugin_id, filename, state, downloaded, total, speed_bps,
                     error_kind, error_message, error_retryable, settings, plugin_state,
-                    created_at, updated_at, completed_at, target_dir
+                    created_at, updated_at, completed_at, target_dir,
+                    retry_attempts, retry_at
              FROM tasks ORDER BY created_at DESC LIMIT ?1",
         )?;
         let rows = statement.query_map([limit as i64], row_to_task)?;
@@ -285,7 +303,8 @@ impl TaskStore {
         let mut statement = self.connection.prepare(
             "SELECT id, url, plugin_id, filename, state, downloaded, total, speed_bps,
                     error_kind, error_message, error_retryable, settings, plugin_state,
-                    created_at, updated_at, completed_at, target_dir
+                    created_at, updated_at, completed_at, target_dir,
+                    retry_attempts, retry_at
              FROM tasks WHERE state IN ('queued', 'running', 'paused') ORDER BY created_at",
         )?;
         let rows = statement.query_map([], row_to_task)?;
@@ -371,7 +390,8 @@ impl TaskStore {
         transaction.execute(
             "UPDATE tasks SET state = 'completed', downloaded = ?2, total = ?2,
                     updated_at = ?3, completed_at = ?3,
-                    speed_bps = 0, error_kind = NULL, error_message = NULL
+                    speed_bps = 0, error_kind = NULL, error_message = NULL,
+                    retry_attempts = 0, retry_at = NULL
              WHERE id = ?1",
             params![id, total as i64, now_ms()],
         )?;
@@ -440,6 +460,53 @@ impl TaskStore {
         Ok(())
     }
 
+    /// Record a pending automatic retry: `attempts` failures so far and the
+    /// wall-clock deadline. Survives a daemon restart.
+    pub fn set_retry(
+        &mut self,
+        task_id: &str,
+        attempts: u32,
+        retry_at: i64,
+    ) -> Result<(), StoreError> {
+        self.connection.execute(
+            "UPDATE tasks SET retry_attempts = ?1, retry_at = ?2 WHERE id = ?3",
+            params![attempts as i64, retry_at, task_id],
+        )?;
+        Ok(())
+    }
+
+    /// The retry is about to run: keep the attempt counter, drop the deadline.
+    pub fn clear_pending_retry(&mut self, task_id: &str) -> Result<(), StoreError> {
+        self.connection
+            .execute("UPDATE tasks SET retry_at = NULL WHERE id = ?1", [task_id])?;
+        Ok(())
+    }
+
+    /// Forget retry bookkeeping entirely (manual resume, cancel, completion).
+    pub fn reset_retry(&mut self, task_id: &str) -> Result<(), StoreError> {
+        self.connection.execute(
+            "UPDATE tasks SET retry_attempts = 0, retry_at = NULL WHERE id = ?1",
+            [task_id],
+        )?;
+        Ok(())
+    }
+
+    /// Failed tasks with a pending automatic retry: `(task_id, attempts, at)`.
+    pub fn pending_retries(&self) -> Result<Vec<(String, u32, i64)>, StoreError> {
+        let mut statement = self.connection.prepare(
+            "SELECT id, retry_attempts, retry_at FROM tasks
+             WHERE state = 'failed' AND retry_at IS NOT NULL ORDER BY retry_at",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)? as u32,
+                row.get::<_, i64>(2)?,
+            ))
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
     /// The last `limit` log lines for a task, oldest first so callers can print
     /// them in reading order without reversing.
     pub fn logs(&self, task_id: &str, limit: usize) -> Result<Vec<TaskLog>, StoreError> {
@@ -493,6 +560,8 @@ fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredTask> {
         updated_at: row.get(14)?,
         completed_at: row.get(15)?,
         target_dir: row.get(16)?,
+        retry_attempts: row.get::<_, i64>(17)? as u32,
+        retry_at: row.get(18)?,
         files: Vec::new(),
     })
 }
@@ -662,6 +731,8 @@ mod tests {
         let old = store.task("old").unwrap().unwrap();
         assert_eq!(old.state, TaskState::Completed);
         assert_eq!(old.target_dir, None);
+        assert_eq!(old.retry_attempts, 0);
+        assert_eq!(old.retry_at, None);
 
         // The new column is usable after the migration.
         let mut task = new_task("new");
@@ -676,9 +747,55 @@ mod tests {
             .connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 2);
+        assert_eq!(version, 3);
         drop(store);
         fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn tracks_pending_retries() {
+        let mut store = TaskStore::open_in_memory().unwrap();
+        store.create_task(&new_task("t1")).unwrap();
+        store.fail_task("t1", "timeout", "timed out", true).unwrap();
+        store.set_retry("t1", 2, 1_700_000_000_000).unwrap();
+        assert_eq!(
+            store.pending_retries().unwrap(),
+            vec![("t1".to_string(), 2, 1_700_000_000_000)]
+        );
+        let task = store.task("t1").unwrap().unwrap();
+        assert_eq!(task.retry_attempts, 2);
+        assert_eq!(task.retry_at, Some(1_700_000_000_000));
+
+        // The retry is running: the deadline goes, the counter stays.
+        store.clear_pending_retry("t1").unwrap();
+        assert!(store.pending_retries().unwrap().is_empty());
+        let task = store.task("t1").unwrap().unwrap();
+        assert_eq!(task.retry_attempts, 2);
+        assert_eq!(task.retry_at, None);
+
+        // Manual action forgets everything.
+        store.set_retry("t1", 3, 42).unwrap();
+        store.reset_retry("t1").unwrap();
+        let task = store.task("t1").unwrap().unwrap();
+        assert_eq!(task.retry_attempts, 0);
+        assert_eq!(task.retry_at, None);
+
+        // Completion clears any leftover schedule.
+        store.set_retry("t1", 4, 43).unwrap();
+        store
+            .complete_task(
+                "t1",
+                &[aether_plugin_sdk::FileInfo {
+                    relative_path: "file.bin".into(),
+                    size: 1,
+                    checksum: None,
+                }],
+            )
+            .unwrap();
+        let task = store.task("t1").unwrap().unwrap();
+        assert_eq!(task.retry_attempts, 0);
+        assert_eq!(task.retry_at, None);
+        assert!(store.pending_retries().unwrap().is_empty());
     }
 
     #[test]
