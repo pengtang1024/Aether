@@ -200,7 +200,8 @@ fn parse_kde_proxy(value: String, scheme: &str, default_port: u16) -> Option<Str
     ))
 }
 
-#[cfg(test)]
+// The tests fabricate `gsettings` shell scripts and need Unix permissions.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
