@@ -112,6 +112,13 @@ unit 文件：`packaging/aether-daemon.service`，安装到
 - 重试计划目前仅存内存：daemon 重启后 failed 任务不再自动重试，需要手动
   `resume`（这是已知限制）。
 
+## 5.3 删除任务
+
+- `delete` 只接受终态任务（completed/failed/canceled）；运行中任务需先 cancel。
+- 删除会清掉 `.aether/<task_id>/`（staging 与续传状态）和数据库记录；已完成的
+  文件位于下载目录本体，删除任务不会动它们。
+- 广播 `task_deleted` 事件，UI 用来移除列表项。
+
 ## 6. 接管系统下载还差什么
 
 daemon 是常驻入口，但“接管所有下载”还需要：

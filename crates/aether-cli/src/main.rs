@@ -140,10 +140,12 @@ fn download(url: &str, output: &Path, plugins: &Path, forced: Option<&str>) -> R
             .unwrap_or_default()
             .as_nanos()
     );
+    // Finalized files go straight into the output directory the user chose.
     let task_root = data_dir.join(&task_id);
     let staging = task_root.join("staging");
-    let final_dir = task_root.join("final");
+    let final_dir = output.to_path_buf();
     fs::create_dir_all(&staging).map_err(|error| error.to_string())?;
+    fs::create_dir_all(&final_dir).map_err(|error| error.to_string())?;
 
     let settings = serde_json::json!({});
     let task = TaskSpec {
@@ -197,7 +199,7 @@ fn resume(task_id: &str, output: &Path, plugins: &Path) -> Result<(), String> {
     let mut manager = manager(plugins, &data_dir)?;
     let task_root = data_dir.join(task_id);
     let staging = task_root.join("staging");
-    let final_dir = task_root.join("final");
+    let final_dir = output.to_path_buf();
     fs::create_dir_all(&staging).map_err(|error| error.to_string())?;
 
     let task = TaskSpec {

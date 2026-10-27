@@ -52,7 +52,12 @@ let subscription = Client::connect(&socket)?.subscribe()?;
 {"event":"progress","task_id":"...","downloaded":123,"total":456,"speed_bps":789}
 {"event":"completed","task_id":"...","files":[...]}
 {"event":"failed","task_id":"...","error":{...}}
+{"event":"task_deleted","task_id":"..."}
+{"event":"retry_scheduled","task_id":"...","attempt":2,"delay_secs":60}
 ```
+
+完成后文件直接出现在下载目录（不在 `.aether/` 元数据树里）；同名冲突自动
+重命名为 `name-1.ext`。
 
 推荐模式：
 
@@ -68,6 +73,7 @@ client.pause(task_id)?;   // running/queued -> paused
 client.resume(task_id)?;  // paused -> 原地恢复或重新启动；failed/canceled -> 重新排队
                           // 并发已满时返回 state: "queued"，稍后自动提升
 client.cancel(task_id)?;  // -> canceled（终态，可再 resume 重新下载）
+client.delete(task_id)?;  // 仅终态可删；清记录/staging，已下载文件保留
 client.task_record(task_id)?;
 ```
 

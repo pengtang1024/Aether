@@ -43,6 +43,11 @@ versioning; this is a UI mockup, so 0.x versions may change visual structure.
   token bucket in the HTTP download loop (inherited by delegating plugins).
 - HTTP plugin consumes browser-forwarded settings: `referrer`, `user_agent`,
   `cookies`, `headers` (managed headers rejected), plus `max_speed_bps`.
+- Completed downloads now land directly in the download directory (previously
+  buried under `.aether/<task>/final/`), with automatic `-1`, `-2`… renaming on
+  filename conflicts instead of a hard error.
+- Daemon `delete` method for terminal tasks (record + staging removed, files
+  kept) with a `task_deleted` event.
 - Automatic retry for retryable failures: exponential backoff
   (`AETHER_RETRY_BASE_SECS`, default 30 s) with an attempt cap
   (`AETHER_RETRY_MAX`, default 5), retries re-enter the queue FIFO, manual

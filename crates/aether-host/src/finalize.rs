@@ -46,13 +46,7 @@ pub fn finalize_task(
             }
         }
 
-        let destination = final_dir.join(&relative);
-        if destination.exists() {
-            return Err(HostError::Protocol(format!(
-                "destination already exists: {}",
-                destination.display()
-            )));
-        }
+        let destination = unique_destination(final_dir, &relative);
         if let Some(parent) = destination.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -61,6 +55,39 @@ pub fn finalize_task(
     }
 
     Ok(moved)
+}
+
+/// Never overwrite existing files: `report.pdf` becomes `report-1.pdf`,
+/// `report-2.pdf`, … The rename applies to the last path segment so nested
+/// files keep their directory layout.
+fn unique_destination(final_dir: &Path, relative: &Path) -> PathBuf {
+    let destination = final_dir.join(relative);
+    if !destination.exists() {
+        return destination;
+    }
+    let parent = destination
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_default();
+    let file_name = destination
+        .file_name()
+        .map(std::ffi::OsStr::to_os_string)
+        .unwrap_or_default();
+    let stem = Path::new(&file_name)
+        .file_stem()
+        .map(std::ffi::OsStr::to_os_string)
+        .unwrap_or_else(|| file_name.clone());
+    let extension = Path::new(&file_name)
+        .extension()
+        .map(|ext| format!(".{}", ext.to_string_lossy()))
+        .unwrap_or_default();
+    for index in 1..1000_u32 {
+        let candidate = parent.join(format!("{}-{index}{}", stem.to_string_lossy(), extension));
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+    destination
 }
 
 fn safe_relative(value: &str) -> Result<PathBuf, HostError> {
@@ -144,6 +171,35 @@ mod tests {
             finalize_task(&staging, &final_dir, &files),
             Err(HostError::UnsafePath(_))
         ));
+        fs::remove_dir_all(root).ok();
+    }
+}
+
+#[cfg(test)]
+mod rename_tests {
+    use super::*;
+
+    #[test]
+    fn renames_on_conflict() {
+        let root =
+            std::env::temp_dir().join(format!("aether-finalize-conflict-{}", std::process::id()));
+        let final_dir = root.join("final");
+        fs::create_dir_all(&final_dir).unwrap();
+        fs::write(final_dir.join("a.bin"), b"old").unwrap();
+        assert_eq!(
+            unique_destination(&final_dir, Path::new("a.bin")),
+            final_dir.join("a-1.bin")
+        );
+        fs::write(final_dir.join("a-1.bin"), b"old").unwrap();
+        assert_eq!(
+            unique_destination(&final_dir, Path::new("a.bin")),
+            final_dir.join("a-2.bin")
+        );
+        // No extension and no conflict keep the plain name.
+        assert_eq!(
+            unique_destination(&final_dir, Path::new("nested/b.bin")),
+            final_dir.join("nested/b.bin")
+        );
         fs::remove_dir_all(root).ok();
     }
 }

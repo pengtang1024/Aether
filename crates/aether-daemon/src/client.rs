@@ -146,6 +146,11 @@ impl Client {
         self.call("cancel", None, None, None, Some(task_id), json!({}))
     }
 
+    /// Delete a terminal task (record + staging); downloaded files stay.
+    pub fn delete(&mut self, task_id: &str) -> Result<Value, DaemonError> {
+        self.call("delete", None, None, None, Some(task_id), json!({}))
+    }
+
     pub fn shutdown(&mut self) -> Result<(), DaemonError> {
         self.call("shutdown", None, None, None, None, json!({}))?;
         Ok(())

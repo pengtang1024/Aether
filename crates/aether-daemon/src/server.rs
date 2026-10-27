@@ -555,6 +555,25 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
             promote_queued(state);
             Ok(json!({"task_id": task_id, "state": "canceled"}))
         }
+        "delete" => {
+            let task_id = task_id(&request)?;
+            let task = state
+                .store
+                .task(&task_id)?
+                .ok_or_else(|| DaemonError::Protocol(format!("task {task_id} not found")))?;
+            if !task.state.is_terminal() {
+                return Err(DaemonError::Protocol(
+                    "cancel the task before deleting it".into(),
+                ));
+            }
+            // Staging/resume state is daemon-owned; finalized files live in the
+            // download directory and survive the deletion.
+            let task_root = state.download_dir.join(".aether").join(&task_id);
+            let _ = fs::remove_dir_all(&task_root);
+            state.store.delete_task(&task_id)?;
+            broadcast(state, json!({"event": "task_deleted", "task_id": task_id}));
+            Ok(json!({"task_id": task_id, "deleted": true}))
+        }
         "update_status" => Ok(state.update.as_ref().map_or_else(
             || json!({"status": "disabled"}),
             |status| status.lock().unwrap().clone(),
@@ -603,10 +622,13 @@ fn add_task(state: &mut State, request: Request) -> Result<Value, DaemonError> {
             .unwrap_or_default()
             .as_nanos()
     );
+    // Staging lives under the daemon-owned `.aether` tree; finalized files go
+    // straight into the download directory so the user can see them.
     let task_root = state.download_dir.join(".aether").join(&task_id);
     let staging = task_root.join("staging");
-    let final_dir = task_root.join("final");
+    let final_dir = state.download_dir.clone();
     fs::create_dir_all(&staging)?;
+    fs::create_dir_all(&final_dir)?;
 
     let settings = request.settings;
     state.store.create_task(&NewTask {
@@ -805,8 +827,9 @@ fn check_retries(state: &mut State) {
 fn start_from_record(state: &mut State, task: &StoredTask) -> Result<bool, DaemonError> {
     let task_root = state.download_dir.join(".aether").join(&task.id);
     let staging = task_root.join("staging");
-    let final_dir = task_root.join("final");
+    let final_dir = state.download_dir.clone();
     fs::create_dir_all(&staging)?;
+    fs::create_dir_all(&final_dir)?;
     let spec = TaskSpec {
         task_id: task.id.clone(),
         url: task.url.clone(),
@@ -847,7 +870,7 @@ fn handle_event(state: &mut State, envelope: PluginEventEnvelope) {
             state.live.remove(&task_id);
             let task_root = state.download_dir.join(".aether").join(&task_id);
             let staging = task_root.join("staging");
-            let final_dir = task_root.join("final");
+            let final_dir = state.download_dir.clone();
             match finalize_task(&staging, &final_dir, &files) {
                 Ok(_) => {
                     let _ = state.store.complete_task(&task_id, &files);

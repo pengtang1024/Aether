@@ -128,11 +128,9 @@ fn wait_for_state(client: &mut Client, task_id: &str, state: &str, attempts: usi
 }
 
 fn final_file(root: &PathBuf, task_id: &str) -> PathBuf {
-    root.join("downloads")
-        .join(".aether")
-        .join(task_id)
-        .join("final")
-        .join("fake.bin")
+    // Finalized files land directly in the download directory.
+    let _ = task_id;
+    root.join("downloads").join("fake.bin")
 }
 
 #[test]
@@ -428,6 +426,54 @@ fn daemon_canceled_task_stops_the_retry_cycle() {
     assert_eq!(canceled["state"], "canceled");
     thread::sleep(Duration::from_millis(2500));
     assert_eq!(task_state(&mut client, &task_id), "canceled");
+
+    client.shutdown().unwrap();
+    daemon.shutdown();
+}
+
+#[test]
+fn daemon_deletes_terminal_tasks_but_keeps_files() {
+    let Some(daemon) = spawn_daemon("delete", 1, None) else {
+        eprintln!("fake plugin binary is not built; skipping");
+        return;
+    };
+    let socket = daemon.socket.clone();
+
+    let mut client = connect(&socket);
+    let added = client
+        .add("https://example.com/doomed.bin", None, None)
+        .unwrap();
+    let task_id = added["task_id"].as_str().unwrap().to_string();
+    assert!(wait_for_state(&mut client, &task_id, "completed", 100));
+    assert!(final_file(&daemon.root, &task_id).exists());
+
+    // A running/queued task cannot be deleted directly.
+    let other = client
+        .add_with_settings(
+            "https://example.com/live.bin",
+            None,
+            None,
+            json!({"duration_ms": 3000}),
+        )
+        .unwrap();
+    let live_id = other["task_id"].as_str().unwrap().to_string();
+    assert!(client.delete(&live_id).is_err());
+
+    // Deleting the completed task drops its record and staging but keeps the
+    // downloaded file in the download directory.
+    let deleted = client.delete(&task_id).unwrap();
+    assert_eq!(deleted["deleted"], true);
+    assert!(!daemon
+        .root
+        .join("downloads/.aether")
+        .join(&task_id)
+        .exists());
+    assert!(final_file(&daemon.root, &task_id).exists());
+    assert!(client
+        .list_tasks()
+        .unwrap()
+        .iter()
+        .all(|task| task.id != task_id));
 
     client.shutdown().unwrap();
     daemon.shutdown();
