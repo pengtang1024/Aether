@@ -1,9 +1,20 @@
 # Changelog
 
 All notable changes to Aether are documented here. Versions follow semantic
-versioning; this is a UI mockup, so 0.x versions may change visual structure.
+versioning; 0.x releases may still change structure.
 
 ## [Unreleased]
+
+### Added
+
+- Nothing yet.
+
+## [0.2.0] - 2026-10-27
+
+First release of the real download engine. The desktop window is still the
+0.1.0 preview and does not drive the daemon yet; everything below is usable
+through `aether-daemon`, `aether-cli`, the browser native host or the socket
+API.
 
 ### Added
 

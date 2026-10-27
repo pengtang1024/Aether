@@ -50,12 +50,12 @@ AETHER_UPDATE_SECRET_KEY=... cargo run -p aether-update --bin aether-update-sign
 
 ## 3. daemon 行为
 
-配置：
+配置（systemd 用户单元读取 `~/.config/aether/daemon.env`，模板见
+`packaging/daemon.env.example`）：
 
 ```bash
-# 环境变量或 systemd EnvironmentFile
-AETHER_UPDATE_URL=https://.../update.json
-AETHER_UPDATE_PUBKEY=<base64 32-byte public key>
+AETHER_UPDATE_URL=https://github.com/pengtang1024/Aether/releases/latest/download/update.json
+AETHER_UPDATE_PUBKEY=gmTgGxsoxi9dyYiWQ+mlqeqx4gDNnMwQ+P0jwNbsa+w=
 AETHER_UPDATE_APPIMAGE=/home/user/Applications/Aether.AppImage
 ```
 
@@ -75,12 +75,44 @@ printf '%s\n' '{"id":1,"method":"update_status"}' \
 
 ## 4. 发布接入
 
-1. 构建平台产物（AppImage/deb/zip/dmg）。
-2. 生成 `update.json`，填 URL/SHA-256/size/kind。
-3. 离线/CI secret 中签名，得到 `update.json.sig`。
-4. 把 `update.json`、`.sig` 和产物上传到同一 release。
-5. 用旧版本执行一次 `check → download → apply` 验证；AppImage 替换后重启确认版本。
-6. 保留上一版产物和签名，支持回滚。
+### 4.1 密钥保管
+
+正式发布密钥（2026-10 生成）：
+
+| 项 | 位置 |
+| --- | --- |
+| 私钥（base64 32 字节 seed） | `~/.ssh/aether-update-signing.key`，权限 `0600` |
+| 公钥 | `~/.ssh/aether-update-signing.pub`，同时写进 `packaging/daemon.env.example` |
+| 公钥值 | `gmTgGxsoxi9dyYiWQ+mlqeqx4gDNnMwQ+P0jwNbsa+w=` |
+
+- 私钥**不进仓库、不进 CI、不贴进聊天/日志**。备份到离线介质或密码管理器，
+  丢失后无法为已发布用户签名新版本（只能发一个带新公钥的版本）。
+- 换机器时把私钥文件拷到新机器的 `~/.ssh/`（`chmod 600`）即可；公钥由签名
+  工具从私钥推导，可随时核对是否一致。
+- 签名前先确认 `~/.ssh/aether-update-signing.pub` 与工具输出的 `public key:`
+  相同，再上传签名。
+
+### 4.2 发布步骤
+
+1. 构建平台产物（AppImage/deb/zip/dmg），`release/**` 分支由 CI 打包成 draft release。
+2. 从 draft release 里取 Linux AppImage 的 **下载 URL、字节大小、SHA-256**。
+3. 生成 `update.json`（见 §2），`assets` 的 key 用
+   `aether_plugin_sdk::current_platform_key()`（如 `linux-x86_64`、
+   `linux-aarch64`）。
+4. 本机签名（私钥只在这一步读取）：
+
+   ```bash
+   AETHER_UPDATE_SECRET_KEY="$(cat ~/.ssh/aether-update-signing.key)" \
+     cargo run -q -p aether-update --bin aether-update-sign -- update.json
+   # 打印的 public key 必须等于上面的公钥
+   ```
+
+5. 把 `update.json`、`update.json.sig` 上传到同一个 release；清单固定地址
+   `https://github.com/pengtang1024/Aether/releases/latest/download/update.json`
+   （draft 期间该地址不可用，先上传附件，发布后再验证）。
+6. 用旧版本执行一次 `check → download → apply` 验证；AppImage 替换后重启确认版本：
+   `aether-daemon` 的 `update_status` 应为 `ready`，替换后 `aether --version` 为新版本。
+7. 保留上一版产物和签名，支持回滚（`<target>.old`）。
 
 ## 5. 边界
 

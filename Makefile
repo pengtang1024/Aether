@@ -41,6 +41,8 @@ deb: release plugins
 		"$(STAGE)/usr/bin/aether-install-native-messaging"
 	install -Dm644 packaging/aether-daemon.service \
 		"$(STAGE)/usr/lib/systemd/user/aether-daemon.service"
+	install -Dm644 packaging/daemon.env.example \
+		"$(STAGE)/usr/share/doc/aether/daemon.env.example"
 	install -Dm644 packaging/aether.desktop "$(STAGE)/usr/share/applications/aether.desktop"
 	install -Dm644 packaging/aether.metainfo.xml "$(STAGE)/usr/share/metainfo/io.github.pengtang1024.Aether.metainfo.xml"
 	for size in 32 48 64 128 256 512; do \
