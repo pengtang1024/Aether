@@ -15,8 +15,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use aether_host::pac::PacResolver;
 use aether_host::system_proxy::{self, SystemProxy, SYSTEM_PROXY_TTL};
 use aether_host::{
-    default_plugins_dir, finalize_task, NewTask, PluginEventEnvelope, PluginManager,
-    PluginRegistry, ProxySetting, StoredTask, TaskState, TaskStore,
+    default_plugins_dir, ensure_space, finalize_task, human_bytes, NewTask, PluginEventEnvelope,
+    PluginManager, PluginRegistry, ProxySetting, StoredTask, TaskState, TaskStore,
 };
 use aether_plugin_sdk::{Budget, HostCommand, PluginEvent, ProxyConfig, TaskPaths, TaskSpec};
 use aether_update::UpdateClient;
@@ -787,6 +787,25 @@ fn add_task(state: &mut State, request: Request) -> Result<Value, DaemonError> {
     // daemon's `--download-dir` if the user moves it.
     let stored_dir =
         (target_dir != state.download_dir).then(|| target_dir.to_string_lossy().into_owned());
+    // Fail fast instead of dying halfway through: the probe usually knows the
+    // size, and downloads already running into the same directory will keep
+    // consuming space, so count their remaining bytes as reserved.
+    if let Some(size) = probe.metadata.as_ref().and_then(|metadata| metadata.size) {
+        let reserved = reserved_in(state, &target_dir);
+        match ensure_space(&target_dir, size.saturating_add(reserved)) {
+            Ok(_) => {}
+            Err(error) if error.is_shortage() => {
+                return Err(DaemonError::Protocol(format!(
+                    "{error} (task needs {}, other downloads reserve {})",
+                    human_bytes(size),
+                    human_bytes(reserved)
+                )))
+            }
+            // statvfs can fail on exotic mounts; not a reason to block.
+            Err(error) => eprintln!("aether-daemon: {error}; continuing"),
+        }
+    }
+
     let settings = request.settings;
     state.store.create_task(&NewTask {
         id: task_id.clone(),
@@ -1236,6 +1255,17 @@ fn resolve_system_pac(
             None
         }
     }
+}
+
+/// Bytes still to be written into `dir` by tasks that are already running.
+fn reserved_in(state: &State, dir: &Path) -> u64 {
+    state
+        .active
+        .iter()
+        .filter_map(|task_id| state.store.task(task_id).ok().flatten())
+        .filter(|task| destination_dir(state, task.target_dir.as_deref()) == dir)
+        .map(|task| task.total.unwrap_or(0).saturating_sub(task.downloaded))
+        .sum()
 }
 
 /// Where a task's files land: the recorded directory or the daemon default.

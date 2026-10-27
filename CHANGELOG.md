@@ -7,6 +7,11 @@ versioning; 0.x releases may still change structure.
 
 ### Added
 
+- Disk-space preflight before a task starts: `add` compares the probe size
+  against the free space of the destination (minus the remaining bytes of
+  downloads already writing there) and fails with a clear message instead of
+  dying halfway. `ENOSPC` during a download now surfaces as a non-retryable
+  `DiskFull` error in the HTTP plugin.
 - `aether-cli remote <ping|add|list|get|logs|pause|resume|cancel|rm|settings|
   set-settings|resolve-proxy|watch>`: the whole daemon API from a terminal, so
   headless installs no longer need the UI to control tasks.

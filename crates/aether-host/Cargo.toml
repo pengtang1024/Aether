@@ -10,6 +10,7 @@ publish = false
 [dependencies]
 aether-plugin-abi = { path = "../aether-plugin-abi" }
 aether-plugin-sdk = { path = "../aether-plugin-sdk" }
+fs2 = "0.4"
 libloading = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 rquickjs = "0.14"

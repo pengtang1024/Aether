@@ -8,8 +8,8 @@ use std::process::ExitCode;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use aether_host::{
-    default_plugins_dir, finalize_task, NewTask, PluginManager, PluginRegistry, StoredTask,
-    TaskLog, TaskState, TaskStore,
+    default_plugins_dir, ensure_space, finalize_task, NewTask, PluginManager, PluginRegistry,
+    StoredTask, TaskLog, TaskState, TaskStore,
 };
 use aether_plugin_sdk::{Budget, PluginEvent, TaskPaths, TaskSpec};
 
@@ -157,6 +157,12 @@ fn download(url: &str, output: &Path, plugins: &Path, forced: Option<&str>) -> R
     let final_dir = output.to_path_buf();
     fs::create_dir_all(&staging).map_err(|error| error.to_string())?;
     fs::create_dir_all(&final_dir).map_err(|error| error.to_string())?;
+
+    // Same fail-fast check as the daemon, so a local download does not die
+    // halfway through when the disk is already too small.
+    if let Some(size) = probe.metadata.as_ref().and_then(|metadata| metadata.size) {
+        ensure_space(&final_dir, size).map_err(|error| error.to_string())?;
+    }
 
     let settings = serde_json::json!({});
     let task = TaskSpec {

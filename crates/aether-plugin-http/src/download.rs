@@ -622,9 +622,10 @@ impl DownloadError {
             Self::Io(error) => {
                 let kind = match error.kind() {
                     io::ErrorKind::PermissionDenied => ErrorKind::Permission,
+                    io::ErrorKind::StorageFull => ErrorKind::DiskFull,
                     _ => ErrorKind::Internal,
                 };
-                PluginError::new(kind, error.to_string())
+                PluginError::new(kind, error.to_string()).retryable(false)
             }
             Self::Protocol(message) => PluginError::new(ErrorKind::Protocol, message.clone()),
         }
@@ -634,6 +635,21 @@ impl DownloadError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn disk_full_is_not_retryable() {
+        let error = DownloadError::Io(io::Error::new(
+            io::ErrorKind::StorageFull,
+            "No space left on device",
+        ))
+        .to_plugin_error();
+        assert_eq!(error.kind, ErrorKind::DiskFull);
+        assert!(!error.retryable);
+
+        let denied = DownloadError::Io(io::Error::new(io::ErrorKind::PermissionDenied, "denied"))
+            .to_plugin_error();
+        assert_eq!(denied.kind, ErrorKind::Permission);
+    }
 
     #[test]
     fn eta_is_none_without_speed() {

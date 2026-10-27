@@ -186,6 +186,11 @@ CLI 对等命令：`aether-cli logs <task-id> --dir <dir> [--limit <n>]`（直�
 - `add` 的响带 `dir` 字段，UI 可直接显示保存位置。
 - staging 始终在 `.aether/<task_id>/staging`；跨文件系统 finalize 通过复制+删除完成。
 - 同名冲突自动 `name-1.ext`，不会覆盖已有文件。
+- **空间预检**：`add` 拿到探测大小时先查目标目录可用空间（`statvfs`），不足则
+  直接报错、不建任务；同一目录下正在下载的任务按剩余字节预留，避免并发把盘写满。
+  预检只是提前失败，下载中仍可能被其他进程写满——此时 HTTP 插件把 `ENOSPC`
+  映射为 `ErrorKind::DiskFull` 且标记不可重试，不会烧掉重试次数。
+  探测拿不到大小（chunked/直播）时跳过预检。
 
 ## 5.6 代理
 

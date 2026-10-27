@@ -7,6 +7,7 @@ pub mod manager;
 pub mod pac;
 pub mod proxy;
 pub mod registry;
+pub mod space;
 pub mod store;
 pub mod system_proxy;
 
@@ -16,6 +17,7 @@ pub use finalize::finalize_task;
 pub use manager::{PluginEventEnvelope, PluginManager, ProbeOutcome};
 pub use proxy::ProxySetting;
 pub use registry::{PluginEntry, PluginRegistry};
+pub use space::{ensure_space, human_bytes, SpaceError};
 pub use store::{NewTask, StoreError, StoredFile, StoredTask, TaskLog, TaskState, TaskStore};
 pub use system_proxy::{SystemProxy, SYSTEM_PROXY_TTL};
 
