@@ -68,7 +68,11 @@ unit 文件：`packaging/aether-daemon.service`，安装到
 
 ## 4. 恢复与状态
 
-- 启动时 `recoverable_tasks()` 读取 `queued/running/paused` 任务并重新启动插件。
+- 启动时 `recoverable_tasks()` 读取 `queued/running/paused` 任务；running/queued
+  在并发额度内重新启动，超出的降级为 queued。paused 保持 paused，等用户显式恢复。
+- `resume` 语义：paused 且插件执行仍存活 → 原地恢复；failed（可重试）或
+  canceled → 从存储记录重新启动（利用 staging 状态续传）；并发已满 → 回到
+  queued 等待提升。任务正在取消中时 resume 返回错误。
 - HTTP/FTP/HLS 等利用 staging 中的状态文件或文件长度续传。
 - 完成事件由 daemon 执行 `finalize_task`，再写入 `task_files`。
 - 失败写入错误类别/消息/可重试标记。
@@ -81,6 +85,18 @@ unit 文件：`packaging/aether-daemon.service`，安装到
 - 空闲时阻塞在命令 channel（1 秒超时），不轮询插件；下载中 100 ms 轮询。
 - 空闲 5 分钟卸载所有插件进程，保留 registry/SQLite，下次按需启动。
 - 不做 busy-loop；DHT/插件进程随任务启动/停止。
+
+## 5.1 并发与限速
+
+| 配置 | 环境变量 | 默认 | 说明 |
+| --- | --- | --- | --- |
+| 并发上限 | `AETHER_MAX_CONCURRENT` | 3 | 超出上限的任务保持 queued，按创建顺序 FIFO 提升 |
+| 全局限速 | `AETHER_MAX_SPEED_BPS` | 无 | 均摊到当前运行任务，随任务启动时生效 |
+
+- 任务级限速优先：`add` 的 settings 里给 `max_speed_bps`（字节/秒，0 = 不限）。
+- 限速在 HTTP 插件下载循环内实现（任务级共享 token bucket，多连接同一桶）；
+  委托 HTTP 的插件（baidupan/aliyunpan/ipfs/thunder/cloud/webdav）自动继承。
+- daemon 在任务完成/失败/取消后立即提升队列，并广播 `task_state` 事件。
 
 ## 6. 接管系统下载还差什么
 

@@ -130,7 +130,8 @@ AppImage 也把 `build/plugins` 放进 `usr/lib/aether/plugins`。
 ## 8. 尚未实现
 
 - Slint UI 接线（等隔壁 UI 重设计完成）。
-- 队列/调度/限速/PAC、完整崩溃恢复策略。
+- PAC 支持、队列持久化策略之外的调度公平性（并发上限 + FIFO 已实现，见
+  `DAEMON.md` §5.1）。
 - 插件签名验证、更新/回滚、Linux 沙箱。
 - Windows/macOS 安装包携带插件（Linux 优先，当前只保证 Linux 包）。
 - 百度/阿里共享链接 OAuth、ED2K 内核。

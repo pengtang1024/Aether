@@ -8,5 +8,6 @@ pub mod download;
 pub mod metalink;
 pub mod plugin;
 pub mod state;
+pub mod throttle;
 
 pub use plugin::HttpPlugin;

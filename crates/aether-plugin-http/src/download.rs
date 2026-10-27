@@ -21,6 +21,7 @@ use thiserror::Error;
 use crate::client;
 use crate::metalink;
 use crate::state::{self, ResumeState};
+use crate::throttle::Throttle;
 
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
 const STATE_INTERVAL: Duration = Duration::from_secs(1);
@@ -74,7 +75,16 @@ fn run_inner(
     }
 
     let mut resolved_task = task.clone();
-    if let Some(info) = metalink::resolve(client, &task.url)
+    let extra = client::headers_from_settings(&task.settings)
+        .map_err(|error| DownloadError::Protocol(error.to_string()))?;
+    let speed_limit_bps = task
+        .settings
+        .get("max_speed_bps")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(budget.download_bps);
+    let throttle = Arc::new(Mutex::new(Throttle::new(speed_limit_bps, Instant::now())));
+
+    if let Some(info) = metalink::resolve_with(client, &task.url, &extra)
         .map_err(|error| DownloadError::Protocol(error.to_string()))?
     {
         resolved_task.url = info.url;
@@ -88,7 +98,7 @@ fn run_inner(
 
     fs::create_dir_all(&paths.staging)?;
 
-    let info = client::probe(client, &task.url);
+    let info = client::probe_with(client, &task.url, &extra);
     if !info.supported {
         return Err(DownloadError::Protocol(
             info.reason.unwrap_or_else(|| "unsupported URL".into()),
@@ -184,6 +194,8 @@ fn run_inner(
         let downloaded = downloaded.clone();
         let control = control.clone();
         let result_tx = result_tx.clone();
+        let extra = extra.clone();
+        let throttle = throttle.clone();
         workers.push(thread::spawn(move || {
             let result = download_range(
                 &client,
@@ -194,6 +206,8 @@ fn run_inner(
                 &downloaded,
                 &control,
                 supports_range,
+                &extra,
+                &throttle,
             );
             let _ = result_tx.send(result);
         }));
@@ -403,6 +417,8 @@ fn download_range(
     downloaded: &Arc<AtomicU64>,
     control: &Arc<TaskControl>,
     supports_range: bool,
+    extra: &client::HeaderMap,
+    throttle: &Arc<Mutex<Throttle>>,
 ) -> Result<(), DownloadError> {
     let mut attempts = 0;
 
@@ -421,7 +437,8 @@ fn download_range(
             return Ok(());
         }
 
-        let mut request = client.get(url).header(ACCEPT_ENCODING, "identity");
+        let mut request =
+            client::apply_headers(client.get(url), extra).header(ACCEPT_ENCODING, "identity");
         if supports_range {
             request = request.header(RANGE, format!("bytes={}-{}", start + done, end));
         } else if done > 0 {
@@ -478,6 +495,13 @@ fn download_range(
                 let read = response.read(&mut buffer)?;
                 if read == 0 {
                     break;
+                }
+                // Shared token bucket: the limit applies to the whole task.
+                let delay = throttle.lock().unwrap().delay_for(read, Instant::now());
+                if !delay.is_zero() {
+                    // Waiting while paused costs nothing extra; the bucket
+                    // refills only as real time passes.
+                    thread::sleep(delay);
                 }
                 write_all_at(file, &buffer[..read], offset)?;
                 offset += read as u64;

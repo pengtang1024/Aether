@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use aether_plugin_sdk::{
     run_stdio, Capability, FileInfo, HostCommand, LogLevel, Metadata, Plugin, PluginContext,
-    PluginEvent, SdkError, TaskPaths,
+    PluginEvent, PluginSender, SdkError, TaskPaths,
 };
 
 const PLUGIN_ID: &str = "fake";
@@ -55,7 +55,29 @@ impl Plugin for FakePlugin {
                 })?;
             }
             HostCommand::Start { task, paths, .. } => {
-                run_fake_task(ctx, task.task_id, task.url, paths)?;
+                let hold = task
+                    .settings
+                    .get("duration_ms")
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(0);
+                let fail = task
+                    .settings
+                    .get("fail")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false);
+                let retryable = task
+                    .settings
+                    .get("retryable")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(true);
+                let sender = ctx.sender();
+                thread::spawn(move || {
+                    if let Err(error) =
+                        run_fake_task(sender, task.task_id, task.url, paths, hold, fail, retryable)
+                    {
+                        eprintln!("aether-plugin-fake: task failed: {error}");
+                    }
+                });
             }
             HostCommand::Pause { task_id } | HostCommand::Resume { task_id } => {
                 log(ctx, format!("fake task {task_id} pause/resume ignored"))?;
@@ -98,16 +120,35 @@ impl Plugin for FakePlugin {
 }
 
 fn run_fake_task(
-    ctx: &mut PluginContext,
+    sender: PluginSender,
     task_id: String,
     url: String,
     paths: TaskPaths,
+    hold_ms: u64,
+    fail: bool,
+    retryable: bool,
 ) -> Result<(), SdkError> {
     std::fs::create_dir_all(&paths.staging)?;
+    // A sentinel in staging survives plugin restarts, so `fail` can model a
+    // "fails once, then succeeds" task for resume testing.
+    let sentinel = paths.staging.join(".fake-attempted");
+    let attempted = sentinel.exists();
+    std::fs::write(&sentinel, b"1")?;
+    if fail && !attempted {
+        sender.send(&PluginEvent::Failed {
+            task_id,
+            error: aether_plugin_sdk::PluginError::new(
+                aether_plugin_sdk::ErrorKind::Protocol,
+                "fake intentional failure",
+            )
+            .retryable(retryable),
+        })?;
+        return Ok(());
+    }
     let payload = vec![0xA5_u8; FILE_SIZE as usize];
     std::fs::write(paths.staging.join(FILE_NAME), &payload)?;
 
-    ctx.send(&PluginEvent::Metadata {
+    sender.send(&PluginEvent::Metadata {
         task_id: task_id.clone(),
         metadata: Metadata {
             final_url: url,
@@ -119,9 +160,12 @@ fn run_fake_task(
     })?;
 
     let steps = 5_u64;
+    // Hold the task alive for `duration_ms` (queue/scheduling tests) or the
+    // default 20 ms per step when unset.
+    let step_ms = hold_ms.max(steps) / steps;
     for step in 1..=steps {
-        thread::sleep(Duration::from_millis(20));
-        ctx.send(&PluginEvent::Progress {
+        thread::sleep(Duration::from_millis(step_ms));
+        sender.send(&PluginEvent::Progress {
             task_id: task_id.clone(),
             seq: step,
             downloaded: FILE_SIZE * step / steps,
@@ -134,7 +178,7 @@ fn run_fake_task(
         })?;
     }
 
-    ctx.send(&PluginEvent::Completed {
+    sender.send(&PluginEvent::Completed {
         task_id,
         files: vec![FileInfo {
             relative_path: FILE_NAME.into(),

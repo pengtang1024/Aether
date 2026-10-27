@@ -7,10 +7,14 @@ use aether_plugin_sdk::{Init, ProxyMode};
 use percent_encoding::percent_decode_str;
 use reqwest::blocking::{Client, Response};
 use reqwest::header::{
-    ACCEPT_RANGES, CONTENT_DISPOSITION, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, ETAG,
+    ACCEPT_RANGES, CONNECTION, CONTENT_DISPOSITION, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE,
+    COOKIE, ETAG, HOST, RANGE, REFERER, TE, TRANSFER_ENCODING, UPGRADE, USER_AGENT,
 };
 use reqwest::StatusCode;
 use thiserror::Error;
+
+/// Shorthand for the reqwest header map type.
+pub type HeaderMap = reqwest::header::HeaderMap;
 
 #[derive(Debug, Error)]
 pub enum ClientError {
@@ -135,7 +139,110 @@ fn base64_encode(input: &[u8]) -> String {
 
 /// Probe an HTTP(S) URL. Network errors are returned as `supported: false`
 /// with a reason so the Host can try another plugin.
+/// Header names that must not be overridden from task settings: the download
+/// engine owns them (or they break the HTTP connection semantics).
+const FORBIDDEN_SETTING_HEADERS: &[reqwest::header::HeaderName] = &[
+    RANGE,
+    HOST,
+    CONTENT_LENGTH,
+    CONNECTION,
+    TRANSFER_ENCODING,
+    TE,
+    UPGRADE,
+];
+
+/// Build extra per-request headers from task settings.
+///
+/// Recognized keys: `referrer`, `user_agent`, `cookies` (string or object) and
+/// `headers` (object). Control headers inside `headers` are rejected so they
+/// cannot break segmented downloads; `COOKIE`/`REFERER`/`USER_AGENT` given
+/// through their dedicated keys take precedence over the `headers` object.
+pub fn headers_from_settings(settings: &serde_json::Value) -> Result<HeaderMap, ClientError> {
+    let mut headers = HeaderMap::new();
+
+    if let Some(map) = settings
+        .get("headers")
+        .and_then(serde_json::Value::as_object)
+    {
+        for (name, value) in map {
+            let Some(value) = value.as_str() else {
+                return Err(ClientError::Proxy(format!(
+                    "header {name} must be a string"
+                )));
+            };
+            let name =
+                reqwest::header::HeaderName::from_bytes(name.as_bytes()).map_err(|error| {
+                    ClientError::Proxy(format!("invalid header name {name}: {error}"))
+                })?;
+            if FORBIDDEN_SETTING_HEADERS.contains(&name) {
+                return Err(ClientError::Proxy(format!(
+                    "header {name} is managed by the download engine"
+                )));
+            }
+            let value = reqwest::header::HeaderValue::from_str(value).map_err(|error| {
+                ClientError::Proxy(format!("invalid value for header {name}: {error}"))
+            })?;
+            headers.insert(name, value);
+        }
+    }
+
+    if let Some(referrer) = settings.get("referrer").and_then(serde_json::Value::as_str) {
+        let value = reqwest::header::HeaderValue::from_str(referrer)
+            .map_err(|error| ClientError::Proxy(format!("invalid referrer: {error}")))?;
+        headers.insert(REFERER, value);
+    }
+
+    if let Some(agent) = settings
+        .get("user_agent")
+        .and_then(serde_json::Value::as_str)
+    {
+        let value = reqwest::header::HeaderValue::from_str(agent)
+            .map_err(|error| ClientError::Proxy(format!("invalid user_agent: {error}")))?;
+        headers.insert(USER_AGENT, value);
+    }
+
+    match settings.get("cookies") {
+        Some(serde_json::Value::String(raw)) => {
+            let value = reqwest::header::HeaderValue::from_str(raw)
+                .map_err(|error| ClientError::Proxy(format!("invalid cookies: {error}")))?;
+            headers.insert(COOKIE, value);
+        }
+        Some(serde_json::Value::Object(map)) => {
+            let pairs = map
+                .iter()
+                .map(|(name, value)| {
+                    let value = value.as_str().ok_or_else(|| {
+                        ClientError::Proxy(format!("cookie {name} must be a string"))
+                    })?;
+                    Ok(format!("{name}={value}"))
+                })
+                .collect::<Result<Vec<_>, ClientError>>()?;
+            let raw = pairs.join("; ");
+            let value = reqwest::header::HeaderValue::from_str(&raw)
+                .map_err(|error| ClientError::Proxy(format!("invalid cookies: {error}")))?;
+            headers.insert(COOKIE, value);
+        }
+        _ => {}
+    }
+
+    Ok(headers)
+}
+
+/// Apply the extra headers to a request builder.
+pub fn apply_headers(
+    request: reqwest::blocking::RequestBuilder,
+    headers: &HeaderMap,
+) -> reqwest::blocking::RequestBuilder {
+    request.headers(headers.clone())
+}
+
 pub fn probe(client: &Client, input: &str) -> ProbeInfo {
+    probe_with(client, input, &HeaderMap::new())
+}
+
+/// Probe a URL with extra per-request headers (referrer-based hotlink
+/// protection needs them to see the real response).
+pub fn probe_with(client: &Client, input: &str, extra: &HeaderMap) -> ProbeInfo {
     let url = match reqwest::Url::parse(input) {
         Ok(url) => url,
         Err(error) => return ProbeInfo::unsupported(input, format!("invalid URL: {error}")),
@@ -144,18 +251,20 @@ pub fn probe(client: &Client, input: &str) -> ProbeInfo {
         return ProbeInfo::unsupported(input, "not an http(s) URL");
     }
 
-    if let Ok(response) = client.head(url.clone()).send() {
+    if let Ok(response) = apply_headers(client.head(url.clone()), extra).send() {
         if response.status().is_success() {
             return inspect(response, url.as_str(), false);
         }
     }
 
     // Some servers reject HEAD. A one-byte GET still gives us the headers.
-    match client
-        .get(url.clone())
-        .header(reqwest::header::RANGE, "bytes=0-0")
-        .send()
-    {
+    let request = apply_headers(
+        client
+            .get(url.clone())
+            .header(reqwest::header::RANGE, "bytes=0-0"),
+        extra,
+    );
+    match request.send() {
         Ok(response) if response.status().is_success() => inspect(response, url.as_str(), true),
         Ok(response) => ProbeInfo {
             supported: true,
@@ -170,6 +279,8 @@ pub fn probe(client: &Client, input: &str) -> ProbeInfo {
             reason: Some(format!("HTTP {}", response.status())),
         },
         Err(error) => ProbeInfo {
+            // The URL looked valid; keep it addable so the download attempt
+            // surfaces a retryable error instead of "no plugin supports this".
             supported: true,
             protocol: Some(url.scheme().to_string()),
             final_url: url.to_string(),

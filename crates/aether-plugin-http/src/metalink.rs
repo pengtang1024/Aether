@@ -25,12 +25,21 @@ pub fn is_metalink(input: &str) -> bool {
 }
 
 pub fn resolve(client: &Client, input: &str) -> Result<Option<MetalinkInfo>, MetalinkError> {
+    resolve_with(client, input, &reqwest::header::HeaderMap::new())
+}
+
+pub fn resolve_with(
+    client: &Client,
+    input: &str,
+    extra: &reqwest::header::HeaderMap,
+) -> Result<Option<MetalinkInfo>, MetalinkError> {
     if !is_metalink(input) {
         return Ok(None);
     }
     let base = Url::parse(input)?;
     let text = client
         .get(base.clone())
+        .headers(extra.clone())
         .send()?
         .error_for_status()?
         .text()?;

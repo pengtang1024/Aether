@@ -13,6 +13,4 @@ path = "src/main.rs"
 
 [dependencies]
 aether-plugin-sdk = { path = "../aether-plugin-sdk" }
-
-[dev-dependencies]
 serde_json = "1"

@@ -8,7 +8,10 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use aether_plugin_http::state::{self, ResumeState};
+use aether_plugin_http::{
+    client,
+    state::{self, ResumeState},
+};
 use aether_plugin_sdk::{
     current_platform_key, Budget, Checksum, ChecksumAlgorithm, Init, LogLevel, PluginEvent,
     PluginManifest, PluginProcess, TaskPaths, TaskSpec, API_VERSION,
@@ -23,6 +26,7 @@ const FILE_SIZE: usize = 512 * 1024;
 struct TestServer {
     addr: SocketAddr,
     ranges: Arc<Mutex<Vec<String>>>,
+    headers: Arc<Mutex<Vec<String>>>,
 }
 
 fn test_data() -> Vec<u8> {
@@ -37,22 +41,34 @@ fn start_server(data: Vec<u8>) -> TestServer {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     let ranges = Arc::new(Mutex::new(Vec::new()));
+    let headers = Arc::new(Mutex::new(Vec::new()));
     let data = Arc::new(data);
     let server_ranges = ranges.clone();
+    let server_headers = headers.clone();
 
     thread::spawn(move || {
         for stream in listener.incoming() {
             let Ok(stream) = stream else { continue };
             let data = data.clone();
             let ranges = server_ranges.clone();
-            thread::spawn(move || handle_connection(stream, &data, &ranges));
+            let headers = server_headers.clone();
+            thread::spawn(move || handle_connection(stream, &data, &ranges, &headers));
         }
     });
 
-    TestServer { addr, ranges }
+    TestServer {
+        addr,
+        ranges,
+        headers,
+    }
 }
 
-fn handle_connection(mut stream: TcpStream, data: &[u8], ranges: &Mutex<Vec<String>>) {
+fn handle_connection(
+    mut stream: TcpStream,
+    data: &[u8],
+    ranges: &Mutex<Vec<String>>,
+    headers: &Mutex<Vec<String>>,
+) {
     let mut request = Vec::new();
     let mut buffer = [0_u8; 1024];
     loop {
@@ -84,6 +100,10 @@ fn handle_connection(mut stream: TcpStream, data: &[u8], ranges: &Mutex<Vec<Stri
             if name.eq_ignore_ascii_case("range") {
                 range_header = Some(value.trim().to_string());
             }
+            headers
+                .lock()
+                .unwrap()
+                .push(format!("{}: {}", name.trim(), value.trim()));
         }
     }
 
@@ -217,13 +237,23 @@ fn executable() -> PathBuf {
 }
 
 fn start_task(plugin: &mut PluginProcess, url: String, staging: PathBuf, checksum: String) {
+    start_task_with_settings(plugin, url, staging, checksum, serde_json::json!({}))
+}
+
+fn start_task_with_settings(
+    plugin: &mut PluginProcess,
+    url: String,
+    staging: PathBuf,
+    checksum: String,
+    settings: serde_json::Value,
+) {
     plugin
         .start_task(
             TaskSpec {
                 task_id: "task-1".into(),
                 url,
                 filename: None,
-                settings: serde_json::json!({}),
+                settings,
                 plugin_state: None,
                 expected_size: None,
                 checksum: Some(Checksum {
@@ -343,4 +373,115 @@ fn resumes_from_persisted_state() {
 
     plugin.shutdown().unwrap();
     fs::remove_dir_all(root).ok();
+}
+
+#[test]
+fn sends_settings_headers_with_every_request() {
+    let data = test_data();
+    let server = start_server(data.clone());
+    let mut plugin =
+        PluginProcess::spawn(manifest(), &executable(), init(&temp_dir("headers-init"))).unwrap();
+
+    let staging = temp_dir("headers-staging");
+    let settings = serde_json::json!({
+        "referrer": "https://example.com/page",
+        "user_agent": "AetherTest/1.0",
+        "cookies": {"a": "1", "b": "2"},
+        "headers": {"X-Custom-Header": "enabled"}
+    });
+    start_task_with_settings(
+        &mut plugin,
+        format!("http://{}/file.bin", server.addr),
+        staging.clone(),
+        sha256_hex(&data),
+        settings,
+    );
+    wait_for_completed(&mut plugin);
+
+    let seen = server.headers.lock().unwrap().join("\n");
+    assert!(
+        seen.contains("referer: https://example.com/page"),
+        "missing referer in:\n{seen}"
+    );
+    assert!(
+        seen.contains("user-agent: AetherTest/1.0"),
+        "missing user agent in:\n{seen}"
+    );
+    assert!(
+        seen.contains("cookie: a=1; b=2"),
+        "missing cookies in:\n{seen}"
+    );
+    assert!(
+        seen.contains("x-custom-header: enabled"),
+        "missing custom header in:\n{seen}"
+    );
+}
+
+#[test]
+fn rejects_managed_headers_from_settings() {
+    let extra = client::headers_from_settings(&serde_json::json!({
+        "headers": {"Range": "bytes=0-1"}
+    }));
+    assert!(
+        extra.is_err(),
+        "Range must not be overridable from settings"
+    );
+
+    let object = client::headers_from_settings(&serde_json::json!({
+        "cookies": {"a": "1"},
+        "referrer": "https://example.com/"
+    }))
+    .unwrap();
+    assert_eq!(object.get("cookie").unwrap(), "a=1");
+    assert_eq!(object.get("referer").unwrap(), "https://example.com/");
+}
+
+#[test]
+fn throttles_when_the_budget_limits_speed() {
+    // 16 KiB at 8 KiB/s must take noticeably longer than an instant.
+    let data = vec![0x5A_u8; 16 * 1024];
+    let server = start_server(data.clone());
+    let mut plugin =
+        PluginProcess::spawn(manifest(), &executable(), init(&temp_dir("throttle-init"))).unwrap();
+
+    let staging = temp_dir("throttle-staging");
+    let started = std::time::Instant::now();
+    plugin
+        .start_task(
+            TaskSpec {
+                task_id: "task-1".into(),
+                url: format!("http://{}/file.bin", server.addr),
+                filename: None,
+                settings: serde_json::json!({}),
+                plugin_state: None,
+                expected_size: None,
+                checksum: Some(Checksum {
+                    algorithm: ChecksumAlgorithm::Sha256,
+                    value: sha256_hex(&data),
+                }),
+            },
+            TaskPaths {
+                staging,
+                final_dir: PathBuf::from("/tmp/aether-final"),
+            },
+            Budget {
+                connections: 1,
+                per_host_connections: 1,
+                download_bps: 8 * 1024,
+                upload_bps: 0,
+            },
+        )
+        .unwrap();
+    wait_for_completed(&mut plugin);
+
+    let elapsed = started.elapsed();
+    // 16 KiB / 8 KiB/s = ~2 s; allow scheduler slack on both ends.
+    assert!(
+        elapsed >= Duration::from_millis(1500),
+        "download finished too fast: {elapsed:?}"
+    );
+    assert!(
+        elapsed <= Duration::from_secs(10),
+        "download unreasonably slow: {elapsed:?}"
+    );
 }

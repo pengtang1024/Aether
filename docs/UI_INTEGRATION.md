@@ -64,9 +64,10 @@ let subscription = Client::connect(&socket)?.subscribe()?;
 
 ```rust
 client.add_task(url, None, None, json!({}))?; // -> AddResult { task_id, plugin_id }
-client.pause(task_id)?;
-client.resume(task_id)?;
-client.cancel(task_id)?;
+client.pause(task_id)?;   // running/queued -> paused
+client.resume(task_id)?;  // paused -> 原地恢复或重新启动；failed/canceled -> 重新排队
+                          // 并发已满时返回 state: "queued"，稍后自动提升
+client.cancel(task_id)?;  // -> canceled（终态，可再 resume 重新下载）
 client.task_record(task_id)?;
 ```
 

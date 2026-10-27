@@ -34,6 +34,15 @@ versioning; this is a UI mockup, so 0.x versions may change visual structure.
 - `aether-daemon`: single-instance Unix-socket daemon with SQLite + plugin
   runtime, `add/list/get/pause/resume/cancel/probe/shutdown`, systemd user
   unit and Linux packaging.
+- Task queue: `AETHER_MAX_CONCURRENT` (default 3) with FIFO promotion on
+  completion/failure/cancel; `resume` now restarts failed(retryable)/canceled
+  tasks from the stored record and paused tasks stay paused across daemon
+  restarts; cancel-in-progress is detected to avoid double starts.
+- Speed limiting: per-task `max_speed_bps` setting and global
+  `AETHER_MAX_SPEED_BPS` spread across running tasks, enforced by a shared
+  token bucket in the HTTP download loop (inherited by delegating plugins).
+- HTTP plugin consumes browser-forwarded settings: `referrer`, `user_agent`,
+  `cookies`, `headers` (managed headers rejected), plus `max_speed_bps`.
 - Daemon `subscribe` event stream + typed `list_tasks`/`task_record`/`add_task`
   client APIs for the Slint UI.
 - Browser Native Messaging host + MV3 extension skeleton + `aether://`/`magnet:`/

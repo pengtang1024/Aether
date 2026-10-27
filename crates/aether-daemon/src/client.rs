@@ -134,19 +134,16 @@ impl Client {
         Ok(serde_json::from_value(value)?)
     }
 
-    pub fn pause(&mut self, task_id: &str) -> Result<(), DaemonError> {
-        self.call("pause", None, None, None, Some(task_id), json!({}))?;
-        Ok(())
+    pub fn pause(&mut self, task_id: &str) -> Result<Value, DaemonError> {
+        self.call("pause", None, None, None, Some(task_id), json!({}))
     }
 
-    pub fn resume(&mut self, task_id: &str) -> Result<(), DaemonError> {
-        self.call("resume", None, None, None, Some(task_id), json!({}))?;
-        Ok(())
+    pub fn resume(&mut self, task_id: &str) -> Result<Value, DaemonError> {
+        self.call("resume", None, None, None, Some(task_id), json!({}))
     }
 
-    pub fn cancel(&mut self, task_id: &str) -> Result<(), DaemonError> {
-        self.call("cancel", None, None, None, Some(task_id), json!({}))?;
-        Ok(())
+    pub fn cancel(&mut self, task_id: &str) -> Result<Value, DaemonError> {
+        self.call("cancel", None, None, None, Some(task_id), json!({}))
     }
 
     pub fn shutdown(&mut self) -> Result<(), DaemonError> {

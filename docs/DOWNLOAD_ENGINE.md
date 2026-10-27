@@ -16,7 +16,7 @@
 | 真实 HTTP/HTTPS 下载 | ❌ 未实现（模拟） | Phase 1 |
 | 分段/多连接/断点续传 | ❌ 未实现 | Phase 1 |
 | 文件校验/原子落盘 | ❌ 未实现 | Phase 1 |
-| 真实任务调度/限速/代理 | ❌ 未实现 | Phase 2 |
+| 真实任务调度/限速/代理 | ⚠️ 部分：daemon 并发上限 + FIFO 队列、任务级 token-bucket 限速、自定义代理已实现；PAC 未实现 | Phase 2 |
 | BitTorrent / Magnet | ❌ 未实现 | Phase 3 |
 | FTP/FTPS | ❌ 未实现 | Phase 4 |
 | HLS/DASH | ❌ 未实现 | Phase 4 |

@@ -1,5 +1,5 @@
 #![cfg(unix)]
-//! Daemon + fake plugin end-to-end test.
+//! Daemon + fake plugin end-to-end tests.
 
 use std::fs;
 use std::path::PathBuf;
@@ -7,6 +7,7 @@ use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use aether_daemon::{Client, DaemonConfig};
+use serde_json::{json, Value};
 
 fn temp_dir(label: &str) -> PathBuf {
     let nanos = SystemTime::now()
@@ -29,21 +30,30 @@ fn fake_binary() -> Option<PathBuf> {
     path.is_file().then_some(path)
 }
 
-#[test]
-fn daemon_adds_lists_and_completes_a_task() {
-    let Some(fake) = fake_binary() else {
-        eprintln!("fake plugin binary is not built; skipping");
-        return;
-    };
+struct Daemon {
+    root: PathBuf,
+    socket: PathBuf,
+    handle: thread::JoinHandle<Result<(), aether_daemon::DaemonError>>,
+}
 
-    let root = temp_dir("run");
+impl Daemon {
+    fn shutdown(self) {
+        let _ = self.handle.join();
+        fs::remove_dir_all(&self.root).ok();
+    }
+}
+
+/// Stage the fake plugin and start a daemon over a private root.
+fn spawn_daemon(label: &str, max_concurrent: usize, max_speed_bps: Option<u64>) -> Option<Daemon> {
+    let fake = fake_binary()?;
+    let root = temp_dir(label);
     let package = root.join("plugins").join("fake");
     fs::create_dir_all(package.join("bin")).unwrap();
     let executable_name = format!("aether-plugin-fake{}", std::env::consts::EXE_SUFFIX);
     fs::copy(&fake, package.join("bin").join(&executable_name)).unwrap();
     fs::write(
         package.join("plugin.json"),
-        serde_json::to_vec_pretty(&serde_json::json!({
+        serde_json::to_vec_pretty(&json!({
             "id": "fake",
             "name": "Fake plugin",
             "version": "0.1.0",
@@ -67,38 +77,71 @@ fn daemon_adds_lists_and_completes_a_task() {
         update_url: None,
         update_public_key: None,
         update_appimage: None,
+        max_concurrent,
+        max_speed_bps,
     };
-    let daemon = thread::spawn(move || aether_daemon::run(config));
+    let handle = thread::spawn(move || aether_daemon::run(config));
+    Some(Daemon {
+        root,
+        socket,
+        handle,
+    })
+}
 
-    let mut client = loop {
-        match Client::connect(&socket) {
-            Ok(client) => break client,
-            Err(_) => thread::sleep(Duration::from_millis(50)),
+fn connect(socket: &PathBuf) -> Client {
+    loop {
+        if let Ok(client) = Client::connect(socket) {
+            return client;
         }
+        thread::sleep(Duration::from_millis(50));
+    }
+}
+
+fn task_state(client: &mut Client, task_id: &str) -> String {
+    client
+        .task(task_id)
+        .ok()
+        .and_then(|value| value["task"]["state"].as_str().map(ToOwned::to_owned))
+        .unwrap_or_default()
+}
+
+fn wait_for_state(client: &mut Client, task_id: &str, state: &str, attempts: usize) -> bool {
+    for _ in 0..attempts {
+        if task_state(client, task_id) == state {
+            return true;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    false
+}
+
+fn final_file(root: &PathBuf, task_id: &str) -> PathBuf {
+    root.join("downloads")
+        .join(".aether")
+        .join(task_id)
+        .join("final")
+        .join("fake.bin")
+}
+
+#[test]
+fn daemon_adds_lists_and_completes_a_task() {
+    let Some(daemon) = spawn_daemon("run", 1, None) else {
+        eprintln!("fake plugin binary is not built; skipping");
+        return;
     };
+    let root = daemon.root.clone();
+    let socket = daemon.socket.clone();
+
+    let mut client = connect(&socket);
     client.ping().unwrap();
     assert_eq!(client.update_status().unwrap()["status"], "disabled");
     let subscription = Client::connect(&socket).unwrap().subscribe().unwrap();
     let added = client
         .add("https://example.com/file.bin", None, None)
         .unwrap();
+    assert_eq!(added["queued"], false);
     let task_id = added["task_id"].as_str().unwrap().to_string();
-
-    let mut completed = false;
-    for _ in 0..100 {
-        let tasks = client.list().unwrap();
-        if let Some(task) = tasks["tasks"]
-            .as_array()
-            .and_then(|tasks| tasks.iter().find(|task| task["id"] == task_id))
-        {
-            if task["state"] == "completed" {
-                completed = true;
-                break;
-            }
-        }
-        thread::sleep(Duration::from_millis(50));
-    }
-    assert!(completed, "daemon task did not complete");
+    assert!(wait_for_state(&mut client, &task_id, "completed", 100));
 
     let mut saw_progress = false;
     let mut saw_completed = false;
@@ -118,15 +161,168 @@ fn daemon_adds_lists_and_completes_a_task() {
     assert!(saw_completed, "subscription missed completion");
     let _ = saw_progress;
 
-    let final_file = root
-        .join("downloads")
-        .join(".aether")
-        .join(&task_id)
-        .join("final")
-        .join("fake.bin");
-    assert_eq!(fs::read(final_file).unwrap().len(), 1024);
+    assert_eq!(fs::read(final_file(&root, &task_id)).unwrap().len(), 1024);
 
     client.shutdown().unwrap();
-    let _ = daemon.join();
-    fs::remove_dir_all(root).ok();
+    daemon.shutdown();
+}
+
+#[test]
+fn daemon_queues_tasks_beyond_max_concurrent() {
+    let Some(daemon) = spawn_daemon("queue", 1, None) else {
+        eprintln!("fake plugin binary is not built; skipping");
+        return;
+    };
+    let socket = daemon.socket.clone();
+
+    let mut client = connect(&socket);
+    let first = client
+        .add_with_settings(
+            "https://example.com/first.bin",
+            None,
+            None,
+            json!({"duration_ms": 1200}),
+        )
+        .unwrap();
+    assert_eq!(first["queued"], false);
+
+    let second = client
+        .add("https://example.com/second.bin", None, None)
+        .unwrap();
+    assert_eq!(second["queued"], true);
+    let second_id = second["task_id"].as_str().unwrap().to_string();
+    assert_eq!(task_state(&mut client, &second_id), "queued");
+
+    // The held task must not have written anything yet.
+    assert!(!final_file(&daemon.root, &second_id).exists());
+
+    // When the first task completes the queued one is promoted FIFO.
+    assert!(wait_for_state(&mut client, &second_id, "running", 200));
+    assert!(wait_for_state(&mut client, &second_id, "completed", 100));
+    assert_eq!(
+        fs::read(final_file(&daemon.root, &second_id))
+            .unwrap()
+            .len(),
+        1024
+    );
+
+    client.shutdown().unwrap();
+    daemon.shutdown();
+}
+
+#[test]
+fn daemon_resume_restarts_a_failed_task() {
+    let Some(daemon) = spawn_daemon("resume", 1, None) else {
+        eprintln!("fake plugin binary is not built; skipping");
+        return;
+    };
+    let socket = daemon.socket.clone();
+
+    let mut client = connect(&socket);
+    let added = client
+        .add_with_settings(
+            "https://example.com/flaky.bin",
+            None,
+            None,
+            json!({"fail": true, "retryable": true}),
+        )
+        .unwrap();
+    let task_id = added["task_id"].as_str().unwrap().to_string();
+    assert!(wait_for_state(&mut client, &task_id, "failed", 100));
+
+    // Resume must restart the task from the stored record, not just forward a
+    // Resume command to a plugin that no longer owns the execution.
+    let resumed = client.resume(&task_id).unwrap();
+    assert_eq!(resumed["state"], "running");
+    assert!(wait_for_state(&mut client, &task_id, "completed", 100));
+    assert_eq!(
+        fs::read(final_file(&daemon.root, &task_id)).unwrap().len(),
+        1024
+    );
+
+    client.shutdown().unwrap();
+    daemon.shutdown();
+}
+
+#[test]
+fn daemon_cancel_moves_a_running_task_to_canceled() {
+    let Some(daemon) = spawn_daemon("cancel", 1, None) else {
+        eprintln!("fake plugin binary is not built; skipping");
+        return;
+    };
+    let socket = daemon.socket.clone();
+
+    let mut client = connect(&socket);
+    let added = client
+        .add_with_settings(
+            "https://example.com/slow.bin",
+            None,
+            None,
+            json!({"duration_ms": 5000}),
+        )
+        .unwrap();
+    let task_id = added["task_id"].as_str().unwrap().to_string();
+
+    let canceled = client.cancel(&task_id).unwrap();
+    assert_eq!(canceled["state"], "canceled");
+    assert!(wait_for_state(&mut client, &task_id, "canceled", 20));
+    // The task must not complete after being canceled.
+    thread::sleep(Duration::from_millis(300));
+    assert_eq!(task_state(&mut client, &task_id), "canceled");
+
+    client.shutdown().unwrap();
+    daemon.shutdown();
+}
+
+#[test]
+fn daemon_pauses_and_resumes() {
+    let Some(daemon) = spawn_daemon("pause", 1, None) else {
+        eprintln!("fake plugin binary is not built; skipping");
+        return;
+    };
+    let socket = daemon.socket.clone();
+
+    let mut client = connect(&socket);
+    let added = client
+        .add_with_settings(
+            "https://example.com/hold.bin",
+            None,
+            None,
+            json!({"duration_ms": 4000}),
+        )
+        .unwrap();
+    let task_id = added["task_id"].as_str().unwrap().to_string();
+    assert_eq!(task_state(&mut client, &task_id), "running");
+
+    client.pause(&task_id).unwrap();
+    assert_eq!(task_state(&mut client, &task_id), "paused");
+
+    client.resume(&task_id).unwrap();
+    assert_eq!(task_state(&mut client, &task_id), "running");
+    // Held task would still be running; make sure it can still complete.
+    assert!(wait_for_state(&mut client, &task_id, "completed", 200));
+
+    client.shutdown().unwrap();
+    daemon.shutdown();
+}
+
+fn summarize(value: Value) -> usize {
+    value["tasks"].as_array().map(Vec::len).unwrap_or(0)
+}
+
+#[test]
+fn daemon_lists_tasks() {
+    let Some(daemon) = spawn_daemon("list", 1, None) else {
+        eprintln!("fake plugin binary is not built; skipping");
+        return;
+    };
+    let socket = daemon.socket.clone();
+
+    let mut client = connect(&socket);
+    let _ = client.add("https://example.com/a.bin", None, None).unwrap();
+    let tasks = client.list().unwrap();
+    assert_eq!(summarize(tasks), 1);
+
+    client.shutdown().unwrap();
+    daemon.shutdown();
 }

@@ -27,7 +27,12 @@ xdg-mime default aether-url-handler.desktop x-scheme-handler/magnet
 ```
 
 限制：扩展尚未上架商店；native manifest 需要扩展 ID；Windows named pipe 未实现；
-Cookie/Headers 只透传，HTTP 插件尚未使用；站点白名单/询问模式未实现。
+站点白名单/询问模式未实现。
+
+HTTP 插件已消费这些设置：`referrer` → Referer 头、`user_agent` → User-Agent、
+`cookies`（字符串或对象）→ Cookie 头、`headers` 对象逐项附加（Range/Host/
+Content-Length/Connection 等受管头会被拒绝）；`max_speed_bps` 做任务级限速。
+服务器如果依赖请求头鉴权/防盗链，接管即可生效。
 
 ## 1. 组成
 
