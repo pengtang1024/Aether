@@ -127,6 +127,16 @@ fn wait_for_state(client: &mut Client, task_id: &str, state: &str, attempts: usi
     false
 }
 
+/// Like wait_for_state, but names the actual final state on failure: on slow
+/// CI machines plugin process startup can easily exceed a few seconds.
+fn assert_reaches(client: &mut Client, task_id: &str, state: &str, attempts: usize) {
+    let last = task_state(client, task_id);
+    assert!(
+        wait_for_state(client, task_id, state, attempts),
+        "task never reached {state} (last seen: {last:?})"
+    );
+}
+
 fn final_file(root: &PathBuf, task_id: &str) -> PathBuf {
     // Finalized files land directly in the download directory.
     let _ = task_id;
@@ -151,7 +161,7 @@ fn daemon_adds_lists_and_completes_a_task() {
         .unwrap();
     assert_eq!(added["queued"], false);
     let task_id = added["task_id"].as_str().unwrap().to_string();
-    assert!(wait_for_state(&mut client, &task_id, "completed", 100));
+    assert_reaches(&mut client, &task_id, "completed", 300);
 
     let mut saw_progress = false;
     let mut saw_completed = false;
@@ -238,13 +248,13 @@ fn daemon_resume_restarts_a_failed_task() {
         )
         .unwrap();
     let task_id = added["task_id"].as_str().unwrap().to_string();
-    assert!(wait_for_state(&mut client, &task_id, "failed", 100));
+    assert_reaches(&mut client, &task_id, "failed", 300);
 
     // Resume must restart the task from the stored record, not just forward a
     // Resume command to a plugin that no longer owns the execution.
     let resumed = client.resume(&task_id).unwrap();
     assert_eq!(resumed["state"], "running");
-    assert!(wait_for_state(&mut client, &task_id, "completed", 100));
+    assert_reaches(&mut client, &task_id, "completed", 300);
     assert_eq!(
         fs::read(final_file(&daemon.root, &task_id)).unwrap().len(),
         1024
@@ -275,7 +285,7 @@ fn daemon_cancel_moves_a_running_task_to_canceled() {
 
     let canceled = client.cancel(&task_id).unwrap();
     assert_eq!(canceled["state"], "canceled");
-    assert!(wait_for_state(&mut client, &task_id, "canceled", 20));
+    assert_reaches(&mut client, &task_id, "canceled", 100);
     // The task must not complete after being canceled.
     thread::sleep(Duration::from_millis(300));
     assert_eq!(task_state(&mut client, &task_id), "canceled");
@@ -310,7 +320,7 @@ fn daemon_pauses_and_resumes() {
     client.resume(&task_id).unwrap();
     assert_eq!(task_state(&mut client, &task_id), "running");
     // Held task would still be running; make sure it can still complete.
-    assert!(wait_for_state(&mut client, &task_id, "completed", 200));
+    assert_reaches(&mut client, &task_id, "completed", 400);
 
     client.shutdown().unwrap();
     daemon.shutdown();
@@ -355,12 +365,12 @@ fn daemon_auto_retries_a_retryable_failure_and_recovers() {
         )
         .unwrap();
     let task_id = added["task_id"].as_str().unwrap().to_string();
-    assert!(wait_for_state(&mut client, &task_id, "failed", 100));
+    assert_reaches(&mut client, &task_id, "failed", 300);
 
     // After the 1 s backoff the daemon must restart it automatically; the
     // sentinel makes the second attempt succeed. The running window is short,
     // so completion is the reliable observable.
-    assert!(wait_for_state(&mut client, &task_id, "completed", 200));
+    assert_reaches(&mut client, &task_id, "completed", 400);
 
     client.shutdown().unwrap();
     daemon.shutdown();
@@ -384,18 +394,18 @@ fn daemon_stops_retrying_after_the_cap() {
         )
         .unwrap();
     let task_id = added["task_id"].as_str().unwrap().to_string();
-    assert!(wait_for_state(&mut client, &task_id, "failed", 100));
+    assert_reaches(&mut client, &task_id, "failed", 300);
 
     // Attempt 2 (cap 1) also fails; the task must stay failed afterwards.
     // The brief "running" blip between retries is not observable reliably.
-    assert!(wait_for_state(&mut client, &task_id, "failed", 200));
+    assert_reaches(&mut client, &task_id, "failed", 300);
     thread::sleep(Duration::from_secs(3));
     assert_eq!(task_state(&mut client, &task_id), "failed");
 
     // Manual resume still works and resets the bookkeeping.
     let resumed = client.resume(&task_id).unwrap();
     assert_eq!(resumed["state"], "running");
-    assert!(wait_for_state(&mut client, &task_id, "failed", 100));
+    assert_reaches(&mut client, &task_id, "failed", 300);
 
     client.shutdown().unwrap();
     daemon.shutdown();
@@ -419,7 +429,7 @@ fn daemon_canceled_task_stops_the_retry_cycle() {
         )
         .unwrap();
     let task_id = added["task_id"].as_str().unwrap().to_string();
-    assert!(wait_for_state(&mut client, &task_id, "failed", 100));
+    assert_reaches(&mut client, &task_id, "failed", 300);
 
     // Cancel is the escape hatch from the retry cycle.
     let canceled = client.cancel(&task_id).unwrap();
@@ -444,7 +454,7 @@ fn daemon_deletes_terminal_tasks_but_keeps_files() {
         .add("https://example.com/doomed.bin", None, None)
         .unwrap();
     let task_id = added["task_id"].as_str().unwrap().to_string();
-    assert!(wait_for_state(&mut client, &task_id, "completed", 100));
+    assert_reaches(&mut client, &task_id, "completed", 300);
     assert!(final_file(&daemon.root, &task_id).exists());
 
     // A running/queued task cannot be deleted directly.

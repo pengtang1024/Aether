@@ -363,15 +363,27 @@ fn option(args: &[String], name: &str) -> Option<String> {
 }
 
 fn usage() -> Result<(), String> {
-    Err(
-        "usage:\n  aether-cli list --plugins <dir>\n  aether-cli probe <url> --plugins <dir>\n  aether-cli download <url> --dir <dir> --plugins <dir> [--plugin <id>]\n  aether-cli tasks --dir <dir>\n  aether-cli resume <task-id> --dir <dir> --plugins <dir>\n  aether-cli import <file|-> [--socket <path>] [--dir <dir>]"
-            .into(),
-    )
+    Err(format!(
+        "usage:\n  aether-cli list --plugins <dir>\n  aether-cli probe <url> --plugins <dir>\n  aether-cli download <url> --dir <dir> --plugins <dir> [--plugin <id>]\n  aether-cli tasks --dir <dir>\n  aether-cli resume <task-id> --dir <dir> --plugins <dir>{}",
+        import_usage(),
+    ))
+}
+
+#[cfg(unix)]
+fn import_usage() -> &'static str {
+    "\n  aether-cli import <file|-> [--socket <path>] [--dir <dir>]"
+}
+
+#[cfg(not(unix))]
+fn import_usage() -> &'static str {
+    // The daemon uses Unix sockets; import is unavailable on other platforms.
+    ""
 }
 
 /// Queue many URLs through the running daemon: one per line, `#` comments and
 /// blank lines ignored. Each add returns task_id/plugin_id/queued; failures
 /// are reported per URL and reflected in the exit code.
+#[cfg(unix)]
 fn import(source: &str, socket: &Path, dir: Option<&Path>) -> Result<(), String> {
     let text = if source == "-" {
         let mut buffer = String::new();
