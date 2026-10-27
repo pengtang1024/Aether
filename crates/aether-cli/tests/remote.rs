@@ -117,12 +117,20 @@ fn remote_controls_a_running_daemon() {
         &[
             "add",
             "https://example.com/remote.bin",
+            "--priority",
+            "3",
             "--settings",
             r#"{"duration_ms": 400}"#,
         ],
     );
     let task_id = added.split_whitespace().next().unwrap().to_string();
     assert!(added.contains("fake"), "{added}");
+    assert!(added.contains("priority=3"), "{added}");
+    let listed = remote_ok(&socket, &["get", &task_id]);
+    assert_eq!(
+        serde_json::from_str::<Value>(&listed).unwrap()["task"]["priority"],
+        3
+    );
 
     // JSON listing is machine readable and carries the same task.
     let listed = remote_ok(&socket, &["list", "--json"]);

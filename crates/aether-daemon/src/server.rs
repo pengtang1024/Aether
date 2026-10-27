@@ -806,6 +806,8 @@ fn add_task(state: &mut State, request: Request) -> Result<Value, DaemonError> {
         }
     }
 
+    // -100..=100 keeps a single task from starving the queue forever.
+    let priority = request.priority.unwrap_or(0).clamp(-100, 100);
     let settings = request.settings;
     state.store.create_task(&NewTask {
         id: task_id.clone(),
@@ -814,6 +816,7 @@ fn add_task(state: &mut State, request: Request) -> Result<Value, DaemonError> {
         filename: probe.suggested_filename.clone(),
         settings: settings.clone(),
         state: TaskState::Queued,
+        priority,
         target_dir: stored_dir,
     })?;
 
@@ -859,6 +862,7 @@ fn add_task(state: &mut State, request: Request) -> Result<Value, DaemonError> {
         "plugin_id": plugin_id,
         "queued": !started,
         "dir": final_dir.to_string_lossy(),
+        "priority": priority,
     }))
 }
 
@@ -916,13 +920,9 @@ fn try_launch(
 /// Promote the oldest queued tasks while there is capacity.
 fn promote_queued(state: &mut State) {
     while state.active.len() < state.max_concurrent {
-        let next = state.store.list_tasks(100).ok().and_then(|tasks| {
-            tasks
-                .into_iter()
-                .filter(|task| task.state == TaskState::Queued)
-                // list_tasks is created_at DESC; the queue runs FIFO.
-                .last()
-        });
+        // Highest priority first, then FIFO; the store does the ordering so
+        // the daemon never re-implements it.
+        let next = state.store.next_queued().ok().flatten();
         let Some(task) = next else { return };
         match start_from_record(state, &task) {
             Ok(true) => {}

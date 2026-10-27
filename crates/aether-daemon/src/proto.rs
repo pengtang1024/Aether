@@ -15,6 +15,9 @@ pub struct Request {
     pub dir: Option<String>,
     #[serde(default)]
     pub task_id: Option<String>,
+    /// Queue priority for `add`; higher runs first, equal values stay FIFO.
+    #[serde(default)]
+    pub priority: Option<i32>,
     #[serde(default)]
     pub settings: Value,
 }

@@ -37,7 +37,7 @@ aether-daemon
 | --- | --- | --- |
 | `ping` | — | 存活检查 |
 | `probe` | `url` | 返回各插件支持度/优先级 |
-| `add` | `url`, `plugin?`, `settings?`, `dir?` | 创建任务、Probe、启动插件；`dir` 为目标目录 |
+| `add` | `url`, `plugin?`, `settings?`, `dir?`, `priority?` | 创建任务、Probe、启动插件；`dir` 为目标目录，`priority` 为队列优先级 |
 | `list` | — | 最近 100 个任务 |
 | `get` | `task_id` | 单任务 + 文件 |
 | `logs` | `task_id`, `settings.limit?` | 任务日志（默认 200 条，上限 1000，旧→新） |
@@ -118,11 +118,16 @@ aether-cli remote watch        # 每行一条 JSON 事件，Ctrl-C 退出
 
 | 配置 | 环境变量 | 默认 | 说明 |
 | --- | --- | --- | --- |
-| 并发上限 | `AETHER_MAX_CONCURRENT` | 3 | 超出上限的任务保持 queued，按创建顺序 FIFO 提升 |
+| 并发上限 | `AETHER_MAX_CONCURRENT` | 3 | 超出上限的任务保持 queued，按优先级 + 创建顺序提升 |
 | 全局限速 | `AETHER_MAX_SPEED_BPS` | 无 | 均摊到当前运行任务，随任务启动时生效 |
 | 自动重试次数 | `AETHER_RETRY_MAX` | 5 | 可重试失败按指数退避自动重试，0 = 关闭 |
 | 重试基础间隔 | `AETHER_RETRY_BASE_SECS` | 30 | 退避 = base × 2^(n-1)，即 30s/1min/2min/… |
 
+- 队列优先级：`add` 可带 `priority`（整数，越大越先，clamp 到 `-100..=100`，
+  默认 0）。提升顺序是 `priority DESC, created_at ASC`（同优先级 FIFO，同毫秒
+  插入按写入顺序）。`StoredTask.priority` 会回显，UI 可做排序/标记。
+  注意：严格优先级意味着低优先级任务可能被持续插队（无老化机制）；需要时把
+  它们调回 0/正数即可。
 - 任务级限速优先：`add` 的 settings 里给 `max_speed_bps`（字节/秒，0 = 不限）。
 - 限速在 HTTP 插件下载循环内实现（任务级共享 token bucket，多连接同一桶）；
   委托 HTTP 的插件（baidupan/aliyunpan/ipfs/thunder/cloud/webdav）自动继承。

@@ -72,6 +72,8 @@ let subscription = Client::connect(&socket)?.subscribe()?;
 client.add_task(url, None, None, json!({}))?; // -> AddResult { task_id, plugin_id, queued, dir }
 // “另存为”：传目标目录（绝对路径，或相对下载根目录的路径）
 client.add_task(url, Some(Path::new("/home/me/Videos")), None, json!({}))?;
+// 队列优先级：越大越先；同优先级 FIFO
+client.add_task_with_priority(url, None, None, 10, json!({}))?;
 client.pause(task_id)?;   // running/queued -> paused
 client.resume(task_id)?;  // paused -> 原地恢复或重新启动；failed/canceled -> 重新排队
                           // 并发已满时返回 state: "queued"，稍后自动提升
@@ -79,6 +81,7 @@ client.cancel(task_id)?;  // -> canceled（终态，可再 resume 重新下载�
 client.delete(task_id)?;  // 仅终态可删；清记录/staging，已下载文件保留
 client.task_record(task_id)?;
 client.logs(task_id, 200)?; // Vec<TaskLog> { level, message, created_at, fields? }，旧→新
+// 任务列表里每项都有 priority（整数，默认 0）；可据此显示“高优先级”标签或自排序。
 
 // 设置页（代理）
 client.settings()?; // {"proxy": null} 或 {"proxy":{"mode":"system|none|custom",…}}

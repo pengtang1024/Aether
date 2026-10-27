@@ -58,6 +58,8 @@ pub struct NewTask {
     pub filename: Option<String>,
     pub settings: Value,
     pub state: TaskState,
+    /// Queue priority: higher runs first, equal values stay FIFO.
+    pub priority: i32,
     /// Where finalized files land. `None` means the daemon's download root;
     /// absolute paths let the UI implement "save as".
     pub target_dir: Option<String>,
@@ -70,6 +72,8 @@ pub struct StoredTask {
     pub plugin_id: String,
     pub filename: Option<String>,
     pub state: TaskState,
+    /// Queue priority: higher runs first, equal values stay FIFO.
+    pub priority: i32,
     pub downloaded: u64,
     pub total: Option<u64>,
     pub speed_bps: u64,
@@ -240,14 +244,26 @@ impl TaskStore {
                 "#,
             )?;
         }
+        if version < 4 {
+            // v4: queue priority (higher runs first).
+            connection.execute_batch(
+                r#"
+                BEGIN;
+                ALTER TABLE tasks ADD COLUMN priority INTEGER NOT NULL DEFAULT 0;
+                PRAGMA user_version = 4;
+                COMMIT;
+                "#,
+            )?;
+        }
         Ok(())
     }
 
     pub fn create_task(&mut self, task: &NewTask) -> Result<(), StoreError> {
         let now = now_ms();
         self.connection.execute(
-            "INSERT INTO tasks (id, url, plugin_id, filename, state, settings, target_dir, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
+            "INSERT INTO tasks (id, url, plugin_id, filename, state, settings, target_dir,
+                                priority, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
             params![
                 task.id,
                 task.url,
@@ -256,6 +272,7 @@ impl TaskStore {
                 task.state.as_str(),
                 serde_json::to_string(&task.settings)?,
                 task.target_dir,
+                task.priority,
                 now,
             ],
         )?;
@@ -269,7 +286,7 @@ impl TaskStore {
                 "SELECT id, url, plugin_id, filename, state, downloaded, total, speed_bps,
                         error_kind, error_message, error_retryable, settings, plugin_state,
                         created_at, updated_at, completed_at, target_dir,
-                        retry_attempts, retry_at
+                        retry_attempts, retry_at, priority
                  FROM tasks WHERE id = ?1",
                 [id],
                 row_to_task,
@@ -286,7 +303,7 @@ impl TaskStore {
             "SELECT id, url, plugin_id, filename, state, downloaded, total, speed_bps,
                     error_kind, error_message, error_retryable, settings, plugin_state,
                     created_at, updated_at, completed_at, target_dir,
-                    retry_attempts, retry_at
+                    retry_attempts, retry_at, priority
              FROM tasks ORDER BY created_at DESC LIMIT ?1",
         )?;
         let rows = statement.query_map([limit as i64], row_to_task)?;
@@ -304,7 +321,7 @@ impl TaskStore {
             "SELECT id, url, plugin_id, filename, state, downloaded, total, speed_bps,
                     error_kind, error_message, error_retryable, settings, plugin_state,
                     created_at, updated_at, completed_at, target_dir,
-                    retry_attempts, retry_at
+                    retry_attempts, retry_at, priority
              FROM tasks WHERE state IN ('queued', 'running', 'paused') ORDER BY created_at",
         )?;
         let rows = statement.query_map([], row_to_task)?;
@@ -460,6 +477,27 @@ impl TaskStore {
         Ok(())
     }
 
+    /// The queued task that should run next: highest priority, then oldest.
+    pub fn next_queued(&self) -> Result<Option<StoredTask>, StoreError> {
+        let mut task = self
+            .connection
+            .query_row(
+                "SELECT id, url, plugin_id, filename, state, downloaded, total, speed_bps,
+                        error_kind, error_message, error_retryable, settings, plugin_state,
+                        created_at, updated_at, completed_at, target_dir,
+                        retry_attempts, retry_at, priority
+                 FROM tasks WHERE state = 'queued'
+                 ORDER BY priority DESC, created_at ASC, rowid ASC LIMIT 1",
+                [],
+                row_to_task,
+            )
+            .optional()?;
+        if let Some(task) = &mut task {
+            task.files = self.files(&task.id)?;
+        }
+        Ok(task)
+    }
+
     /// Record a pending automatic retry: `attempts` failures so far and the
     /// wall-clock deadline. Survives a daemon restart.
     pub fn set_retry(
@@ -562,6 +600,7 @@ fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredTask> {
         target_dir: row.get(16)?,
         retry_attempts: row.get::<_, i64>(17)? as u32,
         retry_at: row.get(18)?,
+        priority: row.get::<_, i64>(19)? as i32,
         files: Vec::new(),
     })
 }
@@ -600,6 +639,7 @@ mod tests {
             filename: Some("file.bin".into()),
             settings: serde_json::json!({"connections": 4}),
             state: TaskState::Queued,
+            priority: 0,
             target_dir: None,
         }
     }
@@ -747,9 +787,30 @@ mod tests {
             .connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 3);
+        assert_eq!(version, 4);
         drop(store);
         fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn promotes_by_priority_then_fifo() {
+        let mut store = TaskStore::open_in_memory().unwrap();
+        for (id, priority) in [("low", -5), ("normal", 0), ("high", 10), ("high2", 10)] {
+            let mut task = new_task(id);
+            task.priority = priority;
+            store.create_task(&task).unwrap();
+        }
+        // Same-millisecond inserts must still be FIFO among equal priorities.
+        assert_eq!(store.next_queued().unwrap().unwrap().id, "high");
+        store.set_state("high", TaskState::Running).unwrap();
+        assert_eq!(store.next_queued().unwrap().unwrap().id, "high2");
+        store.set_state("high2", TaskState::Completed).unwrap();
+        assert_eq!(store.next_queued().unwrap().unwrap().id, "normal");
+        store.set_state("normal", TaskState::Queued).unwrap();
+        store.set_state("normal", TaskState::Canceled).unwrap();
+        assert_eq!(store.next_queued().unwrap().unwrap().id, "low");
+        store.set_state("low", TaskState::Canceled).unwrap();
+        assert!(store.next_queued().unwrap().is_none());
     }
 
     #[test]

@@ -24,6 +24,9 @@ pub struct AddResult {
     /// Directory the files will land in (absolute).
     #[serde(default)]
     pub dir: Option<String>,
+    /// Effective queue priority (clamped by the daemon).
+    #[serde(default)]
+    pub priority: i32,
 }
 
 pub struct Client {
@@ -51,6 +54,20 @@ impl Client {
         task_id: Option<&str>,
         settings: Value,
     ) -> Result<Value, DaemonError> {
+        self.call_with_priority(method, url, plugin, dir, task_id, None, settings)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn call_with_priority(
+        &mut self,
+        method: &str,
+        url: Option<&str>,
+        plugin: Option<&str>,
+        dir: Option<&str>,
+        task_id: Option<&str>,
+        priority: Option<i32>,
+        settings: Value,
+    ) -> Result<Value, DaemonError> {
         let id = self.next_id;
         self.next_id = self.next_id.wrapping_add(1);
         let request = Request {
@@ -60,6 +77,7 @@ impl Client {
             plugin: plugin.map(ToOwned::to_owned),
             dir: dir.map(ToOwned::to_owned),
             task_id: task_id.map(ToOwned::to_owned),
+            priority,
             settings,
         };
         let line = serde_json::to_string(&request)?;
@@ -92,6 +110,27 @@ impl Client {
         plugin: Option<&str>,
     ) -> Result<Value, DaemonError> {
         self.add_with_settings(url, dir, plugin, json!({}))
+    }
+
+    /// `add` with an explicit queue priority (higher runs first).
+    pub fn add_with_priority(
+        &mut self,
+        url: &str,
+        dir: Option<&Path>,
+        plugin: Option<&str>,
+        priority: i32,
+        settings: Value,
+    ) -> Result<Value, DaemonError> {
+        let dir = dir.map(|path| path.to_string_lossy().into_owned());
+        self.call_with_priority(
+            "add",
+            Some(url),
+            plugin,
+            dir.as_deref(),
+            None,
+            Some(priority),
+            settings,
+        )
     }
 
     pub fn add_with_settings(
@@ -160,7 +199,28 @@ impl Client {
         plugin: Option<&str>,
         settings: Value,
     ) -> Result<AddResult, DaemonError> {
-        let value = self.add_with_settings(url, dir, plugin, settings)?;
+        self.add_task_with_priority(url, dir, plugin, 0, settings)
+    }
+
+    /// Queue a task with an explicit priority (higher runs first).
+    pub fn add_task_with_priority(
+        &mut self,
+        url: &str,
+        dir: Option<&Path>,
+        plugin: Option<&str>,
+        priority: i32,
+        settings: Value,
+    ) -> Result<AddResult, DaemonError> {
+        let dir = dir.map(|path| path.to_string_lossy().into_owned());
+        let value = self.call_with_priority(
+            "add",
+            Some(url),
+            plugin,
+            dir.as_deref(),
+            None,
+            Some(priority),
+            settings,
+        )?;
         Ok(serde_json::from_value(value)?)
     }
 
@@ -219,6 +279,7 @@ impl Client {
             plugin: None,
             dir: None,
             task_id: None,
+            priority: None,
             settings: json!({}),
         };
         let line = serde_json::to_string(&request)?;

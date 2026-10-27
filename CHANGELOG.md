@@ -7,6 +7,10 @@ versioning; 0.x releases may still change structure.
 
 ### Added
 
+- Queue priorities: `add` (and `aether-cli remote add --priority`) accepts an
+  integer priority, clamped to `-100..=100`. Promotion is
+  `priority DESC, created_at ASC` (FIFO within a priority), exposed on
+  `StoredTask.priority`, so a small download no longer waits behind a large one.
 - Disk-space preflight before a task starts: `add` compares the probe size
   against the free space of the destination (minus the remaining bytes of
   downloads already writing there) and fails with a clear message instead of

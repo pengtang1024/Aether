@@ -1003,3 +1003,75 @@ fn daemon_follows_the_desktop_proxy() {
 
     fs::remove_dir_all(&root).ok();
 }
+
+#[test]
+fn daemon_promotes_queued_tasks_by_priority() {
+    let Some(daemon) = spawn_daemon("priority", 1, None) else {
+        eprintln!("fake plugin binary is not built; skipping");
+        return;
+    };
+    let socket = daemon.socket.clone();
+
+    let mut client = connect(&socket);
+    // Hold the single slot so the next three tasks stay queued.
+    let holder = client
+        .add_with_settings(
+            "https://example.com/holder.bin",
+            None,
+            None,
+            json!({"duration_ms": 1000}),
+        )
+        .unwrap();
+    let holder_id = holder["task_id"].as_str().unwrap().to_string();
+
+    let mut add = |url: &str, priority: i32| {
+        let added = client
+            .add_with_priority(url, None, None, priority, json!({"duration_ms": 700}))
+            .unwrap();
+        assert_eq!(added["queued"], true);
+        assert_eq!(added["priority"], priority);
+        added["task_id"].as_str().unwrap().to_string()
+    };
+    let normal = add("https://example.com/normal.bin", 0);
+    let high = add("https://example.com/high.bin", 10);
+    let low = add("https://example.com/low.bin", -5);
+
+    assert_reaches(&mut client, &holder_id, "completed", 300);
+    // The high-priority task must take the free slot first, and keep it long
+    // enough that the others cannot have started yet.
+    wait_started(&mut client, &high, 100);
+    assert!(started(&mut client, &high));
+    assert!(!started(&mut client, &normal));
+    assert!(!started(&mut client, &low));
+    assert_reaches(&mut client, &high, "completed", 300);
+
+    wait_started(&mut client, &normal, 100);
+    assert!(!started(&mut client, &low), "low priority jumped the queue");
+    assert_reaches(&mut client, &normal, "completed", 300);
+
+    assert_reaches(&mut client, &low, "completed", 300);
+
+    client.shutdown().unwrap();
+    daemon.shutdown();
+}
+
+/// True once the task's plugin execution has started (log line is durable).
+fn started(client: &mut Client, task_id: &str) -> bool {
+    client
+        .logs(task_id, 100)
+        .map(|logs| {
+            logs.iter()
+                .any(|log| log.message.starts_with("running with plugin"))
+        })
+        .unwrap_or(false)
+}
+
+fn wait_started(client: &mut Client, task_id: &str, attempts: usize) {
+    for _ in 0..attempts {
+        if started(client, task_id) {
+            return;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    panic!("task {task_id} never started");
+}

@@ -31,6 +31,7 @@ fn seed(dir: &PathBuf) {
             filename: Some("a.bin".into()),
             settings: json!({}),
             state: TaskState::Queued,
+            priority: 0,
             target_dir: None,
         })
         .unwrap();

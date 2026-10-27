@@ -190,6 +190,7 @@ fn download(url: &str, output: &Path, plugins: &Path, forced: Option<&str>) -> R
             filename: probe.suggested_filename.clone(),
             settings,
             state: TaskState::Queued,
+            priority: 0,
             target_dir: Some(target_dir),
         })
         .map_err(|error| error.to_string())?;
@@ -482,11 +483,20 @@ fn remote(args: &[String]) -> Result<(), String> {
                     .map_err(|error| format!("--settings must be JSON: {error}"))?,
                 None => json!({}),
             };
+            let priority = option(args, "--priority")
+                .map(|value| {
+                    value
+                        .parse::<i32>()
+                        .map_err(|_| format!("--priority must be an integer, got {value:?}"))
+                })
+                .transpose()?
+                .unwrap_or(0);
             let added = client
-                .add_task(
+                .add_task_with_priority(
                     url,
                     dir.as_deref().map(Path::new),
                     option(args, "--plugin").as_deref(),
+                    priority,
                     settings,
                 )
                 .map_err(|error| error.to_string())?;
@@ -503,11 +513,12 @@ fn remote(args: &[String]) -> Result<(), String> {
                 );
             } else {
                 println!(
-                    "{} {} queued={} dir={}",
+                    "{} {} queued={} dir={} priority={}",
                     added.task_id,
                     added.plugin_id,
                     added.queued,
-                    added.dir.unwrap_or_default()
+                    added.dir.unwrap_or_default(),
+                    added.priority
                 );
             }
         }
@@ -609,7 +620,7 @@ fn remote(args: &[String]) -> Result<(), String> {
 
 #[cfg(unix)]
 fn remote_usage() -> &'static str {
-    "\n  aether-cli remote <command> [--socket <path>]\n    ping | list [--json]\n    add <url> [--plugin <id>] [--dir <dir>] [--settings <json>] [--json]\n    get <task-id> | logs <task-id> [--limit <n>] [--json]\n    pause|resume|cancel|rm <task-id>\n    settings | set-settings <json> | resolve-proxy <url> | watch"
+    "\n  aether-cli remote <command> [--socket <path>]\n    ping | list [--json]\n    add <url> [--plugin <id>] [--dir <dir>] [--priority <n>] [--settings <json>] [--json]\n    get <task-id> | logs <task-id> [--limit <n>] [--json]\n    pause|resume|cancel|rm <task-id>\n    settings | set-settings <json> | resolve-proxy <url> | watch"
 }
 
 #[cfg(not(unix))]
