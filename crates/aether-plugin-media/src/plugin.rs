@@ -22,6 +22,7 @@ const CAPABILITIES: &[Capability] = &[Capability::Network, Capability::Filesyste
 
 pub struct MediaPlugin {
     client: Option<reqwest::blocking::Client>,
+    init: Option<aether_plugin_sdk::Init>,
     tasks: HashMap<String, TaskRecord>,
 }
 
@@ -34,6 +35,7 @@ impl MediaPlugin {
     pub fn new() -> Self {
         Self {
             client: None,
+            init: None,
             tasks: HashMap::new(),
         }
     }
@@ -44,6 +46,27 @@ impl MediaPlugin {
             .ok_or_else(|| SdkError::Protocol("plugin received a command before Init".into()))
     }
 
+    /// Client for one task: a Host-resolved (PAC) proxy wins over the
+    /// process-level one.
+    fn client_with(
+        &self,
+        proxy: &Option<aether_plugin_sdk::ProxyConfig>,
+    ) -> Result<reqwest::blocking::Client, SdkError> {
+        let Some(proxy) = proxy else {
+            return self.client();
+        };
+        if self.init.as_ref().and_then(|init| init.proxy.as_ref()) == Some(proxy) {
+            return self.client();
+        }
+        let mut init = self
+            .init
+            .clone()
+            .ok_or_else(|| SdkError::Protocol("plugin received a command before Init".into()))?;
+        init.proxy = Some(proxy.clone());
+        http::build_client(&init)
+            .map_err(|error| SdkError::Protocol(format!("per-task media client: {error}")))
+    }
+
     fn start(&mut self, ctx: &mut PluginContext, task: TaskSpec, paths: TaskPaths) {
         let task_id = task.task_id.clone();
         let sender = ctx.sender();
@@ -51,7 +74,7 @@ impl MediaPlugin {
         let progress = shared_progress();
         let thread_control = control.clone();
         let thread_progress = progress.clone();
-        let client = self.client.clone();
+        let client = self.client_with(&task.proxy).ok();
 
         thread::spawn(move || {
             let Some(client) = client else {
@@ -110,6 +133,7 @@ impl Plugin for MediaPlugin {
         _ctx: &mut PluginContext,
         init: &aether_plugin_sdk::Init,
     ) -> Result<(), SdkError> {
+        self.init = Some(init.clone());
         self.client = Some(
             http::build_client(init)
                 .map_err(|error| SdkError::Protocol(format!("media client init: {error}")))?,
@@ -123,8 +147,12 @@ impl Plugin for MediaPlugin {
         command: HostCommand,
     ) -> Result<(), SdkError> {
         match command {
-            HostCommand::Probe { request_id, input } => {
-                let client = self.client()?;
+            HostCommand::Probe {
+                request_id,
+                input,
+                proxy,
+            } => {
+                let client = self.client_with(&proxy)?;
                 let (supported, protocol, filename, reason, content_type) =
                     if let Ok(url) = Url::parse(&input) {
                         if hls::is_hls_url(&url) {

@@ -74,6 +74,7 @@ fn discovers_probes_downloads_and_finalizes() {
                 plugin_state: None,
                 expected_size: Some(1024),
                 checksum: None,
+                proxy: None,
             },
             TaskPaths {
                 staging: staging.clone(),
@@ -184,6 +185,7 @@ fn loads_a_cdylib_plugin() {
                 plugin_state: None,
                 expected_size: Some(2048),
                 checksum: None,
+                proxy: None,
             },
             TaskPaths {
                 staging: staging.clone(),

@@ -72,6 +72,16 @@ impl PluginManager {
     }
 
     pub fn probe(&mut self, input: &str) -> Vec<ProbeOutcome> {
+        self.probe_with_proxy(input, None)
+    }
+
+    /// Probe with the Host-resolved proxy for this input; plugins must use it
+    /// instead of the process-level proxy so PAC routes probes like downloads.
+    pub fn probe_with_proxy(
+        &mut self,
+        input: &str,
+        proxy: Option<ProxyConfig>,
+    ) -> Vec<ProbeOutcome> {
         let ids = self
             .registry
             .iter()
@@ -83,7 +93,7 @@ impl PluginManager {
         for id in ids {
             match self
                 .ensure_process(&id)
-                .and_then(|process| process.probe(input).map_err(HostError::from))
+                .and_then(|process| process.probe(input, proxy.clone()).map_err(HostError::from))
             {
                 Ok(result) => outcomes.push(ProbeOutcome {
                     plugin_id: id,
@@ -226,10 +236,10 @@ impl RunningPlugin {
         }
     }
 
-    fn probe(&mut self, input: &str) -> Result<ProbeResult, HostError> {
+    fn probe(&mut self, input: &str, proxy: Option<ProxyConfig>) -> Result<ProbeResult, HostError> {
         match self {
-            Self::Process(process) => Ok(process.probe(input)?),
-            Self::Abi(plugin) => plugin.probe(input),
+            Self::Process(process) => Ok(process.probe_with_proxy(input, proxy)?),
+            Self::Abi(plugin) => plugin.probe_with_proxy(input, proxy),
         }
     }
 

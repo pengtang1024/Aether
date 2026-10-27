@@ -56,7 +56,9 @@ impl Plugin for IpfsPlugin {
         command: HostCommand,
     ) -> Result<(), SdkError> {
         match command {
-            HostCommand::Probe { request_id, input } => {
+            HostCommand::Probe {
+                request_id, input, ..
+            } => {
                 let gateway = gateway(&serde_json::Value::Null);
                 let (supported, url, filename, reason) = match resolve(&input, &gateway) {
                     Ok(url) => {

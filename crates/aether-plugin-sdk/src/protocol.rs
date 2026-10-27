@@ -23,10 +23,13 @@ pub enum HostCommand {
         proxy: Option<ProxyConfig>,
         limits: Limits,
     },
-    /// Ask whether a URL / file is supported.
+    /// Ask whether a URL / file is supported. `proxy` is the Host-resolved
+    /// proxy for this input (PAC), so probes use the same route as the task.
     Probe {
         request_id: u64,
         input: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        proxy: Option<ProxyConfig>,
     },
     /// Start a task. `task.plugin_state` is used for resume.
     Start {
@@ -368,6 +371,10 @@ pub struct TaskSpec {
     pub expected_size: Option<u64>,
     #[serde(default)]
     pub checksum: Option<Checksum>,
+    /// Proxy resolved by the Host for this task (PAC evaluation). Wins over the
+    /// process-level `Init::proxy`; `None` keeps the process default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy: Option<ProxyConfig>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -508,6 +515,7 @@ mod tests {
                 plugin_state: None,
                 expected_size: Some(1024),
                 checksum: None,
+                proxy: None,
             },
             paths: TaskPaths {
                 staging: PathBuf::from("/tmp/staging"),

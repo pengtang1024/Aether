@@ -145,9 +145,18 @@ impl AbiPlugin {
     }
 
     pub fn probe(&mut self, input: &str) -> Result<ProbeResult, HostError> {
+        self.probe_with_proxy(input, None)
+    }
+
+    pub fn probe_with_proxy(
+        &mut self,
+        input: &str,
+        proxy: Option<aether_plugin_sdk::ProxyConfig>,
+    ) -> Result<ProbeResult, HostError> {
         self.send(&HostCommand::Probe {
             request_id: 1,
             input: input.to_string(),
+            proxy,
         })?;
         loop {
             match self.recv_event(PROBE_TIMEOUT)? {

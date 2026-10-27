@@ -111,6 +111,7 @@ fn spawn_daemon_full(
         retry_max,
         retry_base_secs,
         proxy: proxy.map(ToOwned::to_owned),
+        pac_url: None,
     };
     let handle = thread::spawn(move || aether_daemon::run(config));
     Some(Daemon {
@@ -681,6 +682,81 @@ fn daemon_honors_the_destination_directory() {
         record.target_dir,
         Some(target.to_string_lossy().into_owned())
     );
+
+    client.shutdown().unwrap();
+    daemon.shutdown();
+}
+
+#[test]
+fn daemon_resolves_pac_per_url() {
+    let Some(daemon) = spawn_daemon("pac", 1, None) else {
+        eprintln!("fake plugin binary is not built; skipping");
+        return;
+    };
+    let socket = daemon.socket.clone();
+
+    let mut client = connect(&socket);
+    let script = r#"
+        function FindProxyForURL(url, host) {
+            if (host === "proxied.example") { return "PROXY 127.0.0.1:9"; }
+            if (shExpMatch(url, "*socks*")) { return "SOCKS5 127.0.0.1:1080"; }
+            return "DIRECT";
+        }
+    "#;
+    let settings = client
+        .set_settings(json!({"proxy": {"mode": "pac", "script": script}}))
+        .unwrap();
+    assert_eq!(settings["proxy"]["mode"], "pac");
+
+    let proxied = client
+        .resolve_proxy("http://proxied.example/file.bin")
+        .unwrap();
+    assert_eq!(proxied["pac"], true);
+    assert_eq!(proxied["proxy"]["url"], "http://127.0.0.1:9");
+    assert!(proxied["pac_error"].is_null());
+
+    let socks = client
+        .resolve_proxy("https://example.com/socks/list")
+        .unwrap();
+    assert_eq!(socks["proxy"]["url"], "socks5://127.0.0.1:1080");
+
+    // PAC "DIRECT" maps to the explicit no-proxy mode, not to "unset".
+    let direct = client
+        .resolve_proxy("https://example.com/plain.bin")
+        .unwrap();
+    assert_eq!(direct["proxy"]["mode"], "none");
+
+    // Invalid PAC configuration is rejected, the old one stays active.
+    assert!(client
+        .set_settings(json!({"proxy": {"mode": "pac"}}))
+        .is_err());
+    assert!(client
+        .set_settings(json!({"proxy": {"mode": "pac", "url": "http://x/wpad.dat", "script": "x"}}))
+        .is_err());
+    assert_eq!(
+        client.settings().unwrap()["proxy"]["script"].as_str(),
+        Some(script)
+    );
+
+    // A task added under PAC still completes (the fake plugin ignores proxies,
+    // but the daemon must not fail while resolving).
+    let added = client
+        .add("https://example.com/pac-task.bin", None, None)
+        .unwrap();
+    let task_id = added["task_id"].as_str().unwrap().to_string();
+    assert_reaches(&mut client, &task_id, "completed", 300);
+
+    // A broken script resolves to "no proxy override" plus an error for the UI.
+    let broken = client
+        .set_settings(json!({"proxy": {"mode": "pac", "script": "function FindProxyForURL( {"}}))
+        .unwrap();
+    assert_eq!(broken["proxy"]["mode"], "pac");
+    let failed = client.resolve_proxy("http://proxied.example/").unwrap();
+    assert!(failed["proxy"].is_null());
+    assert!(failed["pac_error"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("script"));
 
     client.shutdown().unwrap();
     daemon.shutdown();

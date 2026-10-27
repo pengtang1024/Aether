@@ -62,7 +62,9 @@ impl Plugin for BaiduPlugin {
         command: HostCommand,
     ) -> Result<(), SdkError> {
         match command {
-            HostCommand::Probe { request_id, input } => {
+            HostCommand::Probe {
+                request_id, input, ..
+            } => {
                 let fs_id = parse_fs_id(&input);
                 let token = env_token();
                 let (supported, filename, size, reason) = match (fs_id, token) {

@@ -57,7 +57,9 @@ impl Plugin for SftpPlugin {
         command: HostCommand,
     ) -> Result<(), SdkError> {
         match command {
-            HostCommand::Probe { request_id, input } => {
+            HostCommand::Probe {
+                request_id, input, ..
+            } => {
                 let probe = sftp::probe(&input);
                 ctx.send(&PluginEvent::ProbeResult {
                     request_id,

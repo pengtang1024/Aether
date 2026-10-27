@@ -129,7 +129,9 @@ impl Plugin for BtPlugin {
         command: HostCommand,
     ) -> Result<(), SdkError> {
         match command {
-            HostCommand::Probe { request_id, input } => {
+            HostCommand::Probe {
+                request_id, input, ..
+            } => {
                 let probe = bt::probe(&input);
                 ctx.send(&PluginEvent::ProbeResult {
                     request_id,

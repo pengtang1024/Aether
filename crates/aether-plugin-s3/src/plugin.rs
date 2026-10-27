@@ -80,7 +80,9 @@ impl Plugin for S3Plugin {
         command: HostCommand,
     ) -> Result<(), SdkError> {
         match command {
-            HostCommand::Probe { request_id, input } => {
+            HostCommand::Probe {
+                request_id, input, ..
+            } => {
                 let client = self.client()?;
                 let probe = s3::probe(&client, &input, &serde_json::json!({}));
                 ctx.send(&PluginEvent::ProbeResult {

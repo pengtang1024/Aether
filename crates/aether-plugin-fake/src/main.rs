@@ -41,7 +41,9 @@ impl Plugin for FakePlugin {
         command: HostCommand,
     ) -> Result<(), SdkError> {
         match command {
-            HostCommand::Probe { request_id, input } => {
+            HostCommand::Probe {
+                request_id, input, ..
+            } => {
                 let supported = input.starts_with("http://") || input.starts_with("https://");
                 log(ctx, format!("probe {input}"))?;
                 ctx.send(&PluginEvent::ProbeResult {

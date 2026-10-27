@@ -22,6 +22,7 @@ const CAPABILITIES: &[Capability] = &[Capability::Network, Capability::Filesyste
 
 pub struct HttpPlugin {
     client: Option<reqwest::blocking::Client>,
+    init: Option<Init>,
     tasks: HashMap<String, TaskRecord>,
 }
 
@@ -35,6 +36,7 @@ impl HttpPlugin {
     pub fn new() -> Self {
         Self {
             client: None,
+            init: None,
             tasks: HashMap::new(),
         }
     }
@@ -45,6 +47,27 @@ impl HttpPlugin {
             .ok_or_else(|| SdkError::Protocol("plugin received a command before Init".into()))
     }
 
+    /// Client for one task: a proxy resolved by the Host (PAC) wins over the
+    /// process-level client, so it gets its own connection pool.
+    fn client_with(
+        &self,
+        proxy: &Option<aether_plugin_sdk::ProxyConfig>,
+    ) -> Result<reqwest::blocking::Client, SdkError> {
+        let Some(proxy) = proxy else {
+            return self.client();
+        };
+        if self.init.as_ref().and_then(|init| init.proxy.as_ref()) == Some(proxy) {
+            return self.client();
+        }
+        let mut init = self
+            .init
+            .clone()
+            .ok_or_else(|| SdkError::Protocol("plugin received a command before Init".into()))?;
+        init.proxy = Some(proxy.clone());
+        client::build_client(&init)
+            .map_err(|error| SdkError::Protocol(format!("per-task http client: {error}")))
+    }
+
     fn start(
         &mut self,
         ctx: &mut PluginContext,
@@ -52,7 +75,7 @@ impl HttpPlugin {
         paths: TaskPaths,
         budget: Budget,
     ) -> Result<(), SdkError> {
-        let client = self.client()?;
+        let client = self.client_with(&task.proxy)?;
         let task_id = task.task_id.clone();
         let sender = ctx.sender();
         let control = Arc::new(TaskControl::new());
@@ -104,6 +127,7 @@ impl Plugin for HttpPlugin {
     }
 
     fn on_init(&mut self, _ctx: &mut PluginContext, init: &Init) -> Result<(), SdkError> {
+        self.init = Some(init.clone());
         self.client = Some(
             client::build_client(init)
                 .map_err(|error| SdkError::Protocol(format!("http client init: {error}")))?,
@@ -117,8 +141,12 @@ impl Plugin for HttpPlugin {
         command: HostCommand,
     ) -> Result<(), SdkError> {
         match command {
-            HostCommand::Probe { request_id, input } => {
-                let client = self.client()?;
+            HostCommand::Probe {
+                request_id,
+                input,
+                proxy,
+            } => {
+                let client = self.client_with(&proxy)?;
                 if metalink::is_metalink(&input) {
                     let (supported, filename, size, reason) =
                         match metalink::resolve(&client, &input) {

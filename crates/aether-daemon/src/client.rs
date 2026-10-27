@@ -193,6 +193,11 @@ impl Client {
         Ok(value.get("settings").cloned().unwrap_or(Value::Null))
     }
 
+    /// Ask the daemon which proxy it would use for `url` (PAC diagnostics).
+    pub fn resolve_proxy(&mut self, url: &str) -> Result<Value, DaemonError> {
+        self.call("resolve_proxy", Some(url), None, None, None, json!({}))
+    }
+
     /// Partial settings update: only the keys present change. Pass
     /// `{"proxy": null}` to clear the proxy. Returns the stored settings.
     pub fn set_settings(&mut self, settings: Value) -> Result<Value, DaemonError> {

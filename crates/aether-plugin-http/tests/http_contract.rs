@@ -256,6 +256,17 @@ fn start_task_with_settings(
     checksum: String,
     settings: serde_json::Value,
 ) {
+    start_task_full(plugin, url, staging, checksum, settings, None)
+}
+
+fn start_task_full(
+    plugin: &mut PluginProcess,
+    url: String,
+    staging: PathBuf,
+    checksum: String,
+    settings: serde_json::Value,
+    proxy: Option<ProxyConfig>,
+) {
     plugin
         .start_task(
             TaskSpec {
@@ -269,6 +280,7 @@ fn start_task_with_settings(
                     algorithm: ChecksumAlgorithm::Sha256,
                     value: checksum,
                 }),
+                proxy,
             },
             TaskPaths {
                 staging,
@@ -468,6 +480,7 @@ fn throttles_when_the_budget_limits_speed() {
                     algorithm: ChecksumAlgorithm::Sha256,
                     value: sha256_hex(&data),
                 }),
+                proxy: None,
             },
             TaskPaths {
                 staging,
@@ -529,6 +542,42 @@ fn downloads_through_a_configured_proxy() {
             .all(|target| target == "http://aether-proxy-test.invalid/file.bin"),
         "expected absolute-form proxy targets, got {targets:?}"
     );
+
+    plugin.shutdown().unwrap();
+    fs::remove_dir_all(root).ok();
+}
+
+/// The Host resolves PAC per URL, so a task carries its own proxy; it must win
+/// over the process default (here: none) for both probing and downloading.
+#[test]
+fn honors_a_per_task_proxy_override() {
+    let data = test_data();
+    let proxy = start_server(data.clone());
+    let root = temp_dir("task-proxy");
+    let url = "http://aether-task-proxy.invalid/file.bin";
+    let task_proxy = Some(ProxyConfig::parse(&format!("http://{}", proxy.addr)).unwrap());
+
+    let mut plugin = PluginProcess::spawn(manifest(), &executable(), init(&root)).unwrap();
+    let probe = plugin.probe_with_proxy(url, task_proxy.clone()).unwrap();
+    assert!(probe.supported, "per-task proxy probe failed: {probe:?}");
+
+    let staging = root.join("staging");
+    start_task_full(
+        &mut plugin,
+        url.to_string(),
+        staging.clone(),
+        sha256_hex(&data),
+        serde_json::json!({}),
+        task_proxy,
+    );
+    wait_for_completed(&mut plugin);
+
+    assert_eq!(fs::read(staging.join("file.bin")).unwrap(), data);
+    let targets = proxy.targets.lock().unwrap().clone();
+    assert!(!targets.is_empty(), "proxy saw no requests");
+    assert!(targets
+        .iter()
+        .all(|target| target == "http://aether-task-proxy.invalid/file.bin"));
 
     plugin.shutdown().unwrap();
     fs::remove_dir_all(root).ok();

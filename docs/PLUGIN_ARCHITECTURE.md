@@ -111,6 +111,8 @@ aether-plugin-http/
 ```
 Plugin → Host: Hello { api, plugin_id, version, capabilities }
 Host → Plugin: Init { host_version, data_dir, log_level, proxy, limits }
+// 之后每个任务可覆盖代理：Start { task: TaskSpec { …, proxy: Option<ProxyConfig> } }
+// 探测同样带代理：Probe { input, proxy: Option<ProxyConfig> }
 Plugin → Host: Ready
 ```
 

@@ -194,6 +194,7 @@ fn downloads_via_official_api() {
                     algorithm: ChecksumAlgorithm::Sha256,
                     value: sha256_bytes(&data),
                 }),
+                proxy: None,
             },
             TaskPaths {
                 staging: staging.clone(),

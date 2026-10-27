@@ -56,7 +56,9 @@ impl Plugin for ThunderPlugin {
         command: HostCommand,
     ) -> Result<(), SdkError> {
         match command {
-            HostCommand::Probe { request_id, input } => {
+            HostCommand::Probe {
+                request_id, input, ..
+            } => {
                 let (supported, url, filename, reason) = match decode(&input) {
                     Ok(url) => {
                         let client = aether_plugin_http::client::build_client(init(ctx)?)

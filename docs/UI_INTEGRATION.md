@@ -86,6 +86,13 @@ client.set_settings(json!({
     "proxy": {"mode": "custom", "url": "socks5://127.0.0.1:1080"}
 }))?; // 部分更新；{"proxy": null} 表示恢复默认；校验失败返回错误
 
+// PAC：url 或 script 二选一
+client.set_settings(json!({"proxy": {"mode": "pac", "url": "http://wpad/wpad.dat"}}))?;
+// “测试这个 URL 会走哪个代理”
+let resolved = client.resolve_proxy("https://example.com/file.zip")?;
+// {"proxy": {"mode":"custom","url":"http://p:3128"} | {"mode":"none"} | null,
+//  "pac": true, "pac_error": null}
+
 ```
 
 `add_task` 会 Probe 后选择插件；想强制插件用 `plugin: Some("http")`。

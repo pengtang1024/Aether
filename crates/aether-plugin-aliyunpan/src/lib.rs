@@ -60,7 +60,9 @@ impl Plugin for AliyunPlugin {
         command: HostCommand,
     ) -> Result<(), SdkError> {
         match command {
-            HostCommand::Probe { request_id, input } => {
+            HostCommand::Probe {
+                request_id, input, ..
+            } => {
                 let target = parse_target(&input);
                 let token = env_token();
                 let (supported, filename, reason) = match (target, token) {

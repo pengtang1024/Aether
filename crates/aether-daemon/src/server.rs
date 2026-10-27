@@ -12,9 +12,10 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use aether_host::pac::PacResolver;
 use aether_host::{
     default_plugins_dir, finalize_task, NewTask, PluginEventEnvelope, PluginManager,
-    PluginRegistry, StoredTask, TaskState, TaskStore,
+    PluginRegistry, ProxySetting, StoredTask, TaskState, TaskStore,
 };
 use aether_plugin_sdk::{Budget, HostCommand, PluginEvent, ProxyConfig, TaskPaths, TaskSpec};
 use aether_update::UpdateClient;
@@ -43,6 +44,8 @@ pub struct DaemonConfig {
     pub retry_base_secs: u64,
     /// Proxy spec from `AETHER_PROXY`; overrides the persisted setting.
     pub proxy: Option<String>,
+    /// PAC URL from `AETHER_PAC_URL`; overrides the persisted setting.
+    pub pac_url: Option<String>,
 }
 
 impl Default for DaemonConfig {
@@ -79,6 +82,10 @@ impl Default for DaemonConfig {
                 .ok()
                 .map(|value| value.trim().to_string())
                 .filter(|value| !value.is_empty()),
+            pac_url: std::env::var("AETHER_PAC_URL")
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
         }
     }
 }
@@ -111,6 +118,8 @@ struct State {
     /// Persisted daemon settings (currently just the proxy).
     settings: Settings,
     settings_path: PathBuf,
+    /// PAC evaluator, present only while the proxy setting is `pac`.
+    pac: Option<PacResolver>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -150,10 +159,15 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
     // tests can override a user's choice for one run.
     let settings_path = Settings::path(&config.download_dir);
     let mut settings = Settings::load(&settings_path);
-    if let Some(spec) = &config.proxy {
-        settings.proxy = Some(ProxyConfig::parse(spec).map_err(DaemonError::Protocol)?);
+    if let Some(pac) = &config.pac_url {
+        settings.proxy = Some(ProxySetting::Pac {
+            url: Some(pac.clone()),
+            script: None,
+        });
+    } else if let Some(spec) = &config.proxy {
+        settings.proxy = Some(ProxySetting::parse_spec(spec).map_err(DaemonError::Protocol)?);
     }
-    manager.set_proxy(settings.proxy.clone());
+    manager.set_proxy(init_proxy(settings.proxy.as_ref()));
     let update_status = match (&config.update_url, &config.update_public_key) {
         (Some(url), Some(key)) => {
             let status = Arc::new(Mutex::new(serde_json::json!({
@@ -188,6 +202,7 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
         live: HashSet::new(),
         canceling: HashSet::new(),
         retries: HashMap::new(),
+        pac: settings.proxy.as_ref().and_then(ProxySetting::resolver),
         settings,
         settings_path,
     };
@@ -628,12 +643,21 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
             broadcast(state, json!({"event": "task_deleted", "task_id": task_id}));
             Ok(json!({"task_id": task_id, "deleted": true}))
         }
+        "resolve_proxy" => {
+            let url = request
+                .url
+                .ok_or_else(|| DaemonError::Protocol("resolve_proxy needs url".into()))?;
+            let pac = state.pac.is_some();
+            let proxy = resolve_task_proxy(state, &url, true);
+            let error = state.pac.as_ref().and_then(PacResolver::last_error);
+            Ok(json!({ "url": url, "pac": pac, "proxy": proxy, "pac_error": error }))
+        }
         "get_settings" => Ok(json!({ "settings": state.settings })),
         "set_settings" => {
             // Partial update: only keys that are present change. `proxy: null`
             // clears the proxy and falls back to the plugin default.
             if let Some(proxy) = request.settings.get("proxy") {
-                let proxy: Option<ProxyConfig> =
+                let proxy: Option<ProxySetting> =
                     serde_json::from_value(proxy.clone()).map_err(|error| {
                         DaemonError::Protocol(format!("invalid proxy setting: {error}"))
                     })?;
@@ -642,8 +666,16 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
                 }
                 state.settings.proxy = proxy;
                 // Applies to plugins spawned from now on; running downloads
-                // keep the proxy they started with.
-                state.manager.set_proxy(state.settings.proxy.clone());
+                // keep the proxy they started with. PAC is evaluated per task,
+                // so a fresh resolver is enough.
+                state.pac = state
+                    .settings
+                    .proxy
+                    .as_ref()
+                    .and_then(ProxySetting::resolver);
+                state
+                    .manager
+                    .set_proxy(init_proxy(state.settings.proxy.as_ref()));
             }
             state.settings.save(&state.settings_path)?;
             broadcast(
@@ -665,7 +697,8 @@ fn add_task(state: &mut State, request: Request) -> Result<Value, DaemonError> {
     let url = request
         .url
         .ok_or_else(|| DaemonError::Protocol("add needs url".into()))?;
-    let outcomes = state.manager.probe(&url);
+    let task_proxy = resolve_task_proxy(state, &url, true);
+    let outcomes = state.manager.probe_with_proxy(&url, task_proxy.clone());
     let chosen = match request.plugin.as_deref() {
         Some(id) => outcomes
             .iter()
@@ -732,6 +765,7 @@ fn add_task(state: &mut State, request: Request) -> Result<Value, DaemonError> {
         plugin_state: None,
         expected_size: probe.metadata.as_ref().and_then(|metadata| metadata.size),
         checksum: None,
+        proxy: task_proxy,
     };
 
     let started = match try_launch(state, &plugin_id, task, staging, final_dir.clone()) {
@@ -941,6 +975,13 @@ fn start_from_record(state: &mut State, task: &StoredTask) -> Result<bool, Daemo
         plugin_state: task.plugin_state.clone(),
         expected_size: task.total,
         checksum: None,
+        proxy: None,
+    };
+    // PAC is resolved again for every (re)start: the script may have changed
+    // between attempts. No network I/O here — promotions must not block.
+    let spec = TaskSpec {
+        proxy: resolve_task_proxy(state, &spec.url, false),
+        ..spec
     };
     try_launch(state, &task.plugin_id, spec, staging, final_dir)
 }
@@ -1077,6 +1118,25 @@ fn recover_tasks(state: &mut State) {
                 let _ = state.store.set_state(&task.id, TaskState::Queued);
             }
             Err(error) => eprintln!("aether-daemon: cannot resume task {}: {error}", task.id),
+        }
+    }
+}
+
+/// The `Init::proxy` for plugin processes: PAC hands plugins the environment
+/// default, because the real proxy is resolved per task.
+fn init_proxy(proxy: Option<&ProxySetting>) -> Option<ProxyConfig> {
+    proxy.and_then(ProxySetting::init_config)
+}
+
+/// Resolve the proxy for one task. Errors are logged and swallowed: a broken
+/// PAC must not stop downloads, it just falls back to the process default.
+fn resolve_task_proxy(state: &mut State, url: &str, allow_fetch: bool) -> Option<ProxyConfig> {
+    let pac = state.pac.as_mut()?;
+    match pac.resolve(url, allow_fetch) {
+        Ok(proxy) => Some(proxy),
+        Err(error) => {
+            eprintln!("aether-daemon: pac for {url}: {error}");
+            None
         }
     }
 }

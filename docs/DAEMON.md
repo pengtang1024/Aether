@@ -43,6 +43,7 @@ aether-daemon
 | `logs` | `task_id`, `settings.limit?` | 任务日志（默认 200 条，上限 1000，旧→新） |
 | `pause` / `resume` / `cancel` | `task_id` | 生命周期 |
 | `delete` | `task_id` | 删除终态任务（保留已下载文件） |
+| `resolve_proxy` | `url` | PAC 诊断：返回该 URL 会用的代理与 `pac_error` |
 | `get_settings` | — | 返回 `{"settings":{"proxy":…}}` |
 | `set_settings` | `settings.proxy?` | 部分更新设置并落盘，广播 `settings_changed` |
 | `shutdown` | — | 停止 daemon |
@@ -176,6 +177,28 @@ CLI 对等命令：`aether-cli logs <task-id> --dir <dir> [--limit <n>]`（直�
   UI，旧设置保持不变）。
 - 凭据只存在本机 settings/SQLite 和进程 `Init` 里，不写日志；HTTP 插件只把
   `username/password` 交给 reqwest 的 `Proxy::basic_auth`。
+
+## 5.7 自动代理（PAC）
+
+`mode: "pac"` 时 Host 用 `rquickjs` 求值 `FindProxyForURL(url, host)`：
+
+```json
+{"proxy":{"mode":"pac","url":"http://wpad.corp/wpad.dat"}}
+{"proxy":{"mode":"pac","script":"function FindProxyForURL(u,h){return h.endsWith('.corp') ? 'PROXY proxy.corp:3128' : 'DIRECT';}"}}
+```
+
+- `url`（`http(s)://`、`file://` 或本地路径）与 `script` 二选一。
+- 沙箱：16 MiB 堆、300 ms 墙钟、无文件/网络/主环境 API；`dnsResolve` 返回 null、
+  `isResolvable` 为 false，脚本无法让 daemon 做任意 DNS。
+- 脚本缓存 30 分钟；刷新失败保留旧脚本并记录 `pac_error`，不会静默直连。
+- 只取返回链的**第一条**（`PROXY a; DIRECT` → a）；reqwest 不支持代理间自动切换。
+- 每任务求值：`add` 时把结果写进 `TaskSpec.proxy`（探测也用同一代理）；重启、重试、
+  队列提升时重新求值但不触发网络 I/O（用缓存脚本）。
+- 生效范围：HTTP 与 media 插件按任务代理建客户端；其余插件仍用进程级 `Init.proxy`
+  （PAC 模式下该值设为 `system`，作为解析失败的回退）。
+- `AETHER_PAC_URL` 单次运行覆盖，不落盘；`--pac-url` 同义。
+- 诊断：`{"method":"resolve_proxy","url":"https://x"}` →
+  `{"proxy":{…}|null,"pac":true,"pac_error":null}`。
 
 ## 6. 接管系统下载还差什么
 

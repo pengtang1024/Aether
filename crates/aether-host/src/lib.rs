@@ -4,6 +4,8 @@ pub mod abi;
 pub mod error;
 pub mod finalize;
 pub mod manager;
+pub mod pac;
+pub mod proxy;
 pub mod registry;
 pub mod store;
 
@@ -11,6 +13,7 @@ pub use abi::AbiPlugin;
 pub use error::HostError;
 pub use finalize::finalize_task;
 pub use manager::{PluginEventEnvelope, PluginManager, ProbeOutcome};
+pub use proxy::ProxySetting;
 pub use registry::{PluginEntry, PluginRegistry};
 pub use store::{NewTask, StoreError, StoredFile, StoredTask, TaskLog, TaskState, TaskStore};
 

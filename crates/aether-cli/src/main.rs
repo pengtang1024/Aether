@@ -165,6 +165,7 @@ fn download(url: &str, output: &Path, plugins: &Path, forced: Option<&str>) -> R
         plugin_state: None,
         expected_size: probe.metadata.as_ref().and_then(|metadata| metadata.size),
         checksum: None,
+        proxy: None,
     };
     // Store the destination so `resume` knows where the task belongs even if
     // the user later runs it with a different --dir.
@@ -232,6 +233,7 @@ fn resume(task_id: &str, output: &Path, plugins: &Path) -> Result<(), String> {
         plugin_state: stored.plugin_state.clone(),
         expected_size: stored.total,
         checksum: None,
+        proxy: None,
     };
 
     println!("resume {task_id} via {}", stored.plugin_id);

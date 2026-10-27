@@ -82,6 +82,7 @@ fn fake_plugin_handshake_probe_and_task() {
         plugin_state: None,
         expected_size: Some(1024),
         checksum: None,
+        proxy: None,
     };
     plugin
         .start_task(

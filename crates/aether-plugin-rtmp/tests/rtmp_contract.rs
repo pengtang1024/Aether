@@ -102,6 +102,7 @@ fn captures_with_fake_ffmpeg() {
                     algorithm: ChecksumAlgorithm::Sha256,
                     value: sha256_bytes(&expected),
                 }),
+                proxy: None,
             },
             TaskPaths {
                 staging: staging.clone(),

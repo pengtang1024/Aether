@@ -67,6 +67,7 @@ fn spawn_daemon(root: &PathBuf) -> PathBuf {
         retry_max: 0,
         retry_base_secs: 30,
         proxy: None,
+        pac_url: None,
     };
     thread::spawn(move || run(config));
 

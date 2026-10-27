@@ -180,6 +180,7 @@ fn resolves_and_downloads_metalink() {
                 plugin_state: None,
                 expected_size: None,
                 checksum: None,
+                proxy: None,
             },
             TaskPaths {
                 staging: staging.clone(),

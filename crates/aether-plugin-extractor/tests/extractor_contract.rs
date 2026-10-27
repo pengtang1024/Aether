@@ -112,6 +112,7 @@ fn probes_and_downloads_with_fake_ytdlp() {
                     algorithm: ChecksumAlgorithm::Sha256,
                     value: sha256_bytes(&expected),
                 }),
+                proxy: None,
             },
             TaskPaths {
                 staging: staging.clone(),

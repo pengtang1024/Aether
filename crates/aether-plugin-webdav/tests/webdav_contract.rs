@@ -177,6 +177,7 @@ fn downloads_via_webdav_scheme() {
                     algorithm: ChecksumAlgorithm::Sha256,
                     value: sha256_bytes(&data),
                 }),
+                proxy: None,
             },
             TaskPaths {
                 staging: staging.clone(),

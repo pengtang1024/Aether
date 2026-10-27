@@ -48,6 +48,12 @@ The plugin crates use `serde`, `serde_json`, `rmp-serde`, `semver` and
 `thiserror`. They are permissively licensed (MIT and/or Apache-2.0) and are
 enumerated with exact versions in `Cargo.lock`.
 
+The Host bundles **QuickJS** through the `rquickjs` crate to evaluate PAC
+scripts (daemon only, not linked into plugins or the UI). QuickJS and
+`rquickjs`/`rquickjs-sys` are MIT-licensed, copyright Fabrice Bellard and the
+rquickjs contributors; the bundled C sources are compiled into `aether-daemon`.
+Prefer updating `rquickjs` over patching the vendored QuickJS sources.
+
 ## Distribution requirements
 
 - Keep `LICENSE`, this file and `LICENSES/Slint-Royalty-free-2.0.md` in source

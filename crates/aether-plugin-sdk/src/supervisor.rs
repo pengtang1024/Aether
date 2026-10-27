@@ -12,7 +12,8 @@ use crate::error::SdkError;
 use crate::ipc::{self, IpcError};
 use crate::manifest::PluginManifest;
 use crate::protocol::{
-    Budget, HostCommand, Init, PluginEvent, ProbeResult, TaskPaths, TaskSpec, API_VERSION,
+    Budget, HostCommand, Init, PluginEvent, ProbeResult, ProxyConfig, TaskPaths, TaskSpec,
+    API_VERSION,
 };
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -152,10 +153,20 @@ impl PluginProcess {
 
     /// Ask the plugin whether it supports `input`.
     pub fn probe(&mut self, input: &str) -> Result<ProbeResult, SdkError> {
+        self.probe_with_proxy(input, None)
+    }
+
+    /// Probe with the Host-resolved proxy for this input (PAC).
+    pub fn probe_with_proxy(
+        &mut self,
+        input: &str,
+        proxy: Option<ProxyConfig>,
+    ) -> Result<ProbeResult, SdkError> {
         let request_id = self.next_request_id();
         self.send(&HostCommand::Probe {
             request_id,
             input: input.to_string(),
+            proxy,
         })?;
 
         let deadline = Instant::now() + PROBE_TIMEOUT;

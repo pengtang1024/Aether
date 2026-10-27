@@ -46,6 +46,14 @@ versioning; this is a UI mockup, so 0.x versions may change visual structure.
 - Completed downloads now land directly in the download directory (previously
   buried under `.aether/<task>/final/`), with automatic `-1`, `-2`… renaming on
   filename conflicts instead of a hard error.
+- PAC (auto-proxy): the Host evaluates `FindProxyForURL` in a `rquickjs`
+  sandbox (16 MiB heap, 300 ms deadline, no host APIs) from a script URL,
+  `file://`/local path or inline script, caches it for 30 minutes and keeps the
+  last good copy when a refresh fails. The resolved proxy travels per task
+  (`TaskSpec.proxy`, probe included); HTTP and media plugins build a per-task
+  client when it differs from the process default. New daemon method
+  `resolve_proxy` and setting `{"mode":"pac", …}`; `AETHER_PAC_URL`/`--pac-url`.
+  Only the first directive of a PAC result is used.
 - Per-task destination directory: `add` now honors the `dir` field (absolute
   paths as-is, relative paths confined to the download root), reports it back
   as `dir`, and stores non-default destinations in a new `tasks.target_dir`

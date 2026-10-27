@@ -76,7 +76,9 @@ impl Plugin for RtmpPlugin {
     ) -> Result<(), SdkError> {
         use aether_plugin_sdk::HostCommand;
         match command {
-            HostCommand::Probe { request_id, input } => {
+            HostCommand::Probe {
+                request_id, input, ..
+            } => {
                 let supported = input.starts_with("rtmp://")
                     || input.starts_with("rtmps://")
                     || input.starts_with("rtsp://");

@@ -55,7 +55,9 @@ impl Plugin for WebdavPlugin {
         command: HostCommand,
     ) -> Result<(), SdkError> {
         match command {
-            HostCommand::Probe { request_id, input } => {
+            HostCommand::Probe {
+                request_id, input, ..
+            } => {
                 let target = match parse_target(&input) {
                     Ok(target) => target,
                     Err(error) => {

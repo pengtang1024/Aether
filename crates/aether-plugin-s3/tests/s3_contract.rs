@@ -189,6 +189,7 @@ fn downloads_s3_object_with_sigv4_headers() {
                     algorithm: ChecksumAlgorithm::Sha256,
                     value: sha256_bytes(&data),
                 }),
+                proxy: None,
             },
             TaskPaths {
                 staging: staging.clone(),

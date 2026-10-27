@@ -70,7 +70,9 @@ impl Plugin for ExtractorPlugin {
         command: HostCommand,
     ) -> Result<(), SdkError> {
         match command {
-            HostCommand::Probe { request_id, input } => {
+            HostCommand::Probe {
+                request_id, input, ..
+            } => {
                 let executable = std::env::var("AETHER_YTDLP").unwrap_or_else(|_| "yt-dlp".into());
                 let probe = extractor::probe(&input, &executable);
                 ctx.send(&PluginEvent::ProbeResult {

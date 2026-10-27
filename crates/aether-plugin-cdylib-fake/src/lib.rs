@@ -37,7 +37,9 @@ impl Plugin for AbiFake {
         command: HostCommand,
     ) -> Result<(), SdkError> {
         match command {
-            HostCommand::Probe { request_id, input } => {
+            HostCommand::Probe {
+                request_id, input, ..
+            } => {
                 let supported = input.starts_with("http://") || input.starts_with("https://");
                 ctx.send(&PluginEvent::ProbeResult {
                     request_id,

@@ -200,6 +200,7 @@ fn start_task(plugin: &mut PluginProcess, url: String, staging: PathBuf, checksu
                     algorithm: ChecksumAlgorithm::Sha256,
                     value: checksum,
                 }),
+                proxy: None,
             },
             TaskPaths {
                 staging,

@@ -24,6 +24,16 @@ fn main() -> std::process::ExitCode {
             config.socket = PathBuf::from(value);
         }
     }
+    if let Some(index) = args.iter().position(|arg| arg == "--proxy") {
+        if let Some(value) = args.get(index + 1) {
+            config.proxy = Some(value.clone());
+        }
+    }
+    if let Some(index) = args.iter().position(|arg| arg == "--pac-url") {
+        if let Some(value) = args.get(index + 1) {
+            config.pac_url = Some(value.clone());
+        }
+    }
     if let Some(index) = args.iter().position(|arg| arg == "--update-url") {
         if let Some(value) = args.get(index + 1) {
             config.update_url = Some(value.clone());

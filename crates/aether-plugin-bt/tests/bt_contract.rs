@@ -121,6 +121,7 @@ fn start_task(
                     algorithm: ChecksumAlgorithm::Sha256,
                     value: sha256_bytes(expected),
                 }),
+                proxy: None,
             },
             TaskPaths {
                 staging,

@@ -7,7 +7,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use aether_plugin_sdk::ProxyConfig;
+use aether_host::ProxySetting;
 use serde::{Deserialize, Serialize};
 
 use crate::error::DaemonError;
@@ -17,7 +17,7 @@ use crate::error::DaemonError;
 pub struct Settings {
     /// `None` keeps the plugin default (honor the environment).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub proxy: Option<ProxyConfig>,
+    pub proxy: Option<ProxySetting>,
 }
 
 impl Settings {
@@ -74,7 +74,6 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aether_plugin_sdk::ProxyMode;
 
     fn temp_path(label: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
@@ -87,7 +86,7 @@ mod tests {
     fn roundtrips_and_restricts_permissions() {
         let path = temp_path("roundtrip");
         let settings = Settings {
-            proxy: Some(ProxyConfig::parse("http://user:secret@10.0.0.1:3128").unwrap()),
+            proxy: Some(ProxySetting::parse_spec("http://user:secret@10.0.0.1:3128").unwrap()),
         };
         settings.save(&path).unwrap();
         assert_eq!(Settings::load(&path), settings);
@@ -119,16 +118,27 @@ mod tests {
     #[test]
     fn serializes_proxy_mode_lowercase() {
         let settings = Settings {
-            proxy: Some(ProxyConfig::system()),
+            proxy: Some(ProxySetting::System),
         };
         let raw = serde_json::to_string(&settings).unwrap();
         assert_eq!(raw, r#"{"proxy":{"mode":"system"}}"#);
         assert_eq!(
-            serde_json::from_str::<Settings>(&raw)
-                .unwrap()
-                .proxy
-                .map(|proxy| proxy.mode),
-            Some(ProxyMode::System)
+            serde_json::from_str::<Settings>(&raw).unwrap().proxy,
+            Some(ProxySetting::System)
         );
+    }
+
+    #[test]
+    fn persists_pac_settings() {
+        let path = temp_path("pac");
+        let settings = Settings {
+            proxy: Some(ProxySetting::Pac {
+                url: Some("http://wpad.example/wpad.dat".into()),
+                script: None,
+            }),
+        };
+        settings.save(&path).unwrap();
+        assert_eq!(Settings::load(&path), settings);
+        fs::remove_file(&path).ok();
     }
 }

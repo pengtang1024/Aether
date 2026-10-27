@@ -73,7 +73,9 @@ impl Plugin for FtpPlugin {
         command: HostCommand,
     ) -> Result<(), SdkError> {
         match command {
-            HostCommand::Probe { request_id, input } => {
+            HostCommand::Probe {
+                request_id, input, ..
+            } => {
                 let probe = ftp::probe(&input);
                 ctx.send(&PluginEvent::ProbeResult {
                     request_id,

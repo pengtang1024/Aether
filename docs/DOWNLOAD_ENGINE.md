@@ -16,7 +16,7 @@
 | 真实 HTTP/HTTPS 下载 | ❌ 未实现（模拟） | Phase 1 |
 | 分段/多连接/断点续传 | ❌ 未实现 | Phase 1 |
 | 文件校验/原子落盘 | ❌ 未实现 | Phase 1 |
-| 真实任务调度/限速/代理 | ⚠️ 部分：daemon 并发上限 + FIFO 队列、任务级 token-bucket 限速、自定义代理已实现；PAC 未实现 | Phase 2 |
+| 真实任务调度/限速/代理 | ✅：daemon 并发上限 + FIFO 队列、任务级 token-bucket 限速、系统/手动/PAC 代理 | Phase 2 |
 | BitTorrent / Magnet | ❌ 未实现 | Phase 3 |
 | FTP/FTPS | ❌ 未实现 | Phase 4 |
 | HLS/DASH | ❌ 未实现 | Phase 4 |
@@ -438,15 +438,20 @@ CREATE INDEX segments_pending ON segments (task_id, state);
 PAC 由 **Host 网络层**统一解析，插件只收到最终代理链：
 
 - 模式：系统代理 / 手动 / PAC URL / PAC 文件 / WPAD。
-- 求值：嵌入式 JS 引擎（候选 `rquickjs`，QuickJS）执行 `FindProxyForURL(url, host)`；
-  提供标准函数 `dnsDomainIs`、`shExpMatch`、`isInNet`、`dnsResolve`、`myIpAddress`、
-  `isPlainHostName` 等；脚本无文件/网络权限，50 ms 超时，超过限制回退直连。
-- 结果解析为 `PROXY host:port; SOCKS5 host:port; DIRECT` 优先级链；支持代理认证。
-- 缓存：按 URL/host 缓存结果，带 TTL；PAC 内容变化/网络切换/用户刷新时失效。
-- 系统 PAC：Windows WinHTTP/WPAD、macOS SystemConfiguration；Linux 读环境/桌面设置，
-  也可手动填 PAC URL。
-- 插件通过 `TaskContext.proxy_chain` 获取解析结果；不在插件里执行 PAC。
-- UI：设置页可填 PAC URL/文件、测试“当前 URL 使用的代理”、查看最近解析日志。
+- 求值：`rquickjs`（QuickJS）执行 `FindProxyForURL(url, host)`，内存上限 16 MiB、
+  墙钟 300 ms；脚本没有文件/网络/主环境权限，`dnsResolve` 返回 null、
+  `isResolvable` 为 false（避免脚本诱导 daemon 做任意 DNS）。
+  已实现 `isPlainHostName`、`dnsDomainIs`、`localHostOrDomainIs`、`dnsDomainLevels`、
+  `shExpMatch`、`weekdayRange`、`timeRange`、`dateRange`、`alert`。
+- 结果解析为 `PROXY host:port; SOCKS5 host:port; DIRECT`，Host 取**第一条**指令
+  （reqwest 无法在代理之间自动切换，链式 failover 未实现）。
+- 缓存：脚本按 TTL（30 分钟）缓存；刷新失败保留旧脚本，绝不因 WPAD 不可达而直连。
+- 分发：Host 在 `add` 时按 URL 求值，把结果放进 `TaskSpec.proxy`；`Probe` 也带
+  同一代理，保证探测和下载走同一条路。插件不再需要理解 PAC。
+- 系统 PAC：Linux 手动填 PAC URL/文件（`AETHER_PAC_URL` 或设置页）；WinHTTP/
+  macOS SystemConfiguration 自动发现仍在 P2。
+- UI：设置页填 PAC URL/文件，用 daemon `resolve_proxy` 测“当前 URL 使用的代理”，
+  解析失败原因见 `pac_error`。
 
 ## 12. 错误模型与重试
 

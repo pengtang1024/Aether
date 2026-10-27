@@ -179,6 +179,7 @@ fn downloads_decoded_thunder_link() {
                     algorithm: ChecksumAlgorithm::Sha256,
                     value: sha256_bytes(&data),
                 }),
+                proxy: None,
             },
             TaskPaths {
                 staging: staging.clone(),
