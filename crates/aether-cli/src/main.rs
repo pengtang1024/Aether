@@ -8,8 +8,8 @@ use std::process::ExitCode;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use aether_host::{
-    default_plugins_dir, finalize_task, NewTask, PluginManager, PluginRegistry, TaskState,
-    TaskStore,
+    default_plugins_dir, finalize_task, NewTask, PluginManager, PluginRegistry, StoredTask,
+    TaskLog, TaskState, TaskStore,
 };
 use aether_plugin_sdk::{Budget, PluginEvent, TaskPaths, TaskSpec};
 
@@ -78,6 +78,8 @@ fn run() -> Result<(), String> {
             let forced = option(&args, "--plugin");
             download(url, Path::new(&output), &root, forced.as_deref())
         }
+        #[cfg(unix)]
+        "remote" => remote(&args[1..]),
         #[cfg(unix)]
         "import" => {
             let source = args
@@ -347,7 +349,12 @@ fn run_task(
 fn list_tasks(output: &Path) -> Result<(), String> {
     let store = TaskStore::open(output.join(".aether").join("aether.db"))
         .map_err(|error| error.to_string())?;
-    for task in store.list_tasks(50).map_err(|error| error.to_string())? {
+    print_tasks(&store.list_tasks(50).map_err(|error| error.to_string())?);
+    Ok(())
+}
+
+fn print_tasks(tasks: &[StoredTask]) {
+    for task in tasks {
         let progress = task
             .total
             .map(|total| format!("{:.1}%", task.downloaded as f64 / total as f64 * 100.0))
@@ -364,7 +371,6 @@ fn list_tasks(output: &Path) -> Result<(), String> {
             println!("  -> {} ({} B)", file.relative_path, file.size);
         }
     }
-    Ok(())
 }
 
 /// Print a task's log lines, oldest first. Timestamps are UTC (the CLI does
@@ -376,13 +382,18 @@ fn show_logs(output: &Path, task_id: &str, limit: usize) -> Result<(), String> {
         .task(task_id)
         .map_err(|error| error.to_string())?
         .ok_or_else(|| format!("task {task_id} not found"))?;
-    for log in store
-        .logs(task_id, limit)
-        .map_err(|error| error.to_string())?
-    {
+    print_logs(
+        &store
+            .logs(task_id, limit)
+            .map_err(|error| error.to_string())?,
+    );
+    Ok(())
+}
+
+fn print_logs(logs: &[TaskLog]) {
+    for log in logs {
         println!("{} {:<5} {}", clock(log.created_at), log.level, log.message);
     }
-    Ok(())
 }
 
 /// `HH:MM:SS` in UTC from an epoch-millisecond timestamp.
@@ -421,9 +432,184 @@ fn option(args: &[String], name: &str) -> Option<String> {
 
 fn usage() -> Result<(), String> {
     Err(format!(
-        "usage:\n  aether-cli list --plugins <dir>\n  aether-cli probe <url> --plugins <dir>\n  aether-cli download <url> --dir <dir> --plugins <dir> [--plugin <id>]\n  aether-cli tasks --dir <dir>\n  aether-cli logs <task-id> --dir <dir> [--limit <n>]\n  aether-cli resume <task-id> --dir <dir> --plugins <dir>{}",
+        "usage:\n  aether-cli list --plugins <dir>\n  aether-cli probe <url> --plugins <dir>\n  aether-cli download <url> --dir <dir> --plugins <dir> [--plugin <id>]\n  aether-cli tasks --dir <dir>\n  aether-cli logs <task-id> --dir <dir> [--limit <n>]\n  aether-cli resume <task-id> --dir <dir> --plugins <dir>{}{}",
         import_usage(),
+        remote_usage(),
     ))
+}
+
+/// Talk to a running daemon: the headless equivalent of the desktop UI.
+#[cfg(unix)]
+fn remote(args: &[String]) -> Result<(), String> {
+    use aether_daemon::Client;
+    use serde_json::{json, Value};
+
+    let Some(command) = args.first().map(String::as_str) else {
+        return Err(format!("usage:{}", remote_usage()));
+    };
+    let socket = option(args, "--socket")
+        .map(PathBuf::from)
+        .unwrap_or_else(aether_daemon::client::default_socket);
+    let target = || {
+        args.get(1)
+            .filter(|value| !value.starts_with("--"))
+            .cloned()
+            .ok_or_else(|| format!("remote {command} needs a task id"))
+    };
+    let json_output = args.iter().any(|arg| arg == "--json");
+    let mut client = Client::connect(&socket)
+        .map_err(|error| format!("cannot reach the daemon at {}: {error}", socket.display()))?;
+
+    match command {
+        "ping" => {
+            client.ping().map_err(|error| error.to_string())?;
+            println!("ok {}", socket.display());
+        }
+        "add" => {
+            let url = args
+                .get(1)
+                .filter(|value| !value.starts_with("--"))
+                .ok_or("remote add needs a URL")?;
+            let dir = option(args, "--dir").or_else(|| option(args, "--out"));
+            let settings = match option(args, "--settings") {
+                Some(raw) => serde_json::from_str(&raw)
+                    .map_err(|error| format!("--settings must be JSON: {error}"))?,
+                None => json!({}),
+            };
+            let added = client
+                .add_task(
+                    url,
+                    dir.as_deref().map(Path::new),
+                    option(args, "--plugin").as_deref(),
+                    settings,
+                )
+                .map_err(|error| error.to_string())?;
+            if json_output {
+                println!(
+                    "{}",
+                    serde_json::to_string(&json!({
+                        "task_id": added.task_id,
+                        "plugin_id": added.plugin_id,
+                        "queued": added.queued,
+                        "dir": added.dir,
+                    }))
+                    .map_err(|error| error.to_string())?
+                );
+            } else {
+                println!(
+                    "{} {} queued={} dir={}",
+                    added.task_id,
+                    added.plugin_id,
+                    added.queued,
+                    added.dir.unwrap_or_default()
+                );
+            }
+        }
+        "list" => {
+            let tasks = client.list_tasks().map_err(|error| error.to_string())?;
+            if json_output {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&tasks).map_err(|error| error.to_string())?
+                );
+            } else {
+                print_tasks(&tasks);
+            }
+        }
+        "get" => {
+            let task_id = target()?;
+            let value = client.task(&task_id).map_err(|error| error.to_string())?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&value).map_err(|error| error.to_string())?
+            );
+        }
+        "logs" => {
+            let task_id = target()?;
+            let limit = option(args, "--limit")
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(50);
+            let logs = client
+                .logs(&task_id, limit)
+                .map_err(|error| error.to_string())?;
+            if json_output {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&logs).map_err(|error| error.to_string())?
+                );
+            } else {
+                print_logs(&logs);
+            }
+        }
+        "pause" | "resume" | "cancel" | "rm" => {
+            let task_id = target()?;
+            let value = match command {
+                "pause" => client.pause(&task_id),
+                "resume" => client.resume(&task_id),
+                "cancel" => client.cancel(&task_id),
+                _ => client.delete(&task_id),
+            }
+            .map_err(|error| error.to_string())?;
+            println!("{value}");
+        }
+        "settings" => {
+            let settings = client.settings().map_err(|error| error.to_string())?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&settings).map_err(|error| error.to_string())?
+            );
+        }
+        "set-settings" => {
+            let raw = args
+                .get(1)
+                .filter(|value| !value.starts_with("--"))
+                .ok_or("remote set-settings needs a JSON object")?;
+            let value: Value = serde_json::from_str(raw)
+                .map_err(|error| format!("settings must be JSON: {error}"))?;
+            let stored = client
+                .set_settings(value)
+                .map_err(|error| error.to_string())?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&stored).map_err(|error| error.to_string())?
+            );
+        }
+        "resolve-proxy" => {
+            let url = args
+                .get(1)
+                .filter(|value| !value.starts_with("--"))
+                .ok_or("remote resolve-proxy needs a URL")?;
+            let resolved = client
+                .resolve_proxy(url)
+                .map_err(|error| error.to_string())?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&resolved).map_err(|error| error.to_string())?
+            );
+        }
+        "watch" => {
+            // One JSON event per line; stop with Ctrl-C.
+            let subscription = client.subscribe().map_err(|error| error.to_string())?;
+            loop {
+                if let Ok(event) = subscription.recv_timeout(Duration::from_secs(30)) {
+                    println!("{event}");
+                }
+            }
+        }
+        other => return Err(format!("unknown remote command {other}")),
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn remote_usage() -> &'static str {
+    "\n  aether-cli remote <command> [--socket <path>]\n    ping | list [--json]\n    add <url> [--plugin <id>] [--dir <dir>] [--settings <json>] [--json]\n    get <task-id> | logs <task-id> [--limit <n>] [--json]\n    pause|resume|cancel|rm <task-id>\n    settings | set-settings <json> | resolve-proxy <url> | watch"
+}
+
+#[cfg(not(unix))]
+fn remote_usage() -> &'static str {
+    // The daemon is Unix-socket only.
+    ""
 }
 
 #[cfg(unix)]

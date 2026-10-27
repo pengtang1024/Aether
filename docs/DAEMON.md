@@ -72,6 +72,28 @@ journalctl --user -u aether-daemon -f
 unit 文件：`packaging/aether-daemon.service`，安装到
 `/usr/lib/systemd/user/aether-daemon.service`。
 
+### 3.1 无 GUI 控制面（`aether-cli remote`）
+
+不依赖桌面 UI 也能完整驱动 daemon（默认连 `$XDG_RUNTIME_DIR/aether/daemon.sock`，
+`--socket` 覆盖）：
+
+```bash
+aether-cli remote ping
+aether-cli remote add https://example.com/file.zip [--dir ~/Downloads/x] [--plugin http]
+aether-cli remote list [--json]
+aether-cli remote get <task-id> | logs <task-id> [--limit 50] [--json]
+aether-cli remote pause|resume|cancel|rm <task-id>
+aether-cli remote settings | set-settings '{"proxy":{"mode":"pac","url":"..."}}'
+aether-cli remote resolve-proxy https://example.com/file.zip
+aether-cli remote watch        # 每行一条 JSON 事件，Ctrl-C 退出
+```
+
+- `add` 的 `--settings` 是插件设置 JSON（如 `{"connections":8}`）。
+- `rm` 只接受终态任务，和 UI 的删除语义一致。
+- `watch` 输出即 `subscribe` 事件流，便于脚本/排错；不要把它当长期日志。
+- 本地模式（`tasks`/`logs`/`resume`）直接读 SQLite、自己拉起插件，适合单次下载；
+  `remote` 走常驻 daemon，任务在后台继续，推荐日常使用。
+
 ## 4. 恢复与状态
 
 - 启动时 `recoverable_tasks()` 读取 `queued/running/paused` 任务；running/queued

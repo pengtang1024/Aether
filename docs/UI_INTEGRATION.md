@@ -66,7 +66,7 @@ let subscription = Client::connect(&socket)?.subscribe()?;
 2. Slint 用 `slint::Timer` 每 100–250 ms 取队列，更新 `VecModel<TaskRow>`。
 3. 不要在 Slint UI 线程里做 socket/磁盘/插件调用。
 
-## 4. 操作
+## 4. 操作（`aether-cli remote` 是同一套 API 的终端入口）
 
 ```rust
 client.add_task(url, None, None, json!({}))?; // -> AddResult { task_id, plugin_id, queued, dir }

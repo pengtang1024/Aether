@@ -7,6 +7,9 @@ versioning; 0.x releases may still change structure.
 
 ### Added
 
+- `aether-cli remote <ping|add|list|get|logs|pause|resume|cancel|rm|settings|
+  set-settings|resolve-proxy|watch>`: the whole daemon API from a terminal, so
+  headless installs no longer need the UI to control tasks.
 - `system` proxy mode now reads the Linux desktop configuration: GNOME
   (`gsettings`, manual and automatic/PAC modes) and KDE (`kioslaverc`), with
   proxy environment variables staying authoritative. Detection is cached for
