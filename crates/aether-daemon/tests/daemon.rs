@@ -261,9 +261,10 @@ fn daemon_queues_tasks_beyond_max_concurrent() {
     // The held task must not have written anything yet.
     assert!(!final_file(&daemon.root, &second_id).exists());
 
-    // When the first task completes the queued one is promoted FIFO.
-    assert!(wait_for_state(&mut client, &second_id, "running", 200));
-    assert!(wait_for_state(&mut client, &second_id, "completed", 100));
+    // When the first task completes the queued one is promoted FIFO. The
+    // no-hold fake task can start and finish between two polls, so completion
+    // is the observable proof that the promotion happened.
+    assert_reaches(&mut client, &second_id, "completed", 300);
     assert_eq!(
         fs::read(final_file(&daemon.root, &second_id))
             .unwrap()
