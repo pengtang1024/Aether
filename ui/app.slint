@@ -51,6 +51,10 @@ export component AppWindow inherits Window {
     in-out property <string> support-hint: "";
     in-out property <bool> system-dark: true;
     in-out property <bool> dialog-open: false;
+    // Set from Rust: the daemon's download root, used as the dialog default.
+    in-out property <string> default-download-dir: "";
+    // Set from Rust: `env!("CARGO_PKG_VERSION")`.
+    in-out property <string> app-version: "";
     in-out property <bool> drawer-open: false;
     in-out property <bool> flow-enabled: true;
     in-out property <float> drift: 0;
@@ -343,6 +347,7 @@ export component AppWindow inherits Window {
                     if root.page == 2: SettingsPage {
                         width: 100%;
                         height: 100%;
+                        app-version: root.app-version;
                         tab <=> root.settings-tab;
                         theme-mode <=> root.theme-mode;
                         settings-changed(k, v) => { root.settings-changed(k, v); }
@@ -406,6 +411,7 @@ export component AppWindow inherits Window {
         width: 100%;
         height: 100%;
         open: root.dialog-open;
+        default-dir: root.default-download-dir;
         confirmed(url, path, seg, limit, note) => {
             root.dialog-open = false;
             root.new-download(url, path, seg, limit, note);

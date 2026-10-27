@@ -489,6 +489,7 @@ component DownloadPanel inherits Rectangle {
 }
 
 component NetworkPanel inherits Rectangle {
+    in property <string> app-version: "";
     callback changed(string, string);
 
     VerticalLayout {
@@ -561,7 +562,7 @@ component NetworkPanel inherits Rectangle {
                 title: "User-Agent";
                 description: "留空使用 Aether 默认值";
                 LineEdit {
-                    text: "Aether/0.1";
+                    text: "Aether/" + root.app-version;
                     min-width: Aether.field-md;
                     max-width: Aether.field-md;
                     edited => { root.changed("user-agent", self.text); }
@@ -1487,6 +1488,7 @@ component AdvancedPanel inherits Rectangle {
 }
 
 component AboutPanel inherits Rectangle {
+    in property <string> app-version: "";
     callback support-action(string);
 
     VerticalLayout {
@@ -1520,7 +1522,7 @@ component AboutPanel inherits Rectangle {
                     alignment: center;
 
                     Text {
-                        text: "Aether 0.1.0";
+                        text: "Aether " + root.app-version;
                         color: Aether.on-surface;
                         font-size: Aether.text-title;
                         font-weight: Aether.weight-medium;
@@ -1607,6 +1609,8 @@ component AboutPanel inherits Rectangle {
 }
 
 export component SettingsPage inherits Rectangle {
+    // Set by the window from `env!("CARGO_PKG_VERSION")`.
+    in property <string> app-version: "";
     in-out property <int> tab: 0;
     in-out property <int> theme-mode: 0;
     callback settings-changed(string, string);
@@ -1659,7 +1663,7 @@ export component SettingsPage inherits Rectangle {
                 Rectangle { vertical-stretch: 1; background: transparent; }
 
                 Text {
-                    text: "Aether 0.1.0";
+                    text: "Aether " + root.app-version;
                     color: Aether.on-surface-muted;
                     font-size: Aether.text-micro;
                     horizontal-alignment: center;
@@ -1675,7 +1679,10 @@ export component SettingsPage inherits Rectangle {
 
                 if root.tab == 0: GeneralPanel { changed(k, v) => { root.settings-changed(k, v); } }
                 if root.tab == 1: DownloadPanel { changed(k, v) => { root.settings-changed(k, v); } }
-                if root.tab == 2: NetworkPanel { changed(k, v) => { root.settings-changed(k, v); } }
+                if root.tab == 2: NetworkPanel {
+                    app-version: root.app-version;
+                    changed(k, v) => { root.settings-changed(k, v); }
+                }
                 if root.tab == 3: BtPanel { changed(k, v) => { root.settings-changed(k, v); } }
                 if root.tab == 4: MediaPanel { changed(k, v) => { root.settings-changed(k, v); } }
                 if root.tab == 5: PluginPanel {
@@ -1686,7 +1693,10 @@ export component SettingsPage inherits Rectangle {
                 if root.tab == 6: SchedulePanel { changed(k, v) => { root.settings-changed(k, v); } }
                 if root.tab == 7: AppearancePanel { theme-mode <=> root.theme-mode; changed(k, v) => { root.settings-changed(k, v); } }
                 if root.tab == 8: AdvancedPanel { changed(k, v) => { root.settings-changed(k, v); } }
-                if root.tab == 9: AboutPanel { support-action(k) => { root.support-action(k); } }
+                if root.tab == 9: AboutPanel {
+                    app-version: root.app-version;
+                    support-action(k) => { root.support-action(k); }
+                }
             }
         }
     }

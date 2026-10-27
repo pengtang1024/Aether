@@ -39,6 +39,8 @@ dependencies = [
 name = "aether"
 version = "0.2.0"
 dependencies = [
+ "aether-daemon",
+ "serde_json",
  "slint",
  "slint-build",
 ]

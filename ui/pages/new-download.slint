@@ -85,7 +85,9 @@ component DialogIcon inherits Rectangle {
 export component NewDownloadDialog inherits FocusScope {
     in property <bool> open: false;
     in-out property <string> url: "";
-    in-out property <string> path: "/home/aether/Downloads";
+    // Filled by the window with the daemon's download root.
+    in property <string> default-dir: "";
+    in-out property <string> path: root.default-dir;
     in-out property <int> segments-index: 0;
     in-out property <float> speed-limit: 0;
     in-out property <string> note: "";
@@ -397,7 +399,7 @@ export component NewDownloadDialog inherits FocusScope {
                 padding: 6px;
                 spacing: 2px;
 
-                for p in ["/home/aether/Downloads", "/home/aether/Videos", "/mnt/data/iso", "/home/aether/Documents"] : Rectangle {
+                for p in [root.default-dir, root.default-dir + "/Videos", root.default-dir + "/Documents"] : Rectangle {
                     height: 32px;
                     border-radius: 8px;
                     background: p == root.path ? Aether.primary.with-alpha(0.12) : transparent;

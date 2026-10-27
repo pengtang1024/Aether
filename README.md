@@ -4,8 +4,10 @@
 
 **原生 Material 3 全能下载工具 · Rust + Slint · 无 WebView**
 
-Aether 是一个桌面下载管理器的界面原型（UI mockup），交互与视觉参考 Motrix，但完全用
-Rust 与 [Slint](https://slint.dev) 绘制：没有 Electron、没有 Chromium。除品牌 logo 外，
+Aether 是一个 Rust + Slint 的桌面下载管理器：窗口通过本地 socket 连接常驻的
+`aether-daemon`，任务、进度、暂停/继续/取消、新建下载与代理设置都走真实后端
+（16 个第一方插件）。交互与视觉参考 Motrix，完全用 Rust 与
+[Slint](https://slint.dev) 绘制：没有 Electron、没有 Chromium。除品牌 logo 外，
 窗口里的图标、进度条、折线图和背景流线全部是矢量渲染。
 
 产品结构只有 **3 个一级入口**：**主页 / 下载 / 设置**。主页是控制台（资源、统计、插件、
@@ -57,8 +59,8 @@ Material 组件会一起切换。
 主页系统卡显示插件总数和可更新数量；设置 → 插件是完整目录：
 **18 个插件（15 个内置、
 3 个社区）**，支持按全部/内置/已启用/可更新筛选，单独启停、更新全部、安装、插件目录、
-自动更新与开发者模式。插件在独立进程中运行；界面目录目前是 mockup，协议与 IPC 在
-`crates/aether-plugin-sdk`。
+自动更新与开发者模式。插件在独立进程中运行（`crates/aether-plugin-sdk`）；插件页目前
+仍是目录展示，启停/安装尚未下发到 daemon。
 
 ![插件](docs/screenshots/plugins.png)
 
@@ -186,7 +188,8 @@ sudo apt install ./dist/aether_0.1.0_amd64.deb
 ├── build.rs                 # 注册 "material" 样式、include 路径
 ├── src/
 │   ├── main.rs              # UI 胶水层：过滤/搜索、聚合统计、记录、主题检测、定时器
-│   ├── engine.rs            # 模拟下载引擎：种子数据、速率抖动、全局历史、完成/做种迁移
+│   ├── backend.rs           # daemon 桥：订阅事件、命令通道、快照、稳定 id 映射
+│   ├── chart.rs             # 速度折线/面积几何
 │   └── model.rs             # Task / Status 领域模型与格式化
 ├── ui/
 │   ├── app.slint            # 左侧导航外壳、页面路由、主题应用、覆盖层
@@ -229,10 +232,11 @@ Slint 回调  →  main.rs 意图处理  →  Engine 状态变更
     └──  VecModel / 属性更新 / 聚合统计 / 全局曲线 / 记录 ┘
 ```
 
-UI 不直接修改任务。暂停、继续、取消、新建、筛选和搜索都先变成 `main.rs` 里的意图，由
-模拟引擎算出新状态，再以最小 diff 写回 `VecModel`。定时器每 200 ms 推进引擎，同时刷新
-计数、全局限速曲线和记录；详情抽屉按需刷新图表与分片。主题由 UI 选择 + Rust 系统探测
-共同决定，`Aether.dark` 驱动自绘 token，`ColorSchemeSelector` 驱动 Material 控件。
+UI 不直接写任务状态。暂停、继续、取消/删除、新建都变成 `main.rs` 里的意图，经
+`backend.rs` 的命令通道发给 daemon；daemon 的 `subscribe` 事件流回来后合成快照，UI 每
+200 ms 取一次快照，以最小 diff 写回 `VecModel`。全局限速曲线来自后端每秒采样；详情抽屉
+按需刷新图表与分片。主题由 UI 选择 + Rust 系统探测共同决定，`Aether.dark` 驱动自绘
+token，`ColorSchemeSelector` 驱动 Material 控件。
 
 ---
 
@@ -312,17 +316,17 @@ Esc 关闭；下载空状态提供“清除筛选条件”，一次恢复全部�
 
 ## 范围与限制
 
-这是一个**界面原型**，不是可用的下载器：
+下载引擎与 UI 已经接通，但仍有未接线的部分：
 
-- 下载过程完全由 `engine.rs` 模拟，不发起网络请求、不写文件
-- 数据每次启动重新生成，没有持久化、断点续传或真实校验
-- 设置页展示的是能力结构与交互，选项不全部产生实际效果；主题选择会持久化，其余设置存放在内存
-- 主题支持浅/深/跟随系统；系统检测为 Linux GNOME / Windows / macOS 的轻量实现，
-  跟随系统时每 10 秒轮询
-- 详情面板不展示日志与 BT 节点；当前 inspector 聚焦图表、分片、指标与文件信息
-- 插件页展示 18 个 UI 目录条目；开关/更新/安装为原型反馈，真实插件 supervisor 以
-  `crates/aether-plugin-sdk` 为基础继续接入
-- 没有系统托盘、真实通知、剪贴板监听、协议关联与多语言
+- 任务列表、计数、速度/ETA、暂停/继续、取消+删除、新建下载、代理设置（跟随系统/直连/
+  手动）都走真实 daemon；已完成文件落在下载目录，断点/续传/校验由插件完成
+- 主页的“今日下载/本周下载/磁盘使用/引擎/插件数”等大数字仍是设计占位，未接统计接口
+- 设置页的 DNS、IP 协议、User-Agent、默认下载目录等字段尚未下发到 daemon（只有代理与
+  主题生效）；主题选择会持久化
+- 插件页是目录展示，启停/安装/更新不改变 daemon 的插件注册表
+- 详情面板按图标设计，标签在悬停提示里；不展示真实分段图与 BT 节点
+- 没有系统托盘、桌面通知、剪贴板监听与多语言；协议关联由安装包注册
+- Windows/macOS 包只含 Host：daemon 依赖 Unix socket，命名管道尚未实现
 - 窗口默认 900×600，最小 900×560；没有做手机/超窄窗口布局
 
 ## 许可

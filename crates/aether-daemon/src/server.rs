@@ -491,7 +491,12 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
         "add" => add_task(state, request),
         "list" => {
             let tasks = state.store.list_tasks(100)?;
-            Ok(json!({ "tasks": tasks }))
+            // The UI needs the default root to show a path for tasks that use
+            // it (records only carry non-default destinations).
+            Ok(json!({
+                "tasks": tasks,
+                "download_dir": state.download_dir.to_string_lossy(),
+            }))
         }
         "get" => {
             let task_id = task_id(&request)?;

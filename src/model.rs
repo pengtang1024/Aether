@@ -1,9 +1,7 @@
 //! Aether's domain model.
 //!
-//! The app is a UI mockup, so downloads are simulated; this module holds the
-//! task state the simulation operates on, plus every formatting helper the UI
-//! needs. Keeping it independent of the generated Slint types makes the engine
-//! easy to test and to swap for a real backend later.
+//! [`Task`] mirrors one daemon task; the formatting helpers keep the Slint
+//! bindings free of unit logic.
 
 use std::collections::VecDeque;
 
@@ -45,12 +43,9 @@ impl Status {
             Status::Seeding => "做种中",
         }
     }
-
-    pub fn is_running(self) -> bool {
-        matches!(self, Status::Downloading | Status::Seeding)
-    }
 }
 
+#[derive(Clone)]
 pub struct Task {
     pub id: i32,
     pub name: String,
@@ -63,8 +58,6 @@ pub struct Task {
     pub done: f64,
     pub status: Status,
     pub torrent: bool,
-    /// Speed the simulation aims at, in bytes per second.
-    pub nominal_speed: f64,
     pub speed: f64,
     pub history: VecDeque<f64>,
     /// `order[chunk] = rank`: chunks complete in this pseudo-random order.
@@ -95,13 +88,6 @@ impl Task {
 
     pub fn chunks(&self) -> Vec<f32> {
         (0..CHUNK_COUNT).map(|i| self.chunk_fill(i)).collect()
-    }
-
-    pub fn push_sample(&mut self, sample: f64) {
-        if self.history.len() == HISTORY_LEN {
-            self.history.pop_front();
-        }
-        self.history.push_back(sample);
     }
 }
 

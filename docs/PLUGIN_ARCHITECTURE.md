@@ -380,7 +380,7 @@ Host 的“插件”页面（后续 UI）展示：
 
 - `crates/aether-plugin-sdk`：manifest、MessagePack IPC、协议类型、插件 runner、Host 侧 supervisor。
 - `crates/aether-plugin-fake`：fake 插件 + 真实进程契约测试（握手、Probe、Start、Progress、Completed、id 不匹配拒绝）。
-- Host UI 仍由 `src/engine.rs` 提供模拟数据；接线要等隔壁 UI 重设计完成，避免冲突。
+- Host UI 通过 `src/backend.rs` 使用 daemon 的 `list` + `subscribe`；模拟引擎已移除。
 - `crates/aether-plugin-http`：HTTP/HTTPS + Metalink，Range 分段、续传、暂停/恢复/取消、SHA-256。
 - `crates/aether-plugin-bt`：librqbit，magnet/.torrent、暂停/恢复/取消、initial peers。
 - `crates/aether-plugin-ftp`：FTP/FTPS、REST 续传。

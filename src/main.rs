@@ -5,7 +5,8 @@
 
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
-mod engine;
+mod backend;
+mod chart;
 mod model;
 
 slint::include_modules!();
@@ -19,11 +20,12 @@ use std::time::{Duration, Instant};
 
 use slint::{Model, ModelRc, Timer, TimerMode, VecModel};
 
-use engine::{chart_paths, chart_peak, Engine};
+use backend::Backend;
+use chart::{chart_paths, chart_peak};
 use model::{format_eta, format_pair, format_size, format_speed, Status, CHUNK_COUNT};
 
 struct State {
-    engine: Engine,
+    backend: Backend,
     filter: i32,
     query: String,
     detail_id: i32,
@@ -38,13 +40,17 @@ struct State {
     toast_until: Option<Instant>,
     /// Task id the chunk model was seeded for.
     detail_data_for: i32,
+    /// Last proxy URL typed on the settings page, so switching the mode can
+    /// push a complete proxy setting.
+    proxy_url: String,
+    proxy_mode: String,
+    last_notice: Option<String>,
 }
 
 impl State {
     fn new() -> Self {
-        let engine = Engine::new();
         State {
-            engine,
+            backend: Backend::spawn(),
             filter: 0,
             query: String::new(),
             detail_id: -1,
@@ -55,6 +61,9 @@ impl State {
             record_ids: Vec::new(),
             toast_until: None,
             detail_data_for: -1,
+            proxy_url: String::new(),
+            proxy_mode: "跟随系统".into(),
+            last_notice: None,
         }
     }
 
@@ -80,12 +89,11 @@ impl State {
             || task.note.to_lowercase().contains(&needle)
     }
 
-    fn visible_ids(&self) -> Vec<i32> {
-        self.engine
-            .tasks()
+    fn visible_ids(&self, tasks: &[model::Task]) -> Vec<i32> {
+        tasks
             .iter()
-            .filter(|t| self.matches(t))
-            .map(|t| t.id)
+            .filter(|task| self.matches(task))
+            .map(|task| task.id)
             .collect()
     }
 }
@@ -145,12 +153,13 @@ fn to_row(task: &model::Task, detail_id: i32) -> TaskRow {
 
 fn refresh_rows(ui: &AppWindow, state: &Rc<RefCell<State>>) {
     let mut st = state.borrow_mut();
-    let ids = st.visible_ids();
+    let snapshot = st.backend.snapshot();
+    let ids = st.visible_ids(&snapshot.tasks);
     let same_shape = ids == st.row_ids;
     let detail_id = st.detail_id;
     let rows: Vec<TaskRow> = ids
         .iter()
-        .filter_map(|id| st.engine.task(*id))
+        .filter_map(|id| snapshot.tasks.iter().find(|task| task.id == *id))
         .map(|task| to_row(task, detail_id))
         .collect();
 
@@ -165,7 +174,7 @@ fn refresh_rows(ui: &AppWindow, state: &Rc<RefCell<State>>) {
 
     ui.set_tasks(ModelRc::from(st.rows.clone()));
 
-    let tasks = st.engine.tasks();
+    let tasks = &snapshot.tasks;
     let total = tasks.len() as i32;
     let active = tasks
         .iter()
@@ -190,6 +199,10 @@ fn refresh_rows(ui: &AppWindow, state: &Rc<RefCell<State>>) {
         .map(|task| task.speed)
         .sum();
 
+    if !snapshot.download_dir.is_empty() {
+        ui.set_default_download_dir(snapshot.download_dir.clone().into());
+    }
+
     ui.set_count_all(total);
     ui.set_count_active(active);
     ui.set_count_done(done);
@@ -198,7 +211,7 @@ fn refresh_rows(ui: &AppWindow, state: &Rc<RefCell<State>>) {
     ui.set_count_seed(seed);
     ui.set_total_speed(format_speed(speed).into());
 
-    let history = st.engine.global_history();
+    let history = &snapshot.history;
     let (line, area) = chart_paths(history);
     let peak = chart_peak(history).max(1.0);
     let latest = (history.back().copied().unwrap_or(0.0) / peak).clamp(0.0, 1.0) as f32;
@@ -235,7 +248,14 @@ fn refresh_rows(ui: &AppWindow, state: &Rc<RefCell<State>>) {
 
 fn refresh_detail(ui: &AppWindow, state: &Rc<RefCell<State>>) {
     let mut st = state.borrow_mut();
-    let Some(task) = st.engine.task(st.detail_id) else {
+    let detail_id = st.detail_id;
+    let Some(task) = st
+        .backend
+        .snapshot()
+        .tasks
+        .into_iter()
+        .find(|task| task.id == detail_id)
+    else {
         return;
     };
 
@@ -410,6 +430,7 @@ fn system_is_dark() -> bool {
 
 fn main() -> Result<(), slint::PlatformError> {
     let ui = AppWindow::new()?;
+    ui.set_app_version(env!("CARGO_PKG_VERSION").into());
 
     // Bind the window to aether.desktop so the dock / task switcher uses the
     // app icon instead of a generic fallback. This must run before `run()`.
@@ -443,11 +464,17 @@ fn main() -> Result<(), slint::PlatformError> {
             // Prefer an active torrent: it exercises the chart and chunk grid.
             let id = {
                 let st = state.borrow();
-                let tasks = st.engine.tasks();
-                tasks
+                let snapshot = st.backend.snapshot();
+                snapshot
+                    .tasks
                     .iter()
                     .find(|task| task.torrent && task.status == Status::Downloading)
-                    .or_else(|| tasks.iter().find(|task| task.status == Status::Downloading))
+                    .or_else(|| {
+                        snapshot
+                            .tasks
+                            .iter()
+                            .find(|task| task.status == Status::Downloading)
+                    })
                     .map(|task| task.id)
                     .unwrap_or(-1)
             };
@@ -468,13 +495,15 @@ fn main() -> Result<(), slint::PlatformError> {
             };
             let message = {
                 let mut st = state.borrow_mut();
-                let was_failed = st
-                    .engine
-                    .task(id)
+                let snapshot = st.backend.snapshot();
+                let was_failed = snapshot
+                    .tasks
+                    .iter()
+                    .find(|task| task.id == id)
                     .map(|task| task.status == Status::Failed)
                     .unwrap_or(false);
-                let existed = st.engine.task(id).is_some();
-                st.engine.apply_action(id, action);
+                let existed = snapshot.tasks.iter().any(|task| task.id == id);
+                st.backend.apply_action(id, action);
                 if action == 2 && st.detail_id == id {
                     st.detail_id = -1;
                 }
@@ -560,7 +589,7 @@ fn main() -> Result<(), slint::PlatformError> {
     {
         let ui_handle = ui.as_weak();
         let state = state.clone();
-        ui.on_new_download(move |url, path, _segments, limit_kb, note| {
+        ui.on_new_download(move |url, path, _segments, limit_kb, _note| {
             let Some(ui) = ui_handle.upgrade() else {
                 return;
             };
@@ -568,7 +597,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 let mut st = state.borrow_mut();
                 st.filter = 0;
                 st.query = String::new();
-                st.engine.add_task(&url, &path, limit_kb, &note);
+                st.backend.add_task(&url, &path, limit_kb);
             }
             ui.set_page(1);
             ui.set_active_filter(0);
@@ -580,6 +609,7 @@ fn main() -> Result<(), slint::PlatformError> {
 
     // ---- settings ----------------------------------------------------------
     {
+        let ui_handle = ui.as_weak();
         let state = state.clone();
         ui.on_settings_changed(move |key, value| {
             if key.as_str() == "theme" {
@@ -590,8 +620,32 @@ fn main() -> Result<(), slint::PlatformError> {
                 };
                 save_theme_mode(mode);
             }
-            // Other settings are kept in memory by this mockup.
-            let _ = &state;
+            let mut hint = None;
+            {
+                let mut st = state.borrow_mut();
+                match key.as_str() {
+                    "proxy-url" => {
+                        st.proxy_url = value.to_string();
+                        // Editing the address after choosing 手动 applies it.
+                        if st.proxy_mode == "手动" && !st.proxy_url.trim().is_empty() {
+                            st.backend.set_proxy("手动", &st.proxy_url);
+                        }
+                    }
+                    "proxy-mode" => {
+                        st.proxy_mode = value.to_string();
+                        if st.proxy_mode == "手动" && st.proxy_url.trim().is_empty() {
+                            hint = Some("请先填写代理地址，再切换到手动模式");
+                        } else {
+                            let url = st.proxy_url.clone();
+                            st.backend.set_proxy(&st.proxy_mode, &url);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if let (Some(hint), Some(ui)) = (hint, ui_handle.upgrade()) {
+                show_toast(&ui, &state, hint);
+            }
             println!("[settings] {key} = {value}");
         });
     }
@@ -666,19 +720,29 @@ fn main() -> Result<(), slint::PlatformError> {
                 return;
             };
             let drawer_open = ui.get_drawer_open();
-            let expire_toast = {
+            let (expire_toast, notice) = {
                 let mut st = state.borrow_mut();
-                st.engine.tick(0.2);
-                ui.set_drift(st.engine.drift());
-                if st.toast_until.is_some_and(|until| Instant::now() >= until) {
+                let drift = st.backend.drift();
+                ui.set_drift(drift);
+                let notice = st.backend.take_notice().filter(|notice| {
+                    if st.last_notice.as_deref() == Some(notice.as_str()) {
+                        false
+                    } else {
+                        st.last_notice = Some(notice.clone());
+                        true
+                    }
+                });
+                let expire_toast = st.toast_until.is_some_and(|until| Instant::now() >= until);
+                if expire_toast {
                     st.toast_until = None;
-                    true
-                } else {
-                    false
                 }
+                (expire_toast, notice)
             };
             if expire_toast {
                 ui.set_toast_open(false);
+            }
+            if let Some(notice) = notice {
+                show_toast(&ui, &state, &notice);
             }
             refresh_rows(&ui, &state);
             if drawer_open {

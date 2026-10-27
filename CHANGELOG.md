@@ -7,6 +7,14 @@ versioning; 0.x releases may still change structure.
 
 ### Added
 
+- The desktop window is wired to the daemon: `src/backend.rs` keeps a
+  subscription and pushes snapshots to Slint, so tasks, counts, speed/ETA,
+  pause/resume, cancel+delete, the new-download dialog (with the daemon's real
+  download root) and the proxy setting (system/direct/manual) all drive real
+  downloads. The simulated engine (`src/engine.rs`) is gone; chart geometry
+  moved to `src/chart.rs`.
+- The settings page shows the binary version (`Aether 0.2.0`) and the
+  user-agent default from `CARGO_PKG_VERSION` instead of hardcoded `0.1.0`.
 - Queue priorities: `add` (and `aether-cli remote add --priority`) accepts an
   integer priority, clamped to `-100..=100`. Promotion is
   `priority DESC, created_at ASC` (FIFO within a priority), exposed on
