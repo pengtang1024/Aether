@@ -12,6 +12,7 @@ name = "aether-cli"
 path = "src/main.rs"
 
 [dependencies]
+aether-daemon = { path = "../aether-daemon" }
 aether-host = { path = "../aether-host" }
 aether-plugin-sdk = { path = "../aether-plugin-sdk" }
 serde_json = "1"

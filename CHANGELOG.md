@@ -43,6 +43,14 @@ versioning; this is a UI mockup, so 0.x versions may change visual structure.
   token bucket in the HTTP download loop (inherited by delegating plugins).
 - HTTP plugin consumes browser-forwarded settings: `referrer`, `user_agent`,
   `cookies`, `headers` (managed headers rejected), plus `max_speed_bps`.
+- Automatic retry for retryable failures: exponential backoff
+  (`AETHER_RETRY_BASE_SECS`, default 30 s) with an attempt cap
+  (`AETHER_RETRY_MAX`, default 5), retries re-enter the queue FIFO, manual
+  resume resets the count and cancel stops the cycle; `retry_scheduled`
+  events and task_logs entries record each attempt.
+- `aether-cli import <file|->` queues many URLs through the running daemon
+  (one per line, `#` comments ignored), reporting per-URL task ids and a
+  summary; exit code reflects failures.
 - Daemon `subscribe` event stream + typed `list_tasks`/`task_record`/`add_task`
   client APIs for the Slint UI.
 - Browser Native Messaging host + MV3 extension skeleton + `aether://`/`magnet:`/

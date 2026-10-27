@@ -1,6 +1,6 @@
 //! Daemon event loop and Unix-socket server.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::net::Shutdown;
@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use aether_host::{
     default_plugins_dir, finalize_task, NewTask, PluginEventEnvelope, PluginManager,
@@ -36,6 +36,10 @@ pub struct DaemonConfig {
     pub max_concurrent: usize,
     /// Optional total download speed limit shared across running tasks.
     pub max_speed_bps: Option<u64>,
+    /// Automatic retry attempts for retryable task failures.
+    pub retry_max: u32,
+    /// Base delay in seconds for the exponential retry backoff.
+    pub retry_base_secs: u64,
 }
 
 impl Default for DaemonConfig {
@@ -59,6 +63,15 @@ impl Default for DaemonConfig {
                 .ok()
                 .and_then(|value| value.parse().ok())
                 .filter(|value| *value > 0),
+            retry_max: std::env::var("AETHER_RETRY_MAX")
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(5),
+            retry_base_secs: std::env::var("AETHER_RETRY_BASE_SECS")
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .filter(|value| *value > 0)
+                .unwrap_or(30),
         }
     }
 }
@@ -78,12 +91,22 @@ struct State {
     subscribers: Vec<Sender<serde_json::Value>>,
     max_concurrent: usize,
     max_speed_bps: Option<u64>,
+    retry_max: u32,
+    retry_base_secs: u64,
     /// Tasks whose plugin execution thread is alive in this daemon session
     /// (running or paused). A task outside this set must be (re)started from
     /// its stored record instead of receiving an in-process Resume.
     live: HashSet<String>,
     /// Tasks whose cancel command is still being executed by their plugin.
     canceling: HashSet<String>,
+    /// Automatic retry schedule per failed task: attempt count and next start.
+    retries: HashMap<String, RetrySchedule>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct RetrySchedule {
+    attempts: u32,
+    next: Instant,
 }
 
 pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
@@ -141,8 +164,11 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
         subscribers: Vec::new(),
         max_concurrent: config.max_concurrent,
         max_speed_bps: config.max_speed_bps,
+        retry_max: config.retry_max,
+        retry_base_secs: config.retry_base_secs,
         live: HashSet::new(),
         canceling: HashSet::new(),
+        retries: HashMap::new(),
     };
 
     recover_tasks(&mut state);
@@ -170,6 +196,8 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
                 }
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
             }
+            // Retry bookkeeping must run even when commands keep arriving.
+            check_retries(&mut state);
             continue;
         }
 
@@ -182,6 +210,7 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
             Ok(None) => {}
             Err(error) => eprintln!("aether-daemon: plugin event error: {error}"),
         }
+        check_retries(&mut state);
     }
 
     state.manager.shutdown();
@@ -451,6 +480,9 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
                     "cancel is still in progress; retry shortly".into(),
                 )),
                 _ => {
+                    // A manual resume is an explicit "try again": reset the
+                    // automatic retry bookkeeping.
+                    state.retries.remove(&task_id);
                     if state.live.contains(&task_id) {
                         // The plugin still owns a live (paused or stopping)
                         // execution; resume it in place.
@@ -493,12 +525,13 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
                 .store
                 .task(&task_id)?
                 .ok_or_else(|| DaemonError::Protocol(format!("task {task_id} not found")))?;
-            if task.state.is_terminal() && task.state != TaskState::Canceled {
+            if task.state == TaskState::Completed {
                 return Err(DaemonError::Protocol(format!(
-                    "task {task_id} is already {}",
-                    task.state.as_str()
+                    "task {task_id} is already completed"
                 )));
             }
+            // Canceled is idempotent; failed tasks can be canceled to stop the
+            // automatic retry cycle.
             if state.canceling.contains(&task_id) {
                 return Ok(json!({"task_id": task_id, "state": "canceled"}));
             }
@@ -514,6 +547,7 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
             state.store.set_state(&task_id, TaskState::Canceled)?;
             state.active.remove(&task_id);
             state.live.remove(&task_id);
+            state.retries.remove(&task_id);
             broadcast(
                 state,
                 json!({"event": "task_state", "task_id": task_id, "state": "canceled"}),
@@ -673,7 +707,9 @@ fn promote_queued(state: &mut State) {
         let Some(task) = next else { return };
         match start_from_record(state, &task) {
             Ok(true) => {}
-            Ok(false) => break,
+            Ok(false) => {
+                break;
+            }
             Err(error) => {
                 let _ = state
                     .store
@@ -682,6 +718,86 @@ fn promote_queued(state: &mut State) {
             }
         }
     }
+}
+
+/// Schedule an automatic retry for a retryable failure, honoring the attempt
+/// cap. Exhausted tasks stay failed until the user resumes them manually.
+fn schedule_retry(state: &mut State, task_id: &str, message: &str) {
+    if state.retry_max == 0 {
+        return;
+    }
+    let attempts = state
+        .retries
+        .get(task_id)
+        .map(|schedule| schedule.attempts + 1)
+        .unwrap_or(1);
+    if attempts > state.retry_max {
+        state.retries.remove(task_id);
+        let _ = state.store.append_log(
+            task_id,
+            "warn",
+            &format!("auto-retry exhausted after {attempts} attempts: {message}"),
+            None,
+        );
+        return;
+    }
+    let delay = Duration::from_secs(
+        state
+            .retry_base_secs
+            .saturating_mul(1_u64 << (attempts - 1).min(6)),
+    );
+    let next = Instant::now() + delay;
+    state
+        .retries
+        .insert(task_id.to_string(), RetrySchedule { attempts, next });
+    let _ = state.store.append_log(
+        task_id,
+        "info",
+        &format!(
+            "auto-retry {attempts}/{} in {} s",
+            state.retry_max,
+            delay.as_secs()
+        ),
+        None,
+    );
+    broadcast(
+        state,
+        json!({
+            "event": "retry_scheduled",
+            "task_id": task_id,
+            "attempt": attempts,
+            "delay_secs": delay.as_secs(),
+        }),
+    );
+}
+
+/// Start every retry whose backoff elapsed; retries re-enter the normal queue
+/// so they compete FIFO with other work.
+fn check_retries(state: &mut State) {
+    if state.retries.is_empty() {
+        return;
+    }
+    let now = Instant::now();
+    let due: Vec<String> = state
+        .retries
+        .iter()
+        .filter(|(_, schedule)| schedule.next <= now)
+        .map(|(task_id, _)| task_id.clone())
+        .collect();
+    if due.is_empty() {
+        return;
+    }
+    for task_id in due {
+        state.retries.remove(&task_id);
+        let result = state.store.set_state(&task_id, TaskState::Queued);
+        if result.is_ok() {
+            broadcast(
+                state,
+                json!({"event": "task_state", "task_id": task_id, "state": "queued"}),
+            );
+        }
+    }
+    promote_queued(state);
 }
 
 /// (Re)start a task from its stored record if capacity allows. Ok(true) when
@@ -765,6 +881,7 @@ fn handle_event(state: &mut State, envelope: PluginEventEnvelope) {
                     &error.message,
                     error.retryable,
                 );
+                schedule_retry(state, &task_id, &error.message);
             }
             broadcast(
                 state,

@@ -45,6 +45,16 @@ impl Daemon {
 
 /// Stage the fake plugin and start a daemon over a private root.
 fn spawn_daemon(label: &str, max_concurrent: usize, max_speed_bps: Option<u64>) -> Option<Daemon> {
+    spawn_daemon_with(label, max_concurrent, max_speed_bps, 5, 30)
+}
+
+fn spawn_daemon_with(
+    label: &str,
+    max_concurrent: usize,
+    max_speed_bps: Option<u64>,
+    retry_max: u32,
+    retry_base_secs: u64,
+) -> Option<Daemon> {
     let fake = fake_binary()?;
     let root = temp_dir(label);
     let package = root.join("plugins").join("fake");
@@ -79,6 +89,8 @@ fn spawn_daemon(label: &str, max_concurrent: usize, max_speed_bps: Option<u64>) 
         update_appimage: None,
         max_concurrent,
         max_speed_bps,
+        retry_max,
+        retry_base_secs,
     };
     let handle = thread::spawn(move || aether_daemon::run(config));
     Some(Daemon {
@@ -322,6 +334,100 @@ fn daemon_lists_tasks() {
     let _ = client.add("https://example.com/a.bin", None, None).unwrap();
     let tasks = client.list().unwrap();
     assert_eq!(summarize(tasks), 1);
+
+    client.shutdown().unwrap();
+    daemon.shutdown();
+}
+
+#[test]
+fn daemon_auto_retries_a_retryable_failure_and_recovers() {
+    let Some(daemon) = spawn_daemon_with("retry", 1, None, 5, 1) else {
+        eprintln!("fake plugin binary is not built; skipping");
+        return;
+    };
+    let socket = daemon.socket.clone();
+
+    let mut client = connect(&socket);
+    let added = client
+        .add_with_settings(
+            "https://example.com/flaky.bin",
+            None,
+            None,
+            json!({"fail": true, "retryable": true}),
+        )
+        .unwrap();
+    let task_id = added["task_id"].as_str().unwrap().to_string();
+    assert!(wait_for_state(&mut client, &task_id, "failed", 100));
+
+    // After the 1 s backoff the daemon must restart it automatically; the
+    // sentinel makes the second attempt succeed. The running window is short,
+    // so completion is the reliable observable.
+    assert!(wait_for_state(&mut client, &task_id, "completed", 200));
+
+    client.shutdown().unwrap();
+    daemon.shutdown();
+}
+
+#[test]
+fn daemon_stops_retrying_after_the_cap() {
+    let Some(daemon) = spawn_daemon_with("retrycap", 1, None, 1, 1) else {
+        eprintln!("fake plugin binary is not built; skipping");
+        return;
+    };
+    let socket = daemon.socket.clone();
+
+    let mut client = connect(&socket);
+    let added = client
+        .add_with_settings(
+            "https://example.com/broken.bin",
+            None,
+            None,
+            json!({"fail_always": true, "retryable": true}),
+        )
+        .unwrap();
+    let task_id = added["task_id"].as_str().unwrap().to_string();
+    assert!(wait_for_state(&mut client, &task_id, "failed", 100));
+
+    // Attempt 2 (cap 1) also fails; the task must stay failed afterwards.
+    // The brief "running" blip between retries is not observable reliably.
+    assert!(wait_for_state(&mut client, &task_id, "failed", 200));
+    thread::sleep(Duration::from_secs(3));
+    assert_eq!(task_state(&mut client, &task_id), "failed");
+
+    // Manual resume still works and resets the bookkeeping.
+    let resumed = client.resume(&task_id).unwrap();
+    assert_eq!(resumed["state"], "running");
+    assert!(wait_for_state(&mut client, &task_id, "failed", 100));
+
+    client.shutdown().unwrap();
+    daemon.shutdown();
+}
+
+#[test]
+fn daemon_canceled_task_stops_the_retry_cycle() {
+    let Some(daemon) = spawn_daemon_with("retrycancel", 1, None, 5, 1) else {
+        eprintln!("fake plugin binary is not built; skipping");
+        return;
+    };
+    let socket = daemon.socket.clone();
+
+    let mut client = connect(&socket);
+    let added = client
+        .add_with_settings(
+            "https://example.com/giveup.bin",
+            None,
+            None,
+            json!({"fail_always": true, "retryable": true}),
+        )
+        .unwrap();
+    let task_id = added["task_id"].as_str().unwrap().to_string();
+    assert!(wait_for_state(&mut client, &task_id, "failed", 100));
+
+    // Cancel is the escape hatch from the retry cycle.
+    let canceled = client.cancel(&task_id).unwrap();
+    assert_eq!(canceled["state"], "canceled");
+    thread::sleep(Duration::from_millis(2500));
+    assert_eq!(task_state(&mut client, &task_id), "canceled");
 
     client.shutdown().unwrap();
     daemon.shutdown();

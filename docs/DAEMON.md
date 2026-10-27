@@ -92,11 +92,25 @@ unit 文件：`packaging/aether-daemon.service`，安装到
 | --- | --- | --- | --- |
 | 并发上限 | `AETHER_MAX_CONCURRENT` | 3 | 超出上限的任务保持 queued，按创建顺序 FIFO 提升 |
 | 全局限速 | `AETHER_MAX_SPEED_BPS` | 无 | 均摊到当前运行任务，随任务启动时生效 |
+| 自动重试次数 | `AETHER_RETRY_MAX` | 5 | 可重试失败按指数退避自动重试，0 = 关闭 |
+| 重试基础间隔 | `AETHER_RETRY_BASE_SECS` | 30 | 退避 = base × 2^(n-1)，即 30s/1min/2min/… |
 
 - 任务级限速优先：`add` 的 settings 里给 `max_speed_bps`（字节/秒，0 = 不限）。
 - 限速在 HTTP 插件下载循环内实现（任务级共享 token bucket，多连接同一桶）；
   委托 HTTP 的插件（baidupan/aliyunpan/ipfs/thunder/cloud/webdav）自动继承。
 - daemon 在任务完成/失败/取消后立即提升队列，并广播 `task_state` 事件。
+
+## 5.2 自动重试
+
+- 插件报失败且 `retryable=true` 时，daemon 自动安排重试：30 s 起指数退避，
+  最多 `AETHER_RETRY_MAX` 次（默认 5），次数耗尽后保持 failed。
+- 到点的重试回到 queued，与其它任务一起按 FIFO 提升运行（不插队）。
+- 手动 `resume` 会重置自动重试计数；`cancel` 可以随时打断重试循环（对
+  failed 任务也允许取消）。
+- 每次调度/耗尽都写入 `task_logs` 并广播 `retry_scheduled` 事件
+  （`{attempt, delay_secs}`）。
+- 重试计划目前仅存内存：daemon 重启后 failed 任务不再自动重试，需要手动
+  `resume`（这是已知限制）。
 
 ## 6. 接管系统下载还差什么
 

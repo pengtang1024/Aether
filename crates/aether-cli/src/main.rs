@@ -2,7 +2,7 @@
 //! persist task state in SQLite and finalize the result.
 
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -77,6 +77,16 @@ fn run() -> Result<(), String> {
             let root = plugin_dir(&args);
             let forced = option(&args, "--plugin");
             download(url, Path::new(&output), &root, forced.as_deref())
+        }
+        "import" => {
+            let source = args
+                .get(1)
+                .ok_or("import needs a file path or - for stdin")?;
+            let socket = option(&args, "--socket")
+                .map(PathBuf::from)
+                .unwrap_or_else(aether_daemon::client::default_socket);
+            let dir = option(&args, "--dir").map(PathBuf::from);
+            import(source, &socket, dir.as_deref())
         }
         "tasks" => {
             let output = option(&args, "--dir").unwrap_or_else(|| "downloads".into());
@@ -352,7 +362,61 @@ fn option(args: &[String], name: &str) -> Option<String> {
 
 fn usage() -> Result<(), String> {
     Err(
-        "usage:\n  aether-cli list --plugins <dir>\n  aether-cli probe <url> --plugins <dir>\n  aether-cli download <url> --dir <dir> --plugins <dir> [--plugin <id>]\n  aether-cli tasks --dir <dir>\n  aether-cli resume <task-id> --dir <dir> --plugins <dir>"
+        "usage:\n  aether-cli list --plugins <dir>\n  aether-cli probe <url> --plugins <dir>\n  aether-cli download <url> --dir <dir> --plugins <dir> [--plugin <id>]\n  aether-cli tasks --dir <dir>\n  aether-cli resume <task-id> --dir <dir> --plugins <dir>\n  aether-cli import <file|-> [--socket <path>] [--dir <dir>]"
             .into(),
     )
+}
+
+/// Queue many URLs through the running daemon: one per line, `#` comments and
+/// blank lines ignored. Each add returns task_id/plugin_id/queued; failures
+/// are reported per URL and reflected in the exit code.
+fn import(source: &str, socket: &Path, dir: Option<&Path>) -> Result<(), String> {
+    let text = if source == "-" {
+        let mut buffer = String::new();
+        std::io::stdin()
+            .read_to_string(&mut buffer)
+            .map_err(|error| format!("cannot read stdin: {error}"))?;
+        buffer
+    } else {
+        fs::read_to_string(source).map_err(|error| format!("cannot read {source}: {error}"))?
+    };
+
+    let urls: Vec<&str> = text
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .collect();
+    if urls.is_empty() {
+        return Err("no URLs found in the input".into());
+    }
+
+    let mut client = aether_daemon::Client::connect(socket).map_err(|error| {
+        format!(
+            "daemon is not reachable at {}: {error} (start aether-daemon first)",
+            socket.display()
+        )
+    })?;
+
+    let mut imported = 0_usize;
+    let mut failed = 0_usize;
+    for url in urls {
+        match client.add_with_settings(url, dir, None, serde_json::json!({})) {
+            Ok(result) => {
+                imported += 1;
+                println!(
+                    "{url} -> {} ({}) queued={}",
+                    result["task_id"], result["plugin_id"], result["queued"]
+                );
+            }
+            Err(error) => {
+                failed += 1;
+                eprintln!("{url} -> ERROR: {error}");
+            }
+        }
+    }
+    println!("imported {imported}/{} URLs", imported + failed);
+    if failed > 0 {
+        return Err(format!("{failed} URL(s) failed"));
+    }
+    Ok(())
 }
