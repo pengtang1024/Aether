@@ -13,6 +13,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use aether_host::pac::PacResolver;
+use aether_host::system_proxy::{self, SystemProxy, SYSTEM_PROXY_TTL};
 use aether_host::{
     default_plugins_dir, finalize_task, NewTask, PluginEventEnvelope, PluginManager,
     PluginRegistry, ProxySetting, StoredTask, TaskState, TaskStore,
@@ -120,6 +121,39 @@ struct State {
     settings_path: PathBuf,
     /// PAC evaluator, present only while the proxy setting is `pac`.
     pac: Option<PacResolver>,
+    /// Cached desktop proxy detection for `mode: "system"`.
+    system_proxy: SystemProxyCache,
+    /// PAC resolver for a desktop-configured PAC URL (GNOME/KDE "auto").
+    system_pac: Option<(String, PacResolver)>,
+}
+
+impl Default for SystemProxyCache {
+    fn default() -> Self {
+        Self {
+            checked: None,
+            value: None,
+        }
+    }
+}
+
+/// Detection shells out, so it is sampled once a minute instead of per task.
+struct SystemProxyCache {
+    checked: Option<Instant>,
+    value: Option<SystemProxy>,
+}
+
+impl SystemProxyCache {
+    fn lookup(&mut self) -> Option<&SystemProxy> {
+        let stale = self
+            .checked
+            .map(|at| at.elapsed() >= SYSTEM_PROXY_TTL)
+            .unwrap_or(true);
+        if stale {
+            self.value = system_proxy::detect();
+            self.checked = Some(Instant::now());
+        }
+        self.value.as_ref()
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -204,6 +238,8 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
         pac: settings.proxy.as_ref().and_then(ProxySetting::resolver),
         settings,
         settings_path,
+        system_proxy: SystemProxyCache::default(),
+        system_pac: None,
     };
 
     recover_tasks(&mut state);
@@ -678,6 +714,9 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
                 state
                     .manager
                     .set_proxy(init_proxy(state.settings.proxy.as_ref()));
+                // Re-detect the desktop proxy for the new mode on next use.
+                state.system_proxy = SystemProxyCache::default();
+                state.system_pac = None;
             }
             state.settings.save(&state.settings_path)?;
             broadcast(
@@ -1144,13 +1183,56 @@ fn init_proxy(proxy: Option<&ProxySetting>) -> Option<ProxyConfig> {
 }
 
 /// Resolve the proxy for one task. Errors are logged and swallowed: a broken
-/// PAC must not stop downloads, it just falls back to the process default.
+/// PAC (or an unreadable desktop setting) must not stop downloads, it just
+/// falls back to the process default.
 fn resolve_task_proxy(state: &mut State, url: &str, allow_fetch: bool) -> Option<ProxyConfig> {
-    let pac = state.pac.as_mut()?;
-    match pac.resolve(url, allow_fetch) {
+    if state.pac.is_some() {
+        let pac = state.pac.as_mut()?;
+        return match pac.resolve(url, allow_fetch) {
+            Ok(proxy) => Some(proxy),
+            Err(error) => {
+                eprintln!("aether-daemon: pac for {url}: {error}");
+                None
+            }
+        };
+    }
+    // `system` (and the default, unset) means "follow the desktop"; explicit
+    // custom/direct modes are handled by the plugins themselves.
+    match state.settings.proxy.as_ref() {
+        None | Some(ProxySetting::System) => {}
+        Some(_) => return None,
+    }
+    match state.system_proxy.lookup().cloned() {
+        Some(SystemProxy::Manual(config)) => Some(config),
+        Some(SystemProxy::Pac(pac_url)) => resolve_system_pac(state, &pac_url, url, allow_fetch),
+        None => None,
+    }
+}
+
+/// A desktop-configured PAC URL (GNOME/KDE automatic mode) is evaluated like an
+/// explicit PAC setting, but with its own cache slot.
+fn resolve_system_pac(
+    state: &mut State,
+    pac_url: &str,
+    url: &str,
+    allow_fetch: bool,
+) -> Option<ProxyConfig> {
+    let needs_resolver = state
+        .system_pac
+        .as_ref()
+        .map(|(current, _)| current != pac_url)
+        .unwrap_or(true);
+    if needs_resolver {
+        state.system_pac = Some((
+            pac_url.to_string(),
+            PacResolver::new(Some(pac_url.to_string()), None),
+        ));
+    }
+    let (_, resolver) = state.system_pac.as_mut()?;
+    match resolver.resolve(url, allow_fetch) {
         Ok(proxy) => Some(proxy),
         Err(error) => {
-            eprintln!("aether-daemon: pac for {url}: {error}");
+            eprintln!("aether-daemon: system pac {pac_url} for {url}: {error}");
             None
         }
     }

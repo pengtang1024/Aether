@@ -24,7 +24,9 @@ publish packages.
 - **Native rendering.** Slint uses the winit backend with the femtovg/OpenGL
   renderer and a software fallback. There is no WebView, Chromium or Electron.
 - **Proxy.** HTTP/HTTPS and SOCKS5/SOCKS5h proxies work end to end (daemon
-  settings or `AETHER_PROXY`); `system` mode honors `HTTP_PROXY`/`ALL_PROXY`.
+  settings or `AETHER_PROXY`); `system` mode honors `HTTP_PROXY`/`ALL_PROXY` and
+  falls back to GNOME (`gsettings`) / KDE (`kioslaverc`) desktop settings,
+  including a desktop-configured PAC URL.
   PAC is evaluated in the Host (`rquickjs` sandbox) from a URL, `file://` path or
   inline script and passed to HTTP/media plugins per task; WPAD autodiscovery is
   still planned for P2.

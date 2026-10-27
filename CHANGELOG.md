@@ -7,7 +7,11 @@ versioning; 0.x releases may still change structure.
 
 ### Added
 
-- Nothing yet.
+- `system` proxy mode now reads the Linux desktop configuration: GNOME
+  (`gsettings`, manual and automatic/PAC modes) and KDE (`kioslaverc`), with
+  proxy environment variables staying authoritative. Detection is cached for
+  60 seconds and the resolved proxy is applied per task, probe included.
+  WPAD autodiscovery is deliberately not implemented.
 
 ## [0.2.0] - 2026-10-27
 

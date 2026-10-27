@@ -171,10 +171,23 @@ CLI 对等命令：`aether-cli logs <task-id> --dir <dir> [--limit <n>]`（直�
 
 | 模式 | settings JSON | 说明 |
 | --- | --- | --- |
-| `system` | `{"proxy":{"mode":"system"}}` | 交给 reqwest 读 `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY`/`NO_PROXY` |
+| `system` | `{"proxy":{"mode":"system"}}` | 跟随系统：环境变量优先，其次 GNOME/KDE 桌面设置（见下） |
 | `none` | `{"proxy":{"mode":"none"}}` | 永不使用代理（显式忽略上面这些环境变量） |
 | `custom` | `{"proxy":{"mode":"custom","url":"socks5://127.0.0.1:1080","username":…,"password":…}}` | 只用指定代理；`http`/`https`/`socks5`/`socks5h` |
 
+- `system`（以及未配置时的默认值）会读桌面设置，否则 GNOME 里配了代理、浏览器
+  走了代理，Aether 却直连：
+  - 只要 `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY`（大小写皆可）任一存在，就交给
+    reqwest 处理（`NO_PROXY` 也由它生效），不再覆盖；
+  - 否则 `gsettings get org.gnome.system.proxy`（manual → http/https/socks，
+    auto → `autoconfig-url` 当 PAC 用）→ KDE `~/.config/kioslaverc`
+    （`ProxyType=1` 手动 / `=2` PAC 脚本）；
+  - 检测结果缓存 60 秒，`resolve_proxy` 可随时查看实际生效的代理；
+  - GNOME “自动”但没填脚本 URL 意味着 WPAD 自动发现，**不做**（见 §5.7 末尾）。
+  - 环境变量 `AETHER_GSETTINGS` / `AETHER_KDE_PROXY_CONFIG` 可替换检测源
+    （测试/调试用）。
+- 检测到的代理按任务下发（`TaskSpec.proxy`），探测同样使用它；手动代理优先
+  http → https → socks5。
 - 设置持久化在 `<download>/.aether/settings.json`（`0600`，可能含代理密码）。
   坏文件不会阻止 daemon 启动：打日志后按默认值运行。
 - `AETHER_PROXY` 可给单次运行覆盖，接受一行规格：
@@ -208,6 +221,10 @@ CLI 对等命令：`aether-cli logs <task-id> --dir <dir> [--limit <n>]`（直�
 - `AETHER_PAC_URL` 单次运行覆盖，不落盘；`--pac-url` 同义。
 - 诊断：`{"method":"resolve_proxy","url":"https://x"}` →
   `{"proxy":{…}|null,"pac":true,"pac_error":null}`。
+- **不做 WPAD 自动发现**：`http://wpad.<domain>/wpad.dat` 与 DHCP 252 都需要
+  额外的信任假设（WPAD 劫持是已知攻击面，主流浏览器已在移除），且难以跨平台
+  正确实现。需要自动代理时请填 PAC URL/脚本；GNOME/KDE 里已经配好的 PAC URL
+  会被 `system` 模式自动采用。
 
 ## 6. 接管系统下载还差什么
 

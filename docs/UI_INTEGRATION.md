@@ -108,6 +108,8 @@ let resolved = client.resolve_proxy("https://example.com/file.zip")?;
 - 升级：`update_status` 显示 `ready`，由 daemon/包管理器处理；UI 只做提示。
 - 代理设置变更不影响已经在跑的任务（插件进程持有启动时的配置）；设置页保存后
   提示“对之后开始的任务生效”。
+- “跟随系统”= `system`：环境变量优先，其次是 GNOME/KDE 的代理设置（含桌面里
+  配置的 PAC URL）。UI 不需要自己读 gsettings；用 `resolve_proxy` 展示实际生效值。
 - 不要把 socket 暴露到 TCP；不要接受非本用户连接。
 
 ## 6. 迁移步骤

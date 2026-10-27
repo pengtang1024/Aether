@@ -913,3 +913,93 @@ fn daemon_manual_resume_drops_a_pending_retry() {
     client.shutdown().unwrap();
     daemon.shutdown();
 }
+
+/// Desktop proxy detection (`mode: "system"`) needs a fake `gsettings`, so this
+/// runs the real daemon binary as a child process with its own environment.
+#[test]
+fn daemon_follows_the_desktop_proxy() {
+    let root = temp_dir("desktop-proxy");
+    fs::create_dir_all(root.join("plugins")).unwrap();
+    fs::create_dir_all(root.join("downloads")).unwrap();
+
+    let stub = root.join("gsettings");
+    fs::write(
+        &stub,
+        "#!/bin/sh\ncase \"$2\" in\n  \"org.gnome.system.proxy mode\") echo \"'manual'\" ;;\n  \"org.gnome.system.proxy.http host\") echo \"'127.0.0.1'\" ;;\n  \"org.gnome.system.proxy.http port\") echo \"3128\" ;;\n  *) exit 1 ;;\nesac\n",
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    let socket = root.join("daemon.sock");
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_aether-daemon"))
+        .arg("--download-dir")
+        .arg(root.join("downloads"))
+        .arg("--plugins")
+        .arg(root.join("plugins"))
+        .env("AETHER_SOCKET", &socket)
+        .env("AETHER_GSETTINGS", &stub)
+        .env_remove("AETHER_PROXY")
+        .env_remove("AETHER_PAC_URL")
+        .env_remove("HTTP_PROXY")
+        .env_remove("HTTPS_PROXY")
+        .env_remove("ALL_PROXY")
+        .env_remove("http_proxy")
+        .env_remove("https_proxy")
+        .env_remove("all_proxy")
+        .spawn()
+        .unwrap();
+
+    let mut client = connect(&socket);
+    let resolved = client
+        .resolve_proxy("https://example.com/file.bin")
+        .unwrap();
+    assert_eq!(resolved["proxy"]["mode"], "custom");
+    assert_eq!(resolved["proxy"]["url"], "http://127.0.0.1:3128");
+    client.shutdown().unwrap();
+    child.wait().unwrap();
+
+    // "Automatic" desktop mode hands a PAC URL to the host evaluator.
+    let pac = root.join("proxy.pac");
+    fs::write(
+        &pac,
+        "function FindProxyForURL(url, host){ if (host === 'corp.example') { return 'PROXY 10.1.1.1:8080'; } return 'DIRECT'; }",
+    )
+    .unwrap();
+    fs::write(
+        &stub,
+        format!(
+            "#!/bin/sh\ncase \"$2\" in\n  \"org.gnome.system.proxy mode\") echo \"'auto'\" ;;\n  \"org.gnome.system.proxy autoconfig-url\") echo \"'file://{}'\" ;;\n  *) exit 1 ;;\nesac\n",
+            pac.display()
+        ),
+    )
+    .unwrap();
+    let _ = fs::remove_file(&socket);
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_aether-daemon"))
+        .arg("--download-dir")
+        .arg(root.join("downloads"))
+        .arg("--plugins")
+        .arg(root.join("plugins"))
+        .env("AETHER_SOCKET", &socket)
+        .env("AETHER_GSETTINGS", &stub)
+        .env_remove("AETHER_PROXY")
+        .env_remove("AETHER_PAC_URL")
+        .env_remove("HTTP_PROXY")
+        .env_remove("HTTPS_PROXY")
+        .env_remove("ALL_PROXY")
+        .spawn()
+        .unwrap();
+
+    let mut client = connect(&socket);
+    let corp = client.resolve_proxy("https://corp.example/x").unwrap();
+    assert_eq!(corp["proxy"]["url"], "http://10.1.1.1:8080");
+    let other = client.resolve_proxy("https://example.com/x").unwrap();
+    assert_eq!(other["proxy"]["mode"], "none");
+    client.shutdown().unwrap();
+    child.wait().unwrap();
+
+    fs::remove_dir_all(&root).ok();
+}

@@ -8,6 +8,7 @@ pub mod pac;
 pub mod proxy;
 pub mod registry;
 pub mod store;
+pub mod system_proxy;
 
 pub use abi::AbiPlugin;
 pub use error::HostError;
@@ -16,6 +17,7 @@ pub use manager::{PluginEventEnvelope, PluginManager, ProbeOutcome};
 pub use proxy::ProxySetting;
 pub use registry::{PluginEntry, PluginRegistry};
 pub use store::{NewTask, StoreError, StoredFile, StoredTask, TaskLog, TaskState, TaskStore};
+pub use system_proxy::{SystemProxy, SYSTEM_PROXY_TTL};
 
 /// First existing plugin directory in the usual locations.
 pub fn default_plugins_dir() -> std::path::PathBuf {
