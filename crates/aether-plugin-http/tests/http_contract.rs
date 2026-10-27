@@ -14,7 +14,7 @@ use aether_plugin_http::{
 };
 use aether_plugin_sdk::{
     current_platform_key, Budget, Checksum, ChecksumAlgorithm, Init, LogLevel, PluginEvent,
-    PluginManifest, PluginProcess, TaskPaths, TaskSpec, API_VERSION,
+    PluginManifest, PluginProcess, ProxyConfig, TaskPaths, TaskSpec, API_VERSION,
 };
 use sha2::{Digest, Sha256};
 
@@ -27,6 +27,9 @@ struct TestServer {
     addr: SocketAddr,
     ranges: Arc<Mutex<Vec<String>>>,
     headers: Arc<Mutex<Vec<String>>>,
+    /// Request targets as they arrived. With a forward proxy these are
+    /// absolute URLs (`http://host/path`), which is how proxy usage is proven.
+    targets: Arc<Mutex<Vec<String>>>,
 }
 
 fn test_data() -> Vec<u8> {
@@ -42,9 +45,11 @@ fn start_server(data: Vec<u8>) -> TestServer {
     let addr = listener.local_addr().unwrap();
     let ranges = Arc::new(Mutex::new(Vec::new()));
     let headers = Arc::new(Mutex::new(Vec::new()));
+    let targets = Arc::new(Mutex::new(Vec::new()));
     let data = Arc::new(data);
     let server_ranges = ranges.clone();
     let server_headers = headers.clone();
+    let server_targets = targets.clone();
 
     thread::spawn(move || {
         for stream in listener.incoming() {
@@ -52,7 +57,8 @@ fn start_server(data: Vec<u8>) -> TestServer {
             let data = data.clone();
             let ranges = server_ranges.clone();
             let headers = server_headers.clone();
-            thread::spawn(move || handle_connection(stream, &data, &ranges, &headers));
+            let targets = server_targets.clone();
+            thread::spawn(move || handle_connection(stream, &data, &ranges, &headers, &targets));
         }
     });
 
@@ -60,6 +66,7 @@ fn start_server(data: Vec<u8>) -> TestServer {
         addr,
         ranges,
         headers,
+        targets,
     }
 }
 
@@ -68,6 +75,7 @@ fn handle_connection(
     data: &[u8],
     ranges: &Mutex<Vec<String>>,
     headers: &Mutex<Vec<String>>,
+    targets: &Mutex<Vec<String>>,
 ) {
     let mut request = Vec::new();
     let mut buffer = [0_u8; 1024];
@@ -89,7 +97,8 @@ fn handle_connection(
     };
     let mut parts = request_line.split_whitespace();
     let method = parts.next().unwrap_or("GET");
-    let _path = parts.next().unwrap_or("/");
+    let target = parts.next().unwrap_or("/");
+    targets.lock().unwrap().push(target.to_string());
 
     let mut range_header = None;
     for line in lines {
@@ -484,4 +493,43 @@ fn throttles_when_the_budget_limits_speed() {
         elapsed <= Duration::from_secs(10),
         "download unreasonably slow: {elapsed:?}"
     );
+}
+
+/// A configured proxy must receive absolute-form requests; the target host
+/// name does not resolve, so only going through the proxy can succeed.
+#[test]
+fn downloads_through_a_configured_proxy() {
+    let data = test_data();
+    let proxy = start_server(data.clone());
+    let root = temp_dir("proxy");
+    let url = "http://aether-proxy-test.invalid/file.bin";
+
+    let mut settings = init(&root);
+    settings.proxy = Some(ProxyConfig::parse(&format!("http://{}", proxy.addr)).unwrap());
+    let mut plugin = PluginProcess::spawn(manifest(), &executable(), settings).unwrap();
+
+    let probe = plugin.probe(url).unwrap();
+    assert!(probe.supported, "proxy probe failed: {probe:?}");
+
+    let staging = root.join("staging");
+    start_task(
+        &mut plugin,
+        url.to_string(),
+        staging.clone(),
+        sha256_hex(&data),
+    );
+    wait_for_completed(&mut plugin);
+
+    assert_eq!(fs::read(staging.join("file.bin")).unwrap(), data);
+    let targets = proxy.targets.lock().unwrap().clone();
+    assert!(!targets.is_empty(), "proxy saw no requests");
+    assert!(
+        targets
+            .iter()
+            .all(|target| target == "http://aether-proxy-test.invalid/file.bin"),
+        "expected absolute-form proxy targets, got {targets:?}"
+    );
+
+    plugin.shutdown().unwrap();
+    fs::remove_dir_all(root).ok();
 }

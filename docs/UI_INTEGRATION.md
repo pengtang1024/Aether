@@ -53,6 +53,7 @@ let subscription = Client::connect(&socket)?.subscribe()?;
 {"event":"completed","task_id":"...","files":[...]}
 {"event":"failed","task_id":"...","error":{...}}
 {"event":"task_deleted","task_id":"..."}
+{"event":"settings_changed","settings":{"proxy":{...}}}
 {"event":"retry_scheduled","task_id":"...","attempt":2,"delay_secs":60}
 ```
 
@@ -76,6 +77,13 @@ client.cancel(task_id)?;  // -> canceled（终态，可再 resume 重新下载�
 client.delete(task_id)?;  // 仅终态可删；清记录/staging，已下载文件保留
 client.task_record(task_id)?;
 client.logs(task_id, 200)?; // Vec<TaskLog> { level, message, created_at, fields? }，旧→新
+
+// 设置页（代理）
+client.settings()?; // {"proxy": null} 或 {"proxy":{"mode":"system|none|custom",…}}
+client.set_settings(json!({
+    "proxy": {"mode": "custom", "url": "socks5://127.0.0.1:1080"}
+}))?; // 部分更新；{"proxy": null} 表示恢复默认；校验失败返回错误
+
 ```
 
 `add_task` 会 Probe 后选择插件；想强制插件用 `plugin: Some("http")`。
@@ -86,6 +94,8 @@ client.logs(task_id, 200)?; // Vec<TaskLog> { level, message, created_at, fields
 - `daemon` 不在：连接错误；UI 显示“后台服务未启动”。
 - 插件失败：`failed` 事件 + `StoredTask.error_message`；可提供“重试”。
 - 升级：`update_status` 显示 `ready`，由 daemon/包管理器处理；UI 只做提示。
+- 代理设置变更不影响已经在跑的任务（插件进程持有启动时的配置）；设置页保存后
+  提示“对之后开始的任务生效”。
 - 不要把 socket 暴露到 TCP；不要接受非本用户连接。
 
 ## 6. 迁移步骤

@@ -6,8 +6,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use aether_plugin_sdk::{
-    Budget, Init, LogLevel, PluginEvent, PluginKind, PluginProcess, ProbeResult, TaskPaths,
-    TaskSpec,
+    Budget, Init, LogLevel, PluginEvent, PluginKind, PluginProcess, ProbeResult, ProxyConfig,
+    TaskPaths, TaskSpec,
 };
 
 use crate::abi::AbiPlugin;
@@ -19,6 +19,9 @@ pub struct PluginManager {
     registry: PluginRegistry,
     data_dir: PathBuf,
     host_version: String,
+    /// Passed to every plugin process on spawn. `None` keeps the plugin's own
+    /// default (usually "honor the environment").
+    proxy: Option<ProxyConfig>,
     processes: HashMap<String, RunningPlugin>,
 }
 
@@ -45,8 +48,19 @@ impl PluginManager {
             registry,
             data_dir: data_dir.into(),
             host_version: host_version.into(),
+            proxy: None,
             processes: HashMap::new(),
         }
+    }
+
+    /// Set the proxy handed to plugin processes. Takes effect the next time a
+    /// plugin is spawned; already running plugins keep their old setting.
+    pub fn set_proxy(&mut self, proxy: Option<ProxyConfig>) {
+        self.proxy = proxy;
+    }
+
+    pub fn proxy(&self) -> Option<&ProxyConfig> {
+        self.proxy.as_ref()
     }
 
     pub fn registry(&self) -> &PluginRegistry {
@@ -171,7 +185,7 @@ impl PluginManager {
                 host_version: self.host_version.clone(),
                 data_dir: self.data_dir.to_string_lossy().into_owned(),
                 log_level: LogLevel::Info,
-                proxy: None,
+                proxy: self.proxy.clone(),
                 limits: Default::default(),
             };
             let running = match entry.manifest.kind {

@@ -43,6 +43,8 @@ aether-daemon
 | `logs` | `task_id`, `settings.limit?` | 任务日志（默认 200 条，上限 1000，旧→新） |
 | `pause` / `resume` / `cancel` | `task_id` | 生命周期 |
 | `delete` | `task_id` | 删除终态任务（保留已下载文件） |
+| `get_settings` | — | 返回 `{"settings":{"proxy":…}}` |
+| `set_settings` | `settings.proxy?` | 部分更新设置并落盘，广播 `settings_changed` |
 | `shutdown` | — | 停止 daemon |
 
 示例：
@@ -141,6 +143,28 @@ CLI 对等命令：`aether-cli logs <task-id> --dir <dir> [--limit <n>]`（直�
 - 删除会清掉 `.aether/<task_id>/`（staging 与续传状态）和数据库记录；已完成的
   文件位于下载目录本体，删除任务不会动它们。
 - 广播 `task_deleted` 事件，UI 用来移除列表项。
+
+## 5.5 代理
+
+插件侧的 `Init.proxy` 早就有三种模式，但 daemon 以前从不填它；现在两端接通：
+
+| 模式 | settings JSON | 说明 |
+| --- | --- | --- |
+| `system` | `{"proxy":{"mode":"system"}}` | 交给 reqwest 读 `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY`/`NO_PROXY` |
+| `none` | `{"proxy":{"mode":"none"}}` | 永不使用代理（显式忽略上面这些环境变量） |
+| `custom` | `{"proxy":{"mode":"custom","url":"socks5://127.0.0.1:1080","username":…,"password":…}}` | 只用指定代理；`http`/`https`/`socks5`/`socks5h` |
+
+- 设置持久化在 `<download>/.aether/settings.json`（`0600`，可能含代理密码）。
+  坏文件不会阻止 daemon 启动：打日志后按默认值运行。
+- `AETHER_PROXY` 可给单次运行覆盖，接受一行规格：
+  `system`、`none`、`http://user:pass@host:3128`、`socks5://host:1080`。
+  环境变量**不落盘**——不会因为一次 `export` 永久改掉用户设置。
+- 生效范围：设置变更只影响之后启动的插件进程；正在跑的任务保持原代理。
+  空闲 5 分钟插件会被卸载，所以最迟下次启动就会用新设置。
+- `custom` 但缺 `url`、未知 `mode`、非 `host:port` 的 URL 都会被拒绝（错误返回给
+  UI，旧设置保持不变）。
+- 凭据只存在本机 settings/SQLite 和进程 `Init` 里，不写日志；HTTP 插件只把
+  `username/password` 交给 reqwest 的 `Proxy::basic_auth`。
 
 ## 6. 接管系统下载还差什么
 

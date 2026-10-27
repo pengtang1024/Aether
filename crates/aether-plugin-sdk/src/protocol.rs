@@ -160,11 +160,11 @@ pub enum LogLevel {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProxyConfig {
     pub mode: ProxyMode,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub username: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
 }
 
@@ -175,6 +175,138 @@ pub enum ProxyMode {
     #[serde(rename = "none")]
     Direct,
     Custom,
+}
+
+impl ProxyMode {
+    /// Parse the mode names used by settings files and `AETHER_PROXY`.
+    pub fn parse(value: &str) -> Result<Self, String> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "system" => Ok(Self::System),
+            "none" | "direct" => Ok(Self::Direct),
+            "custom" => Ok(Self::Custom),
+            other => Err(format!(
+                "unknown proxy mode {other:?} (expected system, none or a proxy URL)"
+            )),
+        }
+    }
+}
+
+impl ProxyConfig {
+    pub fn system() -> Self {
+        Self {
+            mode: ProxyMode::System,
+            url: None,
+            username: None,
+            password: None,
+        }
+    }
+
+    /// No proxy at all; unlike `system` this ignores `HTTP_PROXY`-style
+    /// environment variables.
+    pub fn direct() -> Self {
+        Self {
+            mode: ProxyMode::Direct,
+            url: None,
+            username: None,
+            password: None,
+        }
+    }
+
+    /// Reject configurations that would only fail later inside a plugin.
+    pub fn validate(&self) -> Result<(), String> {
+        let url = match self.mode {
+            ProxyMode::Custom => self
+                .url
+                .as_deref()
+                .ok_or_else(|| "custom proxy needs a URL".to_string())?,
+            ProxyMode::System | ProxyMode::Direct => {
+                if self.url.is_some() {
+                    return Err("system/none proxies must not carry a URL".into());
+                }
+                return Ok(());
+            }
+        };
+        let (scheme, rest) = url
+            .split_once("://")
+            .ok_or_else(|| format!("proxy URL needs a scheme: {url:?}"))?;
+        if !matches!(
+            scheme.to_ascii_lowercase().as_str(),
+            "http" | "https" | "socks5" | "socks5h"
+        ) {
+            return Err(format!("unsupported proxy scheme {scheme:?}"));
+        }
+        if rest.is_empty() || !rest.contains(':') || rest.contains('@') {
+            return Err(format!("proxy URL needs host:port: {url:?}"));
+        }
+        Ok(())
+    }
+
+    /// Parse a one-line proxy spec:
+    ///
+    /// - `system` — honor the platform environment (`HTTP_PROXY`, `ALL_PROXY`, …)；
+    /// - `none` / `direct` — never use a proxy；
+    /// - `scheme://[user:password@]host:port` — an explicit proxy. Supported
+    ///   schemes are `http`, `https`, `socks5` and `socks5h`.
+    ///
+    /// Credentials are split out of the URL because plugins hand them to
+    /// reqwest separately. Percent-encoding in credentials is *not* decoded:
+    /// use a settings object with `username`/`password` for exotic passwords.
+    pub fn parse(spec: &str) -> Result<Self, String> {
+        let spec = spec.trim();
+        if spec.is_empty() {
+            return Err("empty proxy spec".into());
+        }
+        if !spec.contains("://") {
+            return match ProxyMode::parse(spec)? {
+                ProxyMode::System => Ok(Self::system()),
+                ProxyMode::Direct => Ok(Self::direct()),
+                // "custom" without a URL is meaningless.
+                ProxyMode::Custom => Err("custom proxy needs a URL".into()),
+            };
+        }
+
+        let (scheme, rest) = spec
+            .split_once("://")
+            .ok_or_else(|| format!("invalid proxy URL {spec:?}"))?;
+        let scheme = scheme.to_ascii_lowercase();
+        if !matches!(scheme.as_str(), "http" | "https" | "socks5" | "socks5h") {
+            return Err(format!("unsupported proxy scheme {scheme:?}"));
+        }
+        if rest.contains('/') || rest.contains('?') || rest.contains('#') {
+            return Err(format!(
+                "proxy URL must not contain a path, query or fragment: {spec:?}"
+            ));
+        }
+
+        let (credentials, authority) = match rest.rsplit_once('@') {
+            Some((credentials, authority)) => (Some(credentials), authority),
+            None => (None, rest),
+        };
+        if authority.is_empty() || !authority.contains(':') {
+            return Err(format!("proxy URL needs host:port: {spec:?}"));
+        }
+        let (username, password) = match credentials {
+            Some(credentials) => match credentials.split_once(':') {
+                Some((username, password)) => {
+                    if username.is_empty() {
+                        return Err("proxy username must not be empty".into());
+                    }
+                    (Some(username.to_string()), Some(password.to_string()))
+                }
+                None => (Some(credentials.to_string()), None),
+            },
+            None => (None, None),
+        };
+
+        let config = Self {
+            mode: ProxyMode::Custom,
+            url: Some(format!("{scheme}://{authority}")),
+            username,
+            password,
+        };
+        config.validate()?;
+        Ok(config)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -406,6 +538,44 @@ mod tests {
         let encoded = rmp_serde::to_vec_named(&event).unwrap();
         let decoded: PluginEvent = rmp_serde::from_slice(&encoded).unwrap();
         assert_eq!(decoded, event);
+    }
+
+    #[test]
+    fn parses_proxy_specs() {
+        assert_eq!(ProxyConfig::parse("system").unwrap(), ProxyConfig::system());
+        assert_eq!(ProxyConfig::parse(" NONE ").unwrap(), ProxyConfig::direct());
+        assert_eq!(ProxyConfig::parse("direct").unwrap(), ProxyConfig::direct());
+
+        let http = ProxyConfig::parse("http://10.0.0.1:3128").unwrap();
+        assert_eq!(http.mode, ProxyMode::Custom);
+        assert_eq!(http.url.as_deref(), Some("http://10.0.0.1:3128"));
+        assert_eq!(http.username, None);
+
+        let socks = ProxyConfig::parse("SOCKS5://user:p%40ss@127.0.0.1:1080").unwrap();
+        assert_eq!(socks.mode, ProxyMode::Custom);
+        assert_eq!(socks.url.as_deref(), Some("socks5://127.0.0.1:1080"));
+        assert_eq!(socks.username.as_deref(), Some("user"));
+        // Credentials are passed through verbatim; percent-decoding is the
+        // caller's job (settings objects carry raw username/password).
+        assert_eq!(socks.password.as_deref(), Some("p%40ss"));
+
+        assert!(ProxyConfig::parse("").is_err());
+        assert!(ProxyConfig::parse("custom").is_err());
+        assert!(ProxyConfig::parse("ftp://10.0.0.1:21").is_err());
+        assert!(ProxyConfig::parse("http://10.0.0.1").is_err());
+        assert!(ProxyConfig::parse("http://10.0.0.1:3128/pac").is_err());
+        assert!(ProxyConfig::parse("http://:pass@10.0.0.1:3128").is_err());
+
+        // Handler-level validation catches settings objects that bypass parse.
+        assert!(ProxyConfig::system().validate().is_ok());
+        assert!(ProxyConfig::direct().validate().is_ok());
+        let mut custom = ProxyConfig::parse("http://10.0.0.1:3128").unwrap();
+        assert!(custom.validate().is_ok());
+        custom.url = None;
+        assert!(custom.validate().is_err());
+        custom.url = Some("http://10.0.0.1:3128".into());
+        custom.mode = ProxyMode::System;
+        assert!(custom.validate().is_err());
     }
 
     #[test]

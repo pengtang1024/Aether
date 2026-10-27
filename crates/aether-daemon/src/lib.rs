@@ -6,6 +6,8 @@ pub mod error;
 pub mod proto;
 #[cfg(unix)]
 pub mod server;
+#[cfg(unix)]
+pub mod settings;
 
 #[cfg(unix)]
 pub use client::Client;

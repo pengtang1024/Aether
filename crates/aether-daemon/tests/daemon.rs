@@ -55,6 +55,25 @@ fn spawn_daemon_with(
     retry_max: u32,
     retry_base_secs: u64,
 ) -> Option<Daemon> {
+    spawn_daemon_full(
+        label,
+        max_concurrent,
+        max_speed_bps,
+        retry_max,
+        retry_base_secs,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn spawn_daemon_full(
+    label: &str,
+    max_concurrent: usize,
+    max_speed_bps: Option<u64>,
+    retry_max: u32,
+    retry_base_secs: u64,
+    proxy: Option<&str>,
+) -> Option<Daemon> {
     let fake = fake_binary()?;
     let root = temp_dir(label);
     let package = root.join("plugins").join("fake");
@@ -91,6 +110,7 @@ fn spawn_daemon_with(
         max_speed_bps,
         retry_max,
         retry_base_secs,
+        proxy: proxy.map(ToOwned::to_owned),
     };
     let handle = thread::spawn(move || aether_daemon::run(config));
     Some(Daemon {
@@ -523,6 +543,87 @@ fn daemon_exposes_task_logs() {
 
     // Unknown tasks are an error, not an empty list.
     assert!(client.logs("task-missing", 10).is_err());
+
+    client.shutdown().unwrap();
+    daemon.shutdown();
+}
+
+#[test]
+fn daemon_updates_and_persists_proxy_settings() {
+    let Some(daemon) = spawn_daemon("settings", 1, None) else {
+        eprintln!("fake plugin binary is not built; skipping");
+        return;
+    };
+    let socket = daemon.socket.clone();
+    let settings_path = daemon.root.join("downloads/.aether/settings.json");
+
+    let mut client = connect(&socket);
+    // Nothing configured yet: the plugin default (honor the environment).
+    assert!(client.settings().unwrap()["proxy"].is_null());
+
+    let updated = client
+        .set_settings(json!({
+            "proxy": {"mode": "custom", "url": "http://10.0.0.1:3128",
+                      "username": "user", "password": "secret"}
+        }))
+        .unwrap();
+    assert_eq!(updated["proxy"]["mode"], "custom");
+    assert_eq!(updated["proxy"]["url"], "http://10.0.0.1:3128");
+
+    // Persisted next to the database, readable only by the user.
+    let raw = fs::read_to_string(&settings_path).unwrap();
+    assert!(raw.contains("10.0.0.1:3128"), "{raw}");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = fs::metadata(&settings_path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "settings may hold proxy credentials");
+    }
+
+    // Invalid settings are rejected without touching the stored value.
+    assert!(client
+        .set_settings(json!({"proxy": {"mode": "custom"}}))
+        .is_err());
+    assert!(client
+        .set_settings(json!({"proxy": {"mode": "hyperdrive"}}))
+        .is_err());
+    assert_eq!(
+        client.settings().unwrap()["proxy"]["url"],
+        "http://10.0.0.1:3128"
+    );
+
+    // Selecting "no proxy" clears the URL.
+    let cleared = client
+        .set_settings(json!({"proxy": {"mode": "none"}}))
+        .unwrap();
+    assert_eq!(cleared["proxy"]["mode"], "none");
+    assert!(cleared["proxy"]["url"].is_null());
+
+    // `null` removes the setting entirely.
+    let removed = client.set_settings(json!({"proxy": null})).unwrap();
+    assert!(removed["proxy"].is_null());
+
+    client.shutdown().unwrap();
+    daemon.shutdown();
+}
+
+#[test]
+fn daemon_uses_the_proxy_from_the_environment() {
+    let Some(daemon) =
+        spawn_daemon_full("proxy-env", 1, None, 5, 30, Some("socks5://127.0.0.1:1080"))
+    else {
+        eprintln!("fake plugin binary is not built; skipping");
+        return;
+    };
+    let socket = daemon.socket.clone();
+
+    let mut client = connect(&socket);
+    let settings = client.settings().unwrap();
+    assert_eq!(settings["proxy"]["mode"], "custom");
+    assert_eq!(settings["proxy"]["url"], "socks5://127.0.0.1:1080");
+    // The environment override is per run: it must not rewrite the user's
+    // persisted settings behind their back.
+    assert!(!daemon.root.join("downloads/.aether/settings.json").exists());
 
     client.shutdown().unwrap();
     daemon.shutdown();

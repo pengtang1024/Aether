@@ -23,8 +23,9 @@ publish packages.
 
 - **Native rendering.** Slint uses the winit backend with the femtovg/OpenGL
   renderer and a software fallback. There is no WebView, Chromium or Electron.
-- **Proxy.** HTTP CONNECT/SOCKS5 and manual proxy are supported by design;
-  PAC/WPAD auto-proxy is planned for P2 (Host-side resolver).
+- **Proxy.** HTTP/HTTPS and SOCKS5/SOCKS5h proxies work end to end (daemon
+  settings or `AETHER_PROXY`); `system` mode honors `HTTP_PROXY`/`ALL_PROXY`.
+  PAC/WPAD auto-proxy is still planned for P2 (Host-side resolver).
 - **Display servers.** Linux builds support Wayland and X11. The packages
   depend on the usual `libwayland`, `libxkbcommon`, `libx11` and `libgl1`/
   `libegl1` libraries; desktops normally provide them.

@@ -46,6 +46,11 @@ versioning; this is a UI mockup, so 0.x versions may change visual structure.
 - Completed downloads now land directly in the download directory (previously
   buried under `.aether/<task>/final/`), with automatic `-1`, `-2`… renaming on
   filename conflicts instead of a hard error.
+- Proxy configuration now reaches the plugins: `get_settings`/`set_settings`
+  on the daemon (persisted in `.aether/settings.json`, mode `0600`), the
+  `AETHER_PROXY` one-line override (`system`/`none`/`http://user:pass@host:port`/
+  `socks5://host:port`), and `PluginManager::set_proxy`. HTTP and media plugins
+  already honored `Init.proxy`; before this the daemon always passed `None`.
 - Task logs API: daemon `logs` method, typed `Client::logs` (`TaskLog` with
   level/message/timestamp/fields, oldest first) and `aether-cli logs`. The
   daemon now records start/queue/completion/failure/finalize/retry/pause/

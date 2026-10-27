@@ -179,6 +179,20 @@ impl Client {
         Ok(())
     }
 
+    /// Daemon settings, currently `{"proxy": {...}}` (or an empty object when
+    /// no proxy is configured).
+    pub fn settings(&mut self) -> Result<Value, DaemonError> {
+        let value = self.call("get_settings", None, None, None, None, json!({}))?;
+        Ok(value.get("settings").cloned().unwrap_or(Value::Null))
+    }
+
+    /// Partial settings update: only the keys present change. Pass
+    /// `{"proxy": null}` to clear the proxy. Returns the stored settings.
+    pub fn set_settings(&mut self, settings: Value) -> Result<Value, DaemonError> {
+        let value = self.call("set_settings", None, None, None, None, settings)?;
+        Ok(value.get("settings").cloned().unwrap_or(Value::Null))
+    }
+
     pub fn update_status(&mut self) -> Result<Value, DaemonError> {
         self.call("update_status", None, None, None, None, json!({}))
     }

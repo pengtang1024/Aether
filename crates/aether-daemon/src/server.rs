@@ -16,13 +16,14 @@ use aether_host::{
     default_plugins_dir, finalize_task, NewTask, PluginEventEnvelope, PluginManager,
     PluginRegistry, StoredTask, TaskState, TaskStore,
 };
-use aether_plugin_sdk::{Budget, HostCommand, PluginEvent, TaskPaths, TaskSpec};
+use aether_plugin_sdk::{Budget, HostCommand, PluginEvent, ProxyConfig, TaskPaths, TaskSpec};
 use aether_update::UpdateClient;
 use fs2::FileExt;
 use serde_json::{json, Value};
 
 use crate::error::DaemonError;
 use crate::proto::{Request, Response};
+use crate::settings::Settings;
 
 pub struct DaemonConfig {
     pub download_dir: PathBuf,
@@ -40,6 +41,8 @@ pub struct DaemonConfig {
     pub retry_max: u32,
     /// Base delay in seconds for the exponential retry backoff.
     pub retry_base_secs: u64,
+    /// Proxy spec from `AETHER_PROXY`; overrides the persisted setting.
+    pub proxy: Option<String>,
 }
 
 impl Default for DaemonConfig {
@@ -72,6 +75,10 @@ impl Default for DaemonConfig {
                 .and_then(|value| value.parse().ok())
                 .filter(|value| *value > 0)
                 .unwrap_or(30),
+            proxy: std::env::var("AETHER_PROXY")
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
         }
     }
 }
@@ -101,6 +108,9 @@ struct State {
     canceling: HashSet<String>,
     /// Automatic retry schedule per failed task: attempt count and next start.
     retries: HashMap<String, RetrySchedule>,
+    /// Persisted daemon settings (currently just the proxy).
+    settings: Settings,
+    settings_path: PathBuf,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -133,8 +143,17 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
     fs::set_permissions(&config.socket, fs::Permissions::from_mode(0o600))?;
 
     let registry = PluginRegistry::discover(&[config.plugins_dir.clone()])?;
-    let manager = PluginManager::new(registry, &data_dir, config.host_version.clone());
+    let mut manager = PluginManager::new(registry, &data_dir, config.host_version.clone());
     let store = TaskStore::open(data_dir.join("aether.db"))?;
+
+    // Persisted settings, with AETHER_PROXY winning over the file so ops and
+    // tests can override a user's choice for one run.
+    let settings_path = Settings::path(&config.download_dir);
+    let mut settings = Settings::load(&settings_path);
+    if let Some(spec) = &config.proxy {
+        settings.proxy = Some(ProxyConfig::parse(spec).map_err(DaemonError::Protocol)?);
+    }
+    manager.set_proxy(settings.proxy.clone());
     let update_status = match (&config.update_url, &config.update_public_key) {
         (Some(url), Some(key)) => {
             let status = Arc::new(Mutex::new(serde_json::json!({
@@ -169,6 +188,8 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
         live: HashSet::new(),
         canceling: HashSet::new(),
         retries: HashMap::new(),
+        settings,
+        settings_path,
     };
 
     recover_tasks(&mut state);
@@ -606,6 +627,30 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
             state.store.delete_task(&task_id)?;
             broadcast(state, json!({"event": "task_deleted", "task_id": task_id}));
             Ok(json!({"task_id": task_id, "deleted": true}))
+        }
+        "get_settings" => Ok(json!({ "settings": state.settings })),
+        "set_settings" => {
+            // Partial update: only keys that are present change. `proxy: null`
+            // clears the proxy and falls back to the plugin default.
+            if let Some(proxy) = request.settings.get("proxy") {
+                let proxy: Option<ProxyConfig> =
+                    serde_json::from_value(proxy.clone()).map_err(|error| {
+                        DaemonError::Protocol(format!("invalid proxy setting: {error}"))
+                    })?;
+                if let Some(proxy) = &proxy {
+                    proxy.validate().map_err(DaemonError::Protocol)?;
+                }
+                state.settings.proxy = proxy;
+                // Applies to plugins spawned from now on; running downloads
+                // keep the proxy they started with.
+                state.manager.set_proxy(state.settings.proxy.clone());
+            }
+            state.settings.save(&state.settings_path)?;
+            broadcast(
+                state,
+                json!({"event": "settings_changed", "settings": state.settings}),
+            );
+            Ok(json!({ "settings": state.settings }))
         }
         "update_status" => Ok(state.update.as_ref().map_or_else(
             || json!({"status": "disabled"}),
