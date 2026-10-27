@@ -54,7 +54,7 @@ impl Default for DaemonConfig {
             download_dir: PathBuf::from("downloads"),
             plugins_dir: default_plugins_dir(),
             socket: crate::client::default_socket(),
-            host_version: "0.2.0".into(),
+            host_version: env!("CARGO_PKG_VERSION").into(),
             update_url: std::env::var("AETHER_UPDATE_URL").ok(),
             update_public_key: std::env::var("AETHER_UPDATE_PUBKEY").ok(),
             update_appimage: std::env::var("AETHER_UPDATE_APPIMAGE")
