@@ -47,6 +47,34 @@ pub struct Settings {
     /// Automatic retry cap per task; `0` disables automatic retries.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retry_max: Option<u32>,
+    /// Default request headers for HTTP-family plugins: `"Key: Value"` pairs
+    /// separated by newlines or semicolons, validated by
+    /// [`aether_plugin_sdk::NetworkConfig::parse_header_list`]. A per-task
+    /// header of the same name wins.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_headers: Option<String>,
+    /// FTP data connection mode. `None`/`Some(true)` = passive, `Some(false)`
+    /// = active for firewalls that require it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ftp_passive: Option<bool>,
+    /// BitTorrent listen port (`1..=65535`); the plugin falls back to
+    /// `AETHER_BT_LISTEN_PORT` when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bt_listen_port: Option<u16>,
+    /// BitTorrent DHT; unset keeps the plugin default (enabled unless
+    /// `AETHER_BT_DISABLE_DHT` is set).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bt_dht: Option<bool>,
+    /// BitTorrent upload cap in bytes per second; `0` or unset = unlimited.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bt_upload_bps: Option<u64>,
+    /// BitTorrent blocklist ("dat" format): a path, `file://` URL or
+    /// `http(s)://` URL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bt_blocklist: Option<String>,
+    /// Extra trackers for every torrent, separated by newlines or semicolons.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bt_trackers: Option<String>,
 }
 
 /// The upper bound the http plugin honours for [`Settings::connections`]:
@@ -60,7 +88,7 @@ pub const CONNECTIONS_DEFAULT: u32 = 4;
 /// Every key `set_settings` accepts. The file is parsed with
 /// `deny_unknown_fields`, so the RPC rejects the same typos instead of
 /// silently storing nothing.
-pub const KEYS: [&str; 8] = [
+pub const KEYS: [&str; 15] = [
     "proxy",
     "user_agent",
     "ip_mode",
@@ -69,6 +97,13 @@ pub const KEYS: [&str; 8] = [
     "max_speed_bps",
     "connections",
     "retry_max",
+    "default_headers",
+    "ftp_passive",
+    "bt_listen_port",
+    "bt_dht",
+    "bt_upload_bps",
+    "bt_blocklist",
+    "bt_trackers",
 ];
 
 /// The limits in force: `settings.json` wins, the boot configuration
@@ -81,14 +116,28 @@ pub struct Limits {
     pub retry_max: u32,
 }
 
+/// Split a newline/semicolon separated list (trackers, …) into trimmed,
+/// non-empty entries. `None` when nothing survives, so "blank" and "unset"
+/// stay indistinguishable in `NetworkConfig`.
+fn split_list(text: Option<&str>) -> Option<Vec<String>> {
+    let entries = text?
+        .split(['\n', ';'])
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>();
+    (!entries.is_empty()).then_some(entries)
+}
+
 impl Settings {
     pub fn path(download_dir: &Path) -> PathBuf {
         download_dir.join(".aether").join("settings.json")
     }
 
     /// The network configuration handed to plugin processes, or `None` when
-    /// every knob is at its default. A stored DNS list that no longer parses
-    /// (hand-edited file) degrades to the system resolver with a warning.
+    /// every knob is at its default. A stored list that no longer parses
+    /// (hand-edited file) degrades to the default with a warning instead of
+    /// refusing to run.
     pub fn network(&self) -> Option<NetworkConfig> {
         let user_agent = self.user_agent.clone().filter(|ua| !ua.trim().is_empty());
         let dns = match self.dns.as_deref() {
@@ -101,13 +150,46 @@ impl Settings {
             },
             _ => None,
         };
-        if user_agent.is_none() && self.ip_mode.is_none() && dns.is_none() {
+        let default_headers = match self.default_headers.as_deref() {
+            Some(text) if !text.trim().is_empty() => match NetworkConfig::parse_header_list(text) {
+                Ok(headers) => Some(headers),
+                Err(error) => {
+                    eprintln!("aether-daemon: ignoring header setting: {error}");
+                    None
+                }
+            },
+            _ => None,
+        };
+        let bt_trackers = split_list(self.bt_trackers.as_deref());
+        if user_agent.is_none()
+            && self.ip_mode.is_none()
+            && dns.is_none()
+            && default_headers.is_none()
+            && self.ftp_passive.is_none()
+            && self.bt_listen_port.is_none()
+            && self.bt_dht.is_none()
+            && self.bt_upload_bps.is_none()
+            && self.bt_blocklist.is_none()
+            && bt_trackers.is_none()
+        {
             return None;
         }
         Some(NetworkConfig {
             user_agent,
             ip_mode: self.ip_mode,
             dns,
+            default_headers,
+            ftp_passive: self.ftp_passive,
+            bt_listen_port: self.bt_listen_port,
+            bt_dht: self.bt_dht,
+            // `0` is the stored form of "no cap"; plugins treat `None` the
+            // same way, so normalise before handing it over.
+            bt_upload_bps: self.bt_upload_bps.filter(|bps| *bps > 0),
+            bt_blocklist: self
+                .bt_blocklist
+                .clone()
+                .filter(|path| !path.trim().is_empty()),
+            bt_trackers,
         })
     }
 
@@ -170,6 +252,17 @@ impl Settings {
                     "connections must be within 1..={CONNECTIONS_MAX}, got {connections}"
                 )));
             }
+        }
+        if let Some(headers) = self.default_headers.as_deref() {
+            if !headers.trim().is_empty() {
+                aether_plugin_sdk::NetworkConfig::parse_header_list(headers)
+                    .map_err(DaemonError::Protocol)?;
+            }
+        }
+        if self.bt_listen_port == Some(0) {
+            return Err(DaemonError::Protocol(
+                "bt_listen_port must be 1..=65535".into(),
+            ));
         }
         Ok(())
     }
@@ -451,6 +544,13 @@ mod tests {
             max_speed_bps: Some(1),
             connections: Some(4),
             retry_max: Some(5),
+            default_headers: Some("Referer: https://x.test".into()),
+            ftp_passive: Some(false),
+            bt_listen_port: Some(6881),
+            bt_dht: Some(false),
+            bt_upload_bps: Some(1024),
+            bt_blocklist: Some("/tmp/blocklist.dat".into()),
+            bt_trackers: Some("udp://tracker.test:80/announce".into()),
         };
         let object = serde_json::to_value(settings).unwrap();
         let object = object.as_object().unwrap();
@@ -458,5 +558,64 @@ mod tests {
         for key in object.keys() {
             assert!(KEYS.contains(&key.as_str()), "unknown key {key}");
         }
+    }
+
+    #[test]
+    fn network_config_carries_headers_ftp_and_bt_knobs() {
+        let settings = Settings {
+            default_headers: Some("Referer: https://x.test/a; Origin: https://x.test".into()),
+            ftp_passive: Some(false),
+            bt_listen_port: Some(6881),
+            bt_dht: Some(false),
+            bt_upload_bps: Some(0),
+            bt_blocklist: Some("  ".into()),
+            bt_trackers: Some("udp://t1.test:80/announce\nudp://t2.test:80/announce\n".into()),
+            ..Settings::default()
+        };
+        let network = settings.network().unwrap();
+        assert_eq!(
+            network.default_headers.as_ref().unwrap(),
+            &[
+                ("Referer".to_string(), "https://x.test/a".to_string()),
+                ("Origin".to_string(), "https://x.test".to_string()),
+            ][..]
+        );
+        assert_eq!(network.ftp_passive, Some(false));
+        assert_eq!(network.bt_listen_port, Some(6881));
+        assert_eq!(network.bt_dht, Some(false));
+        // A stored 0 is the form of "no cap"; plugins get `None`.
+        assert_eq!(network.bt_upload_bps, None);
+        // Blank entries collapse to `None`, keeping "unset" semantics.
+        assert_eq!(network.bt_blocklist, None);
+        assert_eq!(
+            network.bt_trackers.as_ref().unwrap(),
+            &[
+                "udp://t1.test:80/announce".to_string(),
+                "udp://t2.test:80/announce".to_string()
+            ][..]
+        );
+
+        // Hand-edited garbage degrades per field; the rest still applies.
+        let settings = Settings {
+            user_agent: Some("Keep/1".into()),
+            default_headers: Some("Referer https://x.test".into()),
+            ..Settings::default()
+        };
+        let network = settings.network().unwrap();
+        assert_eq!(network.default_headers, None);
+        assert_eq!(network.user_agent.as_deref(), Some("Keep/1"));
+
+        // A port of 0 cannot be bound; validation rejects it up front.
+        let bad_port = Settings {
+            bt_listen_port: Some(0),
+            ..Settings::default()
+        };
+        assert!(bad_port.validate().is_err());
+        let bad_headers = Settings {
+            default_headers: Some("Referer https://x.test".into()),
+            ..Settings::default()
+        };
+        assert!(bad_headers.validate().is_err());
+        assert!(Settings::default().validate().is_ok());
     }
 }

@@ -341,9 +341,64 @@ pub struct NetworkConfig {
     /// goes to these servers only; the system resolver is not consulted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dns: Option<Vec<String>>,
+    /// Default request headers HTTP-family plugins send with every request
+    /// (`"Key: Value"` pairs, parsed by [`NetworkConfig::parse_header_list`]).
+    /// A per-task header of the same name wins.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_headers: Option<Vec<(String, String)>>,
+    /// FTP data connection mode. `None`/`Some(true)` = passive (what almost
+    /// every server and firewall expects); `Some(false)` = active.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ftp_passive: Option<bool>,
+    /// BitTorrent listen port. The plugin falls back to
+    /// `AETHER_BT_LISTEN_PORT` when this is `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bt_listen_port: Option<u16>,
+    /// BitTorrent DHT. `None` keeps the plugin default (enabled unless
+    /// `AETHER_BT_DISABLE_DHT` is set).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bt_dht: Option<bool>,
+    /// BitTorrent upload cap in bytes per second; `None` or `0` = unlimited.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bt_upload_bps: Option<u64>,
+    /// BitTorrent blocklist in the "dat" (eMule) format: a filesystem path,
+    /// a `file://` URL, or an `http(s)://` URL the engine can download.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bt_blocklist: Option<String>,
+    /// Extra trackers appended to every torrent (URL strings).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bt_trackers: Option<Vec<String>>,
 }
 
 impl NetworkConfig {
+    /// Parse `"Key: Value"` pairs separated by newlines or semicolons, as the
+    /// daemon stores them. Used by the daemon to validate the raw setting and
+    /// by plugins that receive the raw text.
+    pub fn parse_header_list(text: &str) -> Result<Vec<(String, String)>, String> {
+        let mut headers = Vec::new();
+        for entry in text.split(['\n', ';']) {
+            let entry = entry.trim();
+            if entry.is_empty() {
+                continue;
+            }
+            let Some((name, value)) = entry.split_once(':') else {
+                return Err(format!("header {entry:?} is not \"Key: Value\""));
+            };
+            let name = name.trim();
+            // A name with whitespace usually means a missing colon somewhere
+            // ("Referer https://x" splits at the scheme's colon).
+            if name.is_empty()
+                || name
+                    .bytes()
+                    .any(|byte| byte.is_ascii_whitespace() || byte.is_ascii_control())
+            {
+                return Err(format!("header {entry:?} has an invalid name"));
+            }
+            headers.push((name.to_string(), value.trim().to_string()));
+        }
+        Ok(headers)
+    }
+
     /// The wildcard address plugins bind to so the OS only offers sockets of
     /// the requested family.
     pub fn local_address(&self) -> Option<std::net::IpAddr> {
@@ -718,6 +773,31 @@ mod tests {
     }
 
     #[test]
+    fn parses_header_lists() {
+        // Newlines and semicolons both separate entries; values may contain
+        // colons (URLs) and surrounding space is trimmed.
+        let headers =
+            NetworkConfig::parse_header_list("Referer: https://x.test/a; Origin:https://x.test\n")
+                .unwrap();
+        assert_eq!(
+            headers,
+            vec![
+                ("Referer".to_string(), "https://x.test/a".to_string()),
+                ("Origin".to_string(), "https://x.test".to_string()),
+            ]
+        );
+
+        // An entry without a colon or with an empty name is the user making a
+        // mistake: reject the whole list instead of sending half of it.
+        assert!(NetworkConfig::parse_header_list("Referer https://x.test").is_err());
+        assert!(NetworkConfig::parse_header_list(": value").is_err());
+        assert_eq!(
+            NetworkConfig::parse_header_list("; ;").unwrap(),
+            Vec::<(String, String)>::new()
+        );
+    }
+
+    #[test]
     fn network_config_maps_ip_modes_and_serializes_compactly() {
         assert_eq!(NetworkConfig::default().local_address(), None);
 
@@ -743,7 +823,7 @@ mod tests {
         let raw = serde_json::to_string(&NetworkConfig {
             ip_mode: Some(IpMode::Ipv6Only),
             user_agent: Some("TestUA/1".into()),
-            dns: None,
+            ..NetworkConfig::default()
         })
         .unwrap();
         assert_eq!(raw, r#"{"user_agent":"TestUA/1","ip_mode":"ipv6_only"}"#);

@@ -95,6 +95,7 @@ mod tests {
             user_agent: None,
             ip_mode,
             dns: Some(dns.iter().map(|server| server.to_string()).collect()),
+            ..NetworkConfig::default()
         }
     }
 

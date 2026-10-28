@@ -124,6 +124,21 @@ client.set_settings(json!({
 // 所以界面显示的就是 daemon 实际在用的值；未知 key、0 并发、越界连接数都会
 // 返回错误，旧设置原样保留。
 
+// 请求头与传输插件旋钮同样是部分更新，null 清空：
+client.set_settings(json!({
+    "default_headers": "Referer: https://example.com; Origin: https://example.com",
+    //   换行或分号分隔的 "Key: Value"；非法格式整体拒绝。HTTP 族插件的每个
+    //   请求都带上，任务级同名头优先。仅 HTTP 族插件生效。
+    "ftp_passive": true,            // false = 主动模式；空闲 FTP 插件重启后生效
+    "bt_listen_port": 6881,         // 1..=65535；空闲 BT 插件重启后生效
+    "bt_dht": true,                 // false = 关 DHT
+    "bt_upload_bps": 1024 * 512,    // 上传限速（字节/秒），0 = 不限
+    "bt_blocklist": "/path/to/list.dat", // dat 格式路径或 http(s)/file URL
+    "bt_trackers": "udp://t1:80/announce; udp://t2:80/announce" // 附加到所有种子
+}))?;
+// BT 旋钮在插件会话创建时读取：运行中的种子保持原配置，空闲插件重启后
+// 对新任务生效（daemon 在这些键变化时停掉空闲插件进程）。
+
 // PAC：url 或 script 二选一
 client.set_settings(json!({"proxy": {"mode": "pac", "url": "http://wpad/wpad.dat"}}))?;
 // “测试这个 URL 会走哪个代理”

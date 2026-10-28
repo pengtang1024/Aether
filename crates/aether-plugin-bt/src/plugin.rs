@@ -1,6 +1,7 @@
 //! The BitTorrent plugin state machine.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread;
@@ -10,7 +11,9 @@ use aether_plugin_sdk::{
     Capability, HostCommand, Init, Metadata, Plugin, PluginContext, PluginEvent, SdkError,
     TaskPaths, TaskSpec,
 };
+use librqbit::limits::LimitsConfig;
 use librqbit::{Session, SessionOptions};
+use url::Url;
 
 use crate::bt;
 
@@ -99,16 +102,65 @@ impl Plugin for BtPlugin {
             .build()
             .map_err(|error| SdkError::Protocol(format!("tokio runtime: {error}")))?;
 
-        let disable_dht = std::env::var_os("AETHER_BT_DISABLE_DHT").is_some();
-        // Incoming peers are optional; configure a concrete port later in the
-        // plugin settings. Outgoing peer connections and DHT still work.
-        let listen_port = std::env::var("AETHER_BT_LISTEN_PORT")
-            .ok()
-            .and_then(|value| value.parse::<u16>().ok());
+        let network = init.network.as_ref();
+        // The daemon's settings win; the boot-time environment fills what the
+        // settings leave out.
+        let disable_dht = match network.and_then(|config| config.bt_dht) {
+            Some(enabled) => !enabled,
+            None => std::env::var_os("AETHER_BT_DISABLE_DHT").is_some(),
+        };
+        let listen_port = network
+            .and_then(|config| config.bt_listen_port)
+            .or_else(|| {
+                std::env::var("AETHER_BT_LISTEN_PORT")
+                    .ok()
+                    .and_then(|value| value.parse::<u16>().ok())
+            });
+        let upload_bps = network
+            .and_then(|config| config.bt_upload_bps)
+            .and_then(|bps| u32::try_from(bps).ok())
+            .and_then(NonZeroU32::new);
+        let trackers = network
+            .and_then(|config| config.bt_trackers.as_ref())
+            .map(|list| {
+                list.iter()
+                    .filter_map(|entry| match Url::parse(entry) {
+                        Ok(url) => Some(url),
+                        Err(error) => {
+                            eprintln!("aether-plugin-bt: skipping tracker {entry:?}: {error}");
+                            None
+                        }
+                    })
+                    .collect::<HashSet<_>>()
+            })
+            .unwrap_or_default();
+        let blocklist_url = network
+            .and_then(|config| config.bt_blocklist.as_deref())
+            .map(str::trim)
+            .filter(|entry| !entry.is_empty())
+            .map(|entry| {
+                // A bare path becomes a file:// URL the engine loads directly.
+                if entry.starts_with("http://")
+                    || entry.starts_with("https://")
+                    || entry.starts_with("file://")
+                {
+                    entry.to_string()
+                } else {
+                    Url::from_file_path(entry)
+                        .map(|url| url.to_string())
+                        .unwrap_or_else(|()| entry.to_string())
+                }
+            });
         let options = SessionOptions {
             disable_dht,
             disable_dht_persistence: true,
             listen_port_range: listen_port.map(|port| port..port + 1),
+            ratelimits: LimitsConfig {
+                upload_bps,
+                download_bps: None,
+            },
+            blocklist_url,
+            trackers,
             ..Default::default()
         };
         let session = runtime

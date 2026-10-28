@@ -355,6 +355,22 @@ fn refresh_rows(ui: &AppWindow, state: &Rc<RefCell<State>>) {
                 _ => 0,
             });
             ui.set_settings_proxy_url(proxy["url"].as_str().unwrap_or("").into());
+            // Network extras: default headers, FTP mode, BT knobs.
+            ui.set_settings_headers(settings["default_headers"].as_str().unwrap_or("").into());
+            ui.set_settings_ftp_passive(settings["ftp_passive"].as_bool().unwrap_or(true));
+            ui.set_settings_bt_port(
+                settings["bt_listen_port"]
+                    .as_u64()
+                    .map(|port| port.to_string())
+                    .unwrap_or_else(|| "51413".into())
+                    .into(),
+            );
+            ui.set_settings_bt_dht(settings["bt_dht"].as_bool().unwrap_or(true));
+            ui.set_settings_bt_upload_kbps(
+                (settings["bt_upload_bps"].as_u64().unwrap_or(0) as f32 / 1024.0).round() as f32,
+            );
+            ui.set_settings_bt_blocklist(settings["bt_blocklist"].as_str().unwrap_or("").into());
+            ui.set_settings_bt_trackers(settings["bt_trackers"].as_str().unwrap_or("").into());
             // Seed the proxy bookkeeping so a later mode switch pushes a
             // complete setting instead of guessing at the daemon's URL.
             let mode = proxy["mode"].as_str().unwrap_or("system");
@@ -1160,6 +1176,50 @@ fn main() -> Result<(), slint::PlatformError> {
                         };
                         st.backend.set_setting(patch);
                         hint = Some("IP 协议已保存：空闲插件重启后生效".into());
+                    }
+                    // Network extras and BT knobs: same set_settings channel.
+                    "headers" => {
+                        st.backend
+                            .set_setting(serde_json::json!({"default_headers": value.as_str()}));
+                        hint = Some("请求头已保存：空闲插件重启后生效".into());
+                    }
+                    "ftp-passive" => {
+                        st.backend.set_setting(serde_json::json!({
+                            "ftp_passive": value.as_str() == "true"
+                        }));
+                        hint = Some("FTP 模式已保存：空闲插件重启后生效".into());
+                    }
+                    "bt-port" => match value.trim().parse::<u16>() {
+                        Ok(0) | Err(_) => hint = Some("监听端口需要 1-65535 的数字".into()),
+                        Ok(port) => {
+                            st.backend
+                                .set_setting(serde_json::json!({"bt_listen_port": port}));
+                            hint = Some("BT 端口已保存：空闲时重启生效".into());
+                        }
+                    },
+                    "bt-dht" => {
+                        st.backend.set_setting(serde_json::json!({
+                            "bt_dht": value.as_str() == "true"
+                        }));
+                        hint = Some("DHT 已保存：空闲时重启生效".into());
+                    }
+                    "bt-upload-limit" => {
+                        // Slider reports KB/s; 0 is the stored form of "no cap".
+                        let kbps = value.trim().parse::<f64>().unwrap_or(0.0).max(0.0);
+                        let bps = (kbps * 1024.0) as u64;
+                        st.backend
+                            .set_setting(serde_json::json!({"bt_upload_bps": bps}));
+                        hint = Some("上传限速已保存：对新任务与重启后的做种生效".into());
+                    }
+                    "bt-blocklist" => {
+                        st.backend
+                            .set_setting(serde_json::json!({"bt_blocklist": value.as_str()}));
+                        hint = Some("屏蔽列表已保存：空闲时重启生效".into());
+                    }
+                    "bt-trackers" => {
+                        st.backend
+                            .set_setting(serde_json::json!({"bt_trackers": value.as_str()}));
+                        hint = Some("Tracker 已保存：附加到之后的任务".into());
                     }
                     // Scheduler limits go through the same set_settings RPC;
                     // the daemon validates them and applies them to the

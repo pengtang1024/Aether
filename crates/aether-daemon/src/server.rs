@@ -961,6 +961,46 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
             if let Some(value) = patch.get("retry_max") {
                 next.retry_max = Some(parse_limit(value, "retry_max")?);
             }
+            if let Some(value) = patch.get("default_headers") {
+                let headers: Option<String> =
+                    serde_json::from_value(value.clone()).map_err(|error| {
+                        DaemonError::Protocol(format!("invalid default_headers: {error}"))
+                    })?;
+                next.default_headers = headers.filter(|list| !list.trim().is_empty());
+            }
+            if let Some(value) = patch.get("ftp_passive") {
+                next.ftp_passive = serde_json::from_value(value.clone()).map_err(|error| {
+                    DaemonError::Protocol(format!("invalid ftp_passive: {error}"))
+                })?;
+            }
+            if let Some(value) = patch.get("bt_listen_port") {
+                next.bt_listen_port = serde_json::from_value(value.clone()).map_err(|error| {
+                    DaemonError::Protocol(format!("invalid bt_listen_port: {error}"))
+                })?;
+            }
+            if let Some(value) = patch.get("bt_dht") {
+                next.bt_dht = serde_json::from_value(value.clone())
+                    .map_err(|error| DaemonError::Protocol(format!("invalid bt_dht: {error}")))?;
+            }
+            if let Some(value) = patch.get("bt_upload_bps") {
+                next.bt_upload_bps = serde_json::from_value(value.clone()).map_err(|error| {
+                    DaemonError::Protocol(format!("invalid bt_upload_bps: {error}"))
+                })?;
+            }
+            if let Some(value) = patch.get("bt_blocklist") {
+                let blocklist: Option<String> =
+                    serde_json::from_value(value.clone()).map_err(|error| {
+                        DaemonError::Protocol(format!("invalid bt_blocklist: {error}"))
+                    })?;
+                next.bt_blocklist = blocklist.filter(|path| !path.trim().is_empty());
+            }
+            if let Some(value) = patch.get("bt_trackers") {
+                let trackers: Option<String> =
+                    serde_json::from_value(value.clone()).map_err(|error| {
+                        DaemonError::Protocol(format!("invalid bt_trackers: {error}"))
+                    })?;
+                next.bt_trackers = trackers.filter(|list| !list.trim().is_empty());
+            }
             next.validate()?;
 
             let network_before = state.settings.network();

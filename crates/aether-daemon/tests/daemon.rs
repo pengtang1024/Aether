@@ -1344,15 +1344,20 @@ fn spawn_http_stub(ip: IpAddr) -> Option<HttpStub> {
             }
             let text = String::from_utf8_lossy(&data);
             let method = text.split(' ').next().unwrap_or_default().to_string();
-            let user_agent = text
-                .lines()
-                .find_map(|line| {
-                    let (name, value) = line.split_once(':')?;
-                    name.eq_ignore_ascii_case("User-Agent")
-                        .then(|| value.trim().to_string())
-                })
-                .unwrap_or_default();
-            log.lock().unwrap().push(format!("{method} {user_agent}"));
+            let header = |wanted: &str| {
+                text.lines()
+                    .find_map(|line| {
+                        let (name, value) = line.split_once(':')?;
+                        name.eq_ignore_ascii_case(wanted)
+                            .then(|| value.trim().to_string())
+                    })
+                    .unwrap_or_default()
+            };
+            let user_agent = header("User-Agent");
+            let referer = header("Referer");
+            log.lock()
+                .unwrap()
+                .push(format!("{method} {user_agent} | referer: {referer}"));
             let body = vec![7_u8; 1024];
             let head = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
@@ -1432,7 +1437,7 @@ fn observed_user_agents(stub: &HttpStub) -> Vec<String> {
         .map(|entry| {
             entry
                 .split_once(' ')
-                .map(|(_, agent)| agent.to_string())
+                .map(|(_, agent)| agent.split(" | ").next().unwrap_or_default().to_string())
                 .unwrap_or_default()
         })
         .collect()
@@ -1490,6 +1495,95 @@ fn daemon_hands_the_user_agent_to_http_plugins() {
     assert!(
         agents.iter().all(|agent| agent == "AetherTest/42"),
         "the custom user agent did not reach the plugin: {agents:?}"
+    );
+
+    client.shutdown().unwrap();
+    daemon.shutdown();
+}
+
+#[test]
+fn daemon_applies_default_headers_to_http_tasks() {
+    let Some(daemon) = spawn_http_daemon("headers") else {
+        eprintln!("http plugin binary is not built; skipping");
+        return;
+    };
+    let socket = daemon.socket.clone();
+    let Some(stub) = spawn_http_stub(IpAddr::from([127, 0, 0, 1])) else {
+        eprintln!("cannot bind the http stub; skipping");
+        return;
+    };
+    let mut client = connect(&socket);
+
+    let referers = || -> Vec<String> {
+        stub.requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|entry| entry.split("referer: ").nth(1).map(ToOwned::to_owned))
+            .collect()
+    };
+
+    // Without the setting no request carries a Referer.
+    let added = client
+        .add(
+            &format!("http://127.0.0.1:{}/plain.bin", stub.addr.port()),
+            None,
+            None,
+        )
+        .unwrap();
+    let task_id = added["task_id"].as_str().unwrap().to_string();
+    assert_reaches(&mut client, &task_id, "completed", 300);
+    assert!(
+        referers().iter().all(|referer| referer.is_empty()),
+        "a Referer appeared without the setting"
+    );
+
+    // The daemon-wide header reaches every request of the next task.
+    client
+        .set_settings(json!({"default_headers": "Referer: https://ref.test/a"}))
+        .unwrap();
+    clear_requests(&stub);
+    let added = client
+        .add(
+            &format!("http://127.0.0.1:{}/tagged.bin", stub.addr.port()),
+            None,
+            None,
+        )
+        .unwrap();
+    let task_id = added["task_id"].as_str().unwrap().to_string();
+    assert_reaches(&mut client, &task_id, "completed", 300);
+    let seen = referers();
+    assert!(
+        !seen.is_empty() && seen.iter().all(|referer| referer == "https://ref.test/a"),
+        "the default header did not reach the plugin: {seen:?}"
+    );
+
+    // A malformed list is rejected before anything changes.
+    let error = client
+        .set_settings(json!({"default_headers": "Referer https://ref.test"}))
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("header"),
+        "unexpected rejection: {error}"
+    );
+
+    // Clearing the setting removes the header again.
+    client
+        .set_settings(json!({"default_headers": null}))
+        .unwrap();
+    clear_requests(&stub);
+    let added = client
+        .add(
+            &format!("http://127.0.0.1:{}/cleared.bin", stub.addr.port()),
+            None,
+            None,
+        )
+        .unwrap();
+    let task_id = added["task_id"].as_str().unwrap().to_string();
+    assert_reaches(&mut client, &task_id, "completed", 300);
+    assert!(
+        referers().iter().all(|referer| referer.is_empty()),
+        "the header survived a null patch"
     );
 
     client.shutdown().unwrap();

@@ -6,8 +6,8 @@ use std::thread;
 
 use aether_plugin_sdk::task::{shared_progress, SharedProgress, TaskControl};
 use aether_plugin_sdk::{
-    Capability, HostCommand, Metadata, Plugin, PluginContext, PluginEvent, SdkError, TaskPaths,
-    TaskSpec,
+    Capability, HostCommand, Init, Metadata, Plugin, PluginContext, PluginEvent, SdkError,
+    TaskPaths, TaskSpec,
 };
 
 use crate::ftp;
@@ -18,6 +18,9 @@ const CAPABILITIES: &[Capability] = &[Capability::Network, Capability::Filesyste
 
 pub struct FtpPlugin {
     tasks: HashMap<String, TaskRecord>,
+    /// Data connection mode from the daemon's `NetworkConfig`; passive is the
+    /// default because active mode needs an inbound path to the client.
+    passive: bool,
 }
 
 struct TaskRecord {
@@ -29,6 +32,7 @@ impl FtpPlugin {
     pub fn new() -> Self {
         Self {
             tasks: HashMap::new(),
+            passive: true,
         }
     }
 
@@ -39,9 +43,17 @@ impl FtpPlugin {
         let progress = shared_progress();
         let thread_control = control.clone();
         let thread_progress = progress.clone();
+        let passive = self.passive;
 
         thread::spawn(move || {
-            ftp::run(sender, task, paths, thread_control, thread_progress);
+            ftp::run(
+                sender,
+                task,
+                paths,
+                thread_control,
+                thread_progress,
+                passive,
+            );
         });
 
         self.tasks.insert(task_id, TaskRecord { control, progress });
@@ -67,6 +79,15 @@ impl Plugin for FtpPlugin {
         CAPABILITIES
     }
 
+    fn on_init(&mut self, _ctx: &mut PluginContext, init: &Init) -> Result<(), SdkError> {
+        self.passive = init
+            .network
+            .as_ref()
+            .and_then(|network| network.ftp_passive)
+            .unwrap_or(true);
+        Ok(())
+    }
+
     fn on_command(
         &mut self,
         ctx: &mut PluginContext,
@@ -76,7 +97,7 @@ impl Plugin for FtpPlugin {
             HostCommand::Probe {
                 request_id, input, ..
             } => {
-                let probe = ftp::probe(&input);
+                let probe = ftp::probe(&input, self.passive);
                 ctx.send(&PluginEvent::ProbeResult {
                     request_id,
                     supported: probe.supported,

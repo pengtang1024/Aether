@@ -91,7 +91,7 @@ fn decode(value: &str, fallback: &str) -> String {
     }
 }
 
-pub fn probe(input: &str) -> FtpProbe {
+pub fn probe(input: &str, passive: bool) -> FtpProbe {
     let target = match parse_url(input) {
         Ok(target) => target,
         Err(error) => {
@@ -105,7 +105,7 @@ pub fn probe(input: &str) -> FtpProbe {
         }
     };
 
-    let mut ftp = match connect(&target) {
+    let mut ftp = match connect(&target, passive) {
         Ok(ftp) => ftp,
         Err(error) => {
             return FtpProbe {
@@ -136,8 +136,9 @@ pub fn run(
     paths: TaskPaths,
     control: Arc<TaskControl>,
     progress: SharedProgress,
+    passive: bool,
 ) {
-    match run_inner(&sender, &task, &paths, &control, &progress) {
+    match run_inner(&sender, &task, &paths, &control, &progress, passive) {
         Ok(()) => {}
         Err(FtpError::Canceled) => {}
         Err(error) => {
@@ -155,6 +156,7 @@ fn run_inner(
     paths: &TaskPaths,
     control: &TaskControl,
     progress: &SharedProgress,
+    passive: bool,
 ) -> Result<(), FtpError> {
     if control.is_canceled() {
         return Err(FtpError::Canceled);
@@ -170,7 +172,7 @@ fn run_inner(
         .unwrap_or_else(|| "download.bin".into());
     let file_path = paths.staging.join(&filename);
 
-    let mut ftp = connect(&target)?;
+    let mut ftp = connect(&target, passive)?;
     let remote_size = ftp.size(&target.path).ok().map(|size| size as u64);
     let total = remote_size.or(task.expected_size);
     if let (Some(expected), Some(remote)) = (task.expected_size, remote_size) {
@@ -336,7 +338,14 @@ fn finish(
     Ok(())
 }
 
-fn connect(target: &FtpTarget) -> Result<FtpConnection, FtpError> {
+fn connect(target: &FtpTarget, passive: bool) -> Result<FtpConnection, FtpError> {
+    // Passive (PASV/EPSV) is what nearly every server and NAT expects; the
+    // active mode switch exists for servers that require the client to listen.
+    let mode = if passive {
+        suppaftp::Mode::Passive
+    } else {
+        suppaftp::Mode::Active
+    };
     if target.secure {
         let roots = RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
         let config = ClientConfig::builder()
@@ -346,11 +355,13 @@ fn connect(target: &FtpTarget) -> Result<FtpConnection, FtpError> {
         let mut ftp = RustlsFtpStream::connect((target.host.as_str(), target.port))?
             .into_secure(connector, &target.host)?;
         ftp.login(&target.username, &target.password)?;
+        ftp.set_mode(mode);
         ftp.transfer_type(FileType::Binary)?;
         Ok(FtpConnection::Secure(ftp))
     } else {
         let mut ftp = FtpStream::connect((target.host.as_str(), target.port))?;
         ftp.login(&target.username, &target.password)?;
+        ftp.set_mode(mode);
         ftp.transfer_type(FileType::Binary)?;
         Ok(FtpConnection::Plain(ftp))
     }

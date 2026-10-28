@@ -99,6 +99,21 @@ pub fn build_client_custom(
             .map_err(|error| ClientError::Proxy(format!("invalid Basic auth header: {error}")))?;
         headers.insert(reqwest::header::AUTHORIZATION, value);
     }
+    // Daemon-wide default headers; a per-task header of the same name
+    // overrides these because `apply_headers` inserts per request.
+    if let Some(defaults) = network.and_then(|config| config.default_headers.as_ref()) {
+        for (name, value) in defaults {
+            let Ok(name) = reqwest::header::HeaderName::from_bytes(name.as_bytes()) else {
+                eprintln!("aether-plugin-http: skipping invalid header name {name:?}");
+                continue;
+            };
+            let Ok(value) = reqwest::header::HeaderValue::from_str(value) else {
+                eprintln!("aether-plugin-http: skipping invalid value for header {name:?}");
+                continue;
+            };
+            headers.insert(name, value);
+        }
+    }
 
     let mut builder = Client::builder()
         .connect_timeout(Duration::from_secs(15))

@@ -21,6 +21,9 @@ component ValueSlider inherits Rectangle {
     in property <string> suffix: "";
     in property <bool> divider: true;
     callback changed(float);
+    /// Fires once when the drag ends; daemon-backed limits commit here so a
+    /// drag does not send one `set_settings` per pixel.
+    callback released(float);
 
     height: Aether.row-comfortable;
 
@@ -58,6 +61,7 @@ component ValueSlider inherits Rectangle {
             minimum: root.minimum;
             maximum: root.maximum;
             changed => { root.changed(self.value); }
+            released => { root.released(self.value); }
         }
 
         Rectangle {
@@ -291,18 +295,6 @@ component DownloadPanel inherits Rectangle {
                 }
             }
             SettingRow {
-                icon-source: AetherIcons.split;
-                title: "默认分段数";
-                description: "文件被切成多少块并行下载";
-                ComboBox {
-                    model: ["自动", "4", "8", "16", "32"];
-                    current-index: 0;
-                    min-width: Aether.field-md;
-                    max-width: Aether.field-md;
-                    selected => { root.changed("segments", self.current-value); }
-                }
-            }
-            SettingRow {
                 icon-source: AetherIcons.refresh;
                 title: "失败重试次数";
                 description: "网络抖动或超时后自动重试";
@@ -371,6 +363,8 @@ component NetworkPanel inherits Rectangle {
     in-out property <int> ip-mode-index: 0;
     in-out property <int> proxy-mode-index: 0;
     in-out property <string> proxy-url-value: "";
+    in-out property <string> headers-value: "";
+    in-out property <bool> ftp-passive-on: true;
     callback changed(string, string);
 
     VerticalLayout {
@@ -457,12 +451,14 @@ component NetworkPanel inherits Rectangle {
             SettingRow {
                 icon-source: AetherIcons.note;
                 title: "自定义请求头";
-                description: "每行一条 Key: Value";
+                description: "Key: Value，多条用分号分隔；仅 HTTP 族插件，任务级同名头优先";
                 LineEdit {
-                    text: "";
+                    text <=> root.headers-value;
+                    placeholder-text: "Referer: https://example.com";
                     min-width: Aether.field-md;
                     max-width: Aether.field-md;
-                    edited => { root.changed("headers", self.text); }
+                    accepted => { root.changed("headers", self.text); }
+                    edited(text) => { if (text == "") { root.changed("headers", text); } }
                 }
             }
             SettingRow {
@@ -470,13 +466,20 @@ component NetworkPanel inherits Rectangle {
                 title: "FTP 被动模式";
                 description: "兼容更多 FTP 服务器；关闭后使用主动模式";
                 divider: false;
-                Switch { checked: true; toggled => { root.changed("ftp-passive", self.checked ? "true" : "false"); } }
+                Switch { checked: root.ftp-passive-on; toggled => { root.changed("ftp-passive", self.checked ? "true" : "false"); } }
             }
         }
     }
 }
 
 component BtPanel inherits Rectangle {
+    // Daemon-backed state, mirrored by the window; edits commit on Enter /
+    // switch toggle / slider release.
+    in-out property <string> bt-port-value: "51413";
+    in-out property <bool> bt-dht-on: true;
+    in-out property <float> bt-upload-kbps: 512;
+    in-out property <string> bt-blocklist-value: "";
+    in-out property <string> bt-trackers-value: "";
     callback changed(string, string);
 
     VerticalLayout {
@@ -495,10 +498,11 @@ component BtPanel inherits Rectangle {
                 title: "监听端口";
                 description: "需要放行时在路由器中转发";
                 LineEdit {
-                    text: "51413";
+                    text <=> root.bt-port-value;
                     min-width: Aether.field-xs;
                     max-width: Aether.field-xs;
-                    edited => { root.changed("bt-port", self.text); }
+                    accepted => { root.changed("bt-port", self.text); }
+                    edited(text) => { if (text == "") { root.changed("bt-port", text); } }
                 }
             }
             SettingRow {
@@ -506,24 +510,24 @@ component BtPanel inherits Rectangle {
                 title: "DHT";
                 description: "通过分布式哈希表发现节点";
                 divider: false;
-                Switch { checked: true; toggled => { root.changed("bt-dht", self.checked ? "true" : "false"); } }
+                Switch { checked: root.bt-dht-on; toggled => { root.changed("bt-dht", self.checked ? "true" : "false"); } }
             }
         }
 
         SectionCard {
             icon-source: AetherIcons.upload;
             title: "做种";
-            subtitle: "上传带宽";
+            subtitle: "上传带宽，0 为不限速";
 
             ValueSlider {
                 icon-source: AetherIcons.upload;
                 label: "上传限速";
-                value: 512;
+                value <=> root.bt-upload-kbps;
                 minimum: 0;
                 maximum: 4096;
                 suffix: " KB/s";
                 divider: false;
-                changed(v) => { root.changed("bt-upload-limit", v); }
+                released(v) => { root.changed("bt-upload-limit", v); }
             }
         }
 
@@ -538,24 +542,27 @@ component BtPanel inherits Rectangle {
                 description: "dat 格式黑名单文件或 URL；留空不启用";
                 divider: false;
                 LineEdit {
-                    text: "";
+                    text <=> root.bt-blocklist-value;
                     show-clear-button: false;
                     placeholder-text: "/path/to/blocklist.dat";
                     min-width: Aether.field-md;
                     max-width: Aether.field-md;
-                    edited => { root.changed("bt-blocklist", self.text); }
+                    accepted => { root.changed("bt-blocklist", self.text); }
+                    edited(text) => { if (text == "") { root.changed("bt-blocklist", text); } }
                 }
             }
             SettingRow {
                 icon-source: AetherIcons.link;
                 title: "Tracker 列表";
-                description: "每行一个 Tracker 地址，附加到所有种子";
+                description: "附加到所有种子；多条用分号分隔";
                 divider: false;
                 LineEdit {
-                    text: "";
+                    text <=> root.bt-trackers-value;
+                    placeholder-text: "udp://tracker.example:80/announce";
                     min-width: Aether.field-md;
                     max-width: Aether.field-md;
-                    edited => { root.changed("bt-trackers", self.text); }
+                    accepted => { root.changed("bt-trackers", self.text); }
+                    edited(text) => { if (text == "") { root.changed("bt-trackers", text); } }
                 }
             }
         }
@@ -1123,6 +1130,13 @@ export component SettingsPage inherits Rectangle {
     in-out property <int> network-ip-mode: 0;
     in-out property <int> network-proxy-mode: 0;
     in-out property <string> network-proxy-url: "";
+    in-out property <string> network-headers: "";
+    in-out property <bool> network-ftp-passive: true;
+    in-out property <string> bt-port: "51413";
+    in-out property <bool> bt-dht: true;
+    in-out property <float> bt-upload-kbps: 512;
+    in-out property <string> bt-blocklist: "";
+    in-out property <string> bt-trackers: "";
     // UI-local preferences (mirrored by the window).
     in-out property <int> start-page: 0;
     in-out property <int> after-done: 0;
@@ -1220,9 +1234,18 @@ export component SettingsPage inherits Rectangle {
                     ip-mode-index <=> root.network-ip-mode;
                     proxy-mode-index <=> root.network-proxy-mode;
                     proxy-url-value <=> root.network-proxy-url;
+                    headers-value <=> root.network-headers;
+                    ftp-passive-on <=> root.network-ftp-passive;
                     changed(k, v) => { root.settings-changed(k, v); }
                 }
-                if root.tab == 3: BtPanel { changed(k, v) => { root.settings-changed(k, v); } }
+                if root.tab == 3: BtPanel {
+                    bt-port-value <=> root.bt-port;
+                    bt-dht-on <=> root.bt-dht;
+                    bt-upload-kbps <=> root.bt-upload-kbps;
+                    bt-blocklist-value <=> root.bt-blocklist;
+                    bt-trackers-value <=> root.bt-trackers;
+                    changed(k, v) => { root.settings-changed(k, v); }
+                }
                 if root.tab == 4: MediaPanel { }
                 if root.tab == 5: PluginPanel {
                     plugins-dir: root.plugins-dir;
