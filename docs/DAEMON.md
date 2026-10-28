@@ -44,8 +44,8 @@ aether-daemon
 | `pause` / `resume` / `cancel` | `task_id` | 生命周期 |
 | `delete` | `task_id` | 删除终态任务（保留已下载文件） |
 | `resolve_proxy` | `url` | PAC 诊断：返回该 URL 会用的代理与 `pac_error` |
-| `get_settings` | — | 返回 `{"settings":{"proxy":…}}` |
-| `set_settings` | `settings.proxy?` | 部分更新设置并落盘，广播 `settings_changed` |
+| `get_settings` | — | 返回 `{"settings":{…}}`，调度上限是解析后的生效值 |
+| `set_settings` | `settings.*` | 部分更新设置并落盘，广播 `settings_changed`；未知 key 报错 |
 | `shutdown` | — | 停止 daemon |
 
 示例：
@@ -122,6 +122,19 @@ aether-cli remote watch        # 每行一条 JSON 事件，Ctrl-C 退出
 | 全局限速 | `AETHER_MAX_SPEED_BPS` | 无 | 均摊到当前运行任务，随任务启动时生效 |
 | 自动重试次数 | `AETHER_RETRY_MAX` | 5 | 可重试失败按指数退避自动重试，0 = 关闭 |
 | 重试基础间隔 | `AETHER_RETRY_BASE_SECS` | 30 | 退避 = base × 2^(n-1)，即 30s/1min/2min/… |
+
+- 调度上限同时是 `settings.json` 的键（设置页「下载」面板）：
+  `max_concurrent`（≥1）、`max_speed_bps`（0 = 不限）、`retry_max`（0 = 不重试）、
+  `connections`（1..=16，仅 HTTP(S)，插件默认 4）。**文件值优先于环境变量**——
+  环境变量只在文件没写过该键时生效，而任何一次 `set_settings` 落盘都会把当前
+  生效值写进文件（与 `AETHER_PROXY` 的既有行为一致）；`get_settings` /
+  `settings_changed` 返回的是解析后的生效值，所以界面不会显示一个和实际不符的
+  数字。
+- 生效时机：并发上调立刻提升排队任务，下调不打断正在跑的（只挡新任务）；
+  限速与连接数随任务启动生效，已在跑的任务保持启动时的预算；重试上限在
+  下一次失败判定时读取。非法值（0 并发、连接数越界、未知 key、`null`）会被
+  `set_settings` 拒绝，旧设置继续生效；启动时的非法文件则打日志后回退到环境
+  变量值，不阻止 daemon 启动。
 
 - 队列优先级：`add` 可带 `priority`（整数，越大越先，clamp 到 `-100..=100`，
   默认 0）。提升顺序是 `priority DESC, created_at ASC`（同优先级 FIFO，同毫秒

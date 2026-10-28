@@ -170,8 +170,32 @@ fn remote_controls_a_running_daemon() {
     assert!(remote(&socket, &["rm", &held]).status.success());
     assert!(!remote_ok(&socket, &["list", "--json"]).contains(&held));
 
-    // Settings round-trip, including an invalid object being rejected.
-    assert_eq!(remote_ok(&socket, &["settings"]).trim(), "{}");
+    // Settings round-trip, including an invalid object being rejected. A
+    // fresh daemon reports the scheduler limits it resolved at startup and
+    // nothing else: proxy and network stay absent until someone sets them.
+    let settings: Value = serde_json::from_str(&remote_ok(&socket, &["settings"])).unwrap();
+    let mut keys: Vec<&str> = settings
+        .as_object()
+        .expect("settings is an object")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    keys.sort_unstable();
+    assert_eq!(
+        keys,
+        [
+            "connections",
+            "max_concurrent",
+            "max_speed_bps",
+            "retry_max"
+        ],
+        "{settings}"
+    );
+    // The test daemon runs one task at a time, without a speed cap or retries.
+    assert_eq!(settings["max_concurrent"], 1, "{settings}");
+    assert_eq!(settings["max_speed_bps"], 0, "{settings}");
+    assert_eq!(settings["retry_max"], 0, "{settings}");
+    assert_eq!(settings["connections"], 4, "{settings}");
     let stored = remote_ok(&socket, &["set-settings", r#"{"proxy":{"mode":"none"}}"#]);
     assert_eq!(
         serde_json::from_str::<Value>(&stored).unwrap()["proxy"]["mode"],

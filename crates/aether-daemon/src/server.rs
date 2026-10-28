@@ -25,7 +25,7 @@ use serde_json::{json, Value};
 
 use crate::error::DaemonError;
 use crate::proto::{Request, Response};
-use crate::settings::Settings;
+use crate::settings::{Limits, Settings, CONNECTIONS_DEFAULT, KEYS};
 
 pub struct DaemonConfig {
     pub download_dir: PathBuf,
@@ -118,8 +118,9 @@ struct State {
     canceling: HashSet<String>,
     /// Automatic retry schedule per failed task: attempt count and next start.
     retries: HashMap<String, RetrySchedule>,
-    /// Persisted daemon settings: proxy plus network behaviour (user agent,
-    /// IP mode, DNS servers).
+    /// Persisted daemon settings: proxy, network behaviour (user agent, IP
+    /// mode, DNS servers) and the scheduler limits below. The limits are
+    /// resolved at startup, so this always reports what is in force.
     settings: Settings,
     settings_path: PathBuf,
     /// PAC evaluator, present only while the proxy setting is `pac`.
@@ -207,6 +208,14 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
     } else if let Some(spec) = &config.proxy {
         settings.proxy = Some(ProxySetting::parse_spec(spec).map_err(DaemonError::Protocol)?);
     }
+    // Scheduler limits: the file wins, `AETHER_MAX_*` fills what it leaves
+    // out, and the resolved values are written back so `get_settings` reports
+    // the truth instead of `null`.
+    let limits = settings.resolve_limits(Limits {
+        max_concurrent: config.max_concurrent,
+        max_speed_bps: config.max_speed_bps,
+        retry_max: config.retry_max,
+    });
     manager.set_proxy(init_proxy(settings.proxy.as_ref()));
     manager.set_network(settings.network());
     let update_status = match (&config.update_url, &config.update_public_key) {
@@ -238,9 +247,9 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
         active: HashSet::new(),
         update: update_status,
         subscribers: Vec::new(),
-        max_concurrent: config.max_concurrent,
-        max_speed_bps: config.max_speed_bps,
-        retry_max: config.retry_max,
+        max_concurrent: limits.max_concurrent,
+        max_speed_bps: limits.max_speed_bps,
+        retry_max: limits.retry_max,
         retry_base_secs: config.retry_base_secs,
         live: HashSet::new(),
         canceling: HashSet::new(),
@@ -892,9 +901,24 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
         "set_settings" => {
             // Partial update: only keys that are present change. `proxy: null`
             // clears the proxy and falls back to the plugin default; blank
-            // user_agent/dns input clears those knobs the same way.
-            let network_before = state.settings.network();
-            if let Some(proxy) = request.settings.get("proxy") {
+            // user_agent/dns input clears those knobs the same way. The limits
+            // need a concrete number instead — `null` is rejected below.
+            let patch = request
+                .settings
+                .as_object()
+                .ok_or_else(|| DaemonError::Protocol("set_settings needs an object".into()))?;
+            // The file is parsed with `deny_unknown_fields`, so the RPC
+            // rejects the same typos instead of storing nothing quietly.
+            for key in patch.keys() {
+                if !KEYS.contains(&key.as_str()) {
+                    return Err(DaemonError::Protocol(format!("unknown setting {key}")));
+                }
+            }
+
+            // Parse and validate the whole patch before committing a single
+            // field: a rejected patch leaves the running settings untouched.
+            let mut next = state.settings.clone();
+            if let Some(proxy) = patch.get("proxy") {
                 let proxy: Option<ProxySetting> =
                     serde_json::from_value(proxy.clone()).map_err(|error| {
                         DaemonError::Protocol(format!("invalid proxy setting: {error}"))
@@ -902,7 +926,47 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
                 if let Some(proxy) = &proxy {
                     proxy.validate().map_err(DaemonError::Protocol)?;
                 }
-                state.settings.proxy = proxy;
+                next.proxy = proxy;
+            }
+            if let Some(user_agent) = patch.get("user_agent") {
+                let user_agent: Option<String> = serde_json::from_value(user_agent.clone())
+                    .map_err(|error| {
+                        DaemonError::Protocol(format!("invalid user_agent: {error}"))
+                    })?;
+                next.user_agent = user_agent.filter(|agent| !agent.trim().is_empty());
+            }
+            if let Some(ip_mode) = patch.get("ip_mode") {
+                next.ip_mode = serde_json::from_value(ip_mode.clone())
+                    .map_err(|error| DaemonError::Protocol(format!("invalid ip_mode: {error}")))?;
+            }
+            if let Some(dns) = patch.get("dns") {
+                let dns: Option<String> = serde_json::from_value(dns.clone())
+                    .map_err(|error| DaemonError::Protocol(format!("invalid dns: {error}")))?;
+                let dns = dns.filter(|servers| !servers.trim().is_empty());
+                if let Some(servers) = &dns {
+                    aether_plugin_sdk::NetworkConfig::parse_dns_servers(servers)
+                        .map_err(DaemonError::Protocol)?;
+                }
+                next.dns = dns;
+            }
+            if let Some(value) = patch.get("max_concurrent") {
+                next.max_concurrent = Some(parse_limit(value, "max_concurrent")?);
+            }
+            if let Some(value) = patch.get("max_speed_bps") {
+                next.max_speed_bps = Some(parse_limit(value, "max_speed_bps")?);
+            }
+            if let Some(value) = patch.get("connections") {
+                next.connections = Some(parse_limit(value, "connections")?);
+            }
+            if let Some(value) = patch.get("retry_max") {
+                next.retry_max = Some(parse_limit(value, "retry_max")?);
+            }
+            next.validate()?;
+
+            let network_before = state.settings.network();
+            let proxy_changed = patch.contains_key("proxy");
+            state.settings = next;
+            if proxy_changed {
                 // Applies to plugins spawned from now on; running downloads
                 // keep the proxy they started with. PAC is evaluated per task,
                 // so a fresh resolver is enough.
@@ -918,34 +982,14 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
                 state.system_proxy = SystemProxyCache::default();
                 state.system_pac = None;
             }
-            if let Some(user_agent) = request.settings.get("user_agent") {
-                let user_agent: Option<String> = serde_json::from_value(user_agent.clone())
-                    .map_err(|error| {
-                        DaemonError::Protocol(format!("invalid user_agent: {error}"))
-                    })?;
-                state.settings.user_agent = user_agent.filter(|agent| !agent.trim().is_empty());
-            }
-            if let Some(ip_mode) = request.settings.get("ip_mode") {
-                let ip_mode: Option<aether_plugin_sdk::IpMode> =
-                    serde_json::from_value(ip_mode.clone()).map_err(|error| {
-                        DaemonError::Protocol(format!("invalid ip_mode: {error}"))
-                    })?;
-                state.settings.ip_mode = ip_mode;
-            }
-            if let Some(dns) = request.settings.get("dns") {
-                let dns: Option<String> = serde_json::from_value(dns.clone())
-                    .map_err(|error| DaemonError::Protocol(format!("invalid dns: {error}")))?;
-                let dns = dns.filter(|servers| !servers.trim().is_empty());
-                if let Some(servers) = &dns {
-                    aether_plugin_sdk::NetworkConfig::parse_dns_servers(servers)
-                        .map_err(DaemonError::Protocol)?;
-                }
-                state.settings.dns = dns;
-            }
-            // New values reach plugins on their next spawn; running downloads
-            // keep the clients they were started with. Idle plugin processes
-            // are stopped right away so the very next task uses the new
-            // configuration instead of waiting for a daemon restart.
+            apply_limits(state);
+            // A raised cap starts waiting tasks immediately; a lowered one
+            // lets the running ones finish — nothing is killed.
+            promote_queued(state);
+            // New network values reach plugins on their next spawn; running
+            // downloads keep the clients they were started with. Idle plugin
+            // processes are stopped right away so the very next task uses the
+            // new configuration instead of waiting for a daemon restart.
             let network_after = state.settings.network();
             if network_before != network_after {
                 restart_idle_plugins(state);
@@ -1115,6 +1159,34 @@ fn add_task(state: &mut State, request: Request) -> Result<Value, DaemonError> {
     }))
 }
 
+/// Parse one numeric limit out of a patch. `null` is rejected: the scheduler
+/// needs a concrete value, and `0` already means what the caller wants (no
+/// limit, no retry).
+fn parse_limit<T>(value: &Value, key: &str) -> Result<T, DaemonError>
+where
+    T: serde::de::DeserializeOwned,
+{
+    serde_json::from_value::<Option<T>>(value.clone())
+        .map_err(|error| DaemonError::Protocol(format!("invalid {key}: {error}")))?
+        .ok_or_else(|| DaemonError::Protocol(format!("{key} cannot be cleared; send a number")))
+}
+
+/// Copy the persisted limits onto the fields the scheduler reads. `validate`
+/// has run by then, and startup resolution keeps the limits present, so every
+/// value here is one the engine can honour.
+fn apply_limits(state: &mut State) {
+    if let Some(value) = state.settings.max_concurrent {
+        state.max_concurrent = value as usize;
+    }
+    // `0` is the stored form of "no limit".
+    if let Some(value) = state.settings.max_speed_bps {
+        state.max_speed_bps = (value > 0).then_some(value);
+    }
+    if let Some(value) = state.settings.retry_max {
+        state.retry_max = value;
+    }
+}
+
 /// Start a task unless the concurrency limit is reached. Returns Ok(true) when
 /// the task is now running, Ok(false) when it stayed queued.
 fn try_launch(
@@ -1135,6 +1207,9 @@ fn try_launch(
         .and_then(serde_json::Value::as_u64)
         .filter(|limit| *limit > 0);
     let budget = Budget {
+        // The settings page caps the connections one task may open; the http
+        // plugin clamps this to 16 when it starts the range connections.
+        connections: state.settings.connections.unwrap_or(CONNECTIONS_DEFAULT),
         download_bps: settings_limit.unwrap_or_else(|| {
             // Spread the global limit evenly across the tasks that will be
             // running once this one starts.

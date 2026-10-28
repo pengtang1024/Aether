@@ -48,6 +48,11 @@ struct State {
     /// push a complete proxy setting.
     proxy_url: String,
     proxy_mode: String,
+    /// Global speed cap as the download page shows it: the switch state and
+    /// the KB/s the slider holds (kept while the cap is off, so switching it
+    /// back on restores the previous rate).
+    global_limit: bool,
+    download_limit_kb: f64,
     /// Settings JSON last pushed into the window, so the mirror is only
     /// written when the daemon actually reported a change.
     pushed_settings: Option<serde_json::Value>,
@@ -82,6 +87,8 @@ impl State {
             detail_data_for: -1,
             proxy_url: String::new(),
             proxy_mode: "跟随系统".into(),
+            global_limit: true,
+            download_limit_kb: 2048.0,
             pushed_settings: None,
             prefs: UiPrefs::load(),
             seen_page: 0,
@@ -358,6 +365,35 @@ fn refresh_rows(ui: &AppWindow, state: &Rc<RefCell<State>>) {
                 _ => "跟随系统".into(),
             };
             st.proxy_url = proxy["url"].as_str().unwrap_or("").into();
+
+            // Scheduler limits: report what the daemon is running with, so
+            // the download page shows the truth instead of widget defaults.
+            // A value outside a combo box's model maps to -1 (no selection),
+            // which reads as "set from outside this list".
+            let index_of = |value: Option<u64>, model: &[u64]| {
+                value
+                    .and_then(|value| model.iter().position(|entry| *entry == value))
+                    .map(|index| index as i32)
+                    .unwrap_or(-1)
+            };
+            ui.set_settings_max_tasks(index_of(
+                settings["max_concurrent"].as_u64(),
+                &[3, 5, 10, 16],
+            ));
+            ui.set_settings_max_connections(index_of(
+                settings["connections"].as_u64(),
+                &[2, 4, 8, 16],
+            ));
+            ui.set_settings_retry(index_of(settings["retry_max"].as_u64(), &[0, 3, 5, 10]));
+            let speed = settings["max_speed_bps"].as_u64().unwrap_or(0);
+            st.global_limit = speed > 0;
+            ui.set_settings_global_limit(st.global_limit);
+            if speed > 0 {
+                // The slider works in whole KB/s, so a smaller cap rounds up
+                // rather than showing a limit the daemon does not have.
+                st.download_limit_kb = (speed / 1024).max(1) as f64;
+                ui.set_settings_download_limit_kb(st.download_limit_kb as f32);
+            }
         }
     }
 
@@ -1125,6 +1161,75 @@ fn main() -> Result<(), slint::PlatformError> {
                         st.backend.set_setting(patch);
                         hint = Some("IP 协议已保存：空闲插件重启后生效".into());
                     }
+                    // Scheduler limits go through the same set_settings RPC;
+                    // the daemon validates them and applies them to the
+                    // running queue. Tasks already downloading keep the
+                    // budget they started with.
+                    "max-tasks" => match value.trim().parse::<u64>() {
+                        Ok(number) => {
+                            st.backend
+                                .set_setting(serde_json::json!({"max_concurrent": number}));
+                            hint = Some("并发上限已保存：排队任务按新上限启动".into());
+                        }
+                        Err(_) => hint = Some(format!("并发上限「{value}」无效")),
+                    },
+                    "max-connections" => match value.trim().parse::<u64>() {
+                        Ok(number) => {
+                            st.backend
+                                .set_setting(serde_json::json!({"connections": number}));
+                            hint = Some("每任务连接数已保存：新任务生效（HTTP 上限 16）".into());
+                        }
+                        Err(_) => hint = Some(format!("每任务连接数「{value}」无效")),
+                    },
+                    "retry-count" => {
+                        let retries = match value.as_str() {
+                            "不重试" => Some(0_u64),
+                            other => other.trim().parse::<u64>().ok(),
+                        };
+                        match retries {
+                            Some(number) => {
+                                st.backend
+                                    .set_setting(serde_json::json!({"retry_max": number}));
+                                hint = Some(if number == 0 {
+                                    "已关闭自动重试".into()
+                                } else {
+                                    "重试上限已保存：下次失败时生效".into()
+                                });
+                            }
+                            None => hint = Some(format!("重试次数「{value}」无效")),
+                        }
+                    }
+                    // One knob, two controls: the switch sends "no limit"
+                    // (0), the slider sends the rate in bytes per second.
+                    "global-limit" => {
+                        st.global_limit = value == "true";
+                        let bps = if st.global_limit {
+                            (st.download_limit_kb * 1024.0) as u64
+                        } else {
+                            0
+                        };
+                        st.backend
+                            .set_setting(serde_json::json!({"max_speed_bps": bps}));
+                        hint = Some(if st.global_limit {
+                            format!("全局限速已保存：{} KB/s，新任务生效", st.download_limit_kb)
+                        } else {
+                            "已关闭全局限速".into()
+                        });
+                    }
+                    "download-limit" => match value.trim().parse::<f64>() {
+                        Ok(kb) if kb >= 0.0 => {
+                            st.download_limit_kb = kb;
+                            if st.global_limit {
+                                st.backend.set_setting(
+                                    serde_json::json!({"max_speed_bps": (kb * 1024.0) as u64}),
+                                );
+                                hint = Some(format!("下载限速已保存：{kb} KB/s，新任务生效"));
+                            } else {
+                                hint = Some("已记录限速，启用全局限速后生效".into());
+                            }
+                        }
+                        _ => hint = Some(format!("限速值「{value}」无效")),
+                    },
                     // Persisted locally, no daemon round-trip.
                     "theme" => {}
                     // UI-local preferences: persist and apply immediately.

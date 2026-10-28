@@ -325,6 +325,89 @@ fn daemon_queues_tasks_beyond_max_concurrent() {
 }
 
 #[test]
+fn daemon_applies_scheduler_limits_from_settings() {
+    // Boot with room for four so the settings page has something to change.
+    let Some(daemon) = spawn_daemon("limits", 4, None) else {
+        eprintln!("fake plugin binary is not built; skipping");
+        return;
+    };
+    let socket = daemon.socket.clone();
+    let mut client = connect(&socket);
+
+    // Startup resolution reports what runs instead of `null`.
+    let settings = client.settings().unwrap();
+    assert_eq!(settings["max_concurrent"], 4);
+    assert_eq!(settings["max_speed_bps"], 0);
+    assert_eq!(settings["retry_max"], 5);
+    assert_eq!(settings["connections"], 4);
+
+    // Two long tasks fit the boot cap of four.
+    let first = client
+        .add_with_settings(
+            "https://example.com/first.bin",
+            None,
+            None,
+            json!({"duration_ms": 1500}),
+        )
+        .unwrap();
+    let second = client
+        .add_with_settings(
+            "https://example.com/second.bin",
+            None,
+            None,
+            json!({"duration_ms": 1500}),
+        )
+        .unwrap();
+    assert_eq!(first["queued"], false);
+    assert_eq!(second["queued"], false);
+
+    // Lowering the cap to one queues new work without touching the pair
+    // that is already running.
+    let updated = client.set_settings(json!({"max_concurrent": 1})).unwrap();
+    assert_eq!(updated["max_concurrent"], 1);
+    let third = client
+        .add_with_settings(
+            "https://example.com/third.bin",
+            None,
+            None,
+            json!({"duration_ms": 400}),
+        )
+        .unwrap();
+    assert_eq!(third["queued"], true);
+    let third_id = third["task_id"].as_str().unwrap().to_string();
+
+    // A cap with no capacity, an out-of-range connection count, a typo'd key
+    // and a non-object patch are all rejected; the stored value stays at one.
+    assert!(client.set_settings(json!({"max_concurrent": 0})).is_err());
+    assert!(client.set_settings(json!({"connections": 17})).is_err());
+    assert!(client.set_settings(json!({"max_concurent": 4})).is_err());
+    assert!(client.set_settings(json!(42)).is_err());
+    assert_eq!(client.settings().unwrap()["max_concurrent"], 1);
+
+    // Raising the cap releases the queue right away: the third task starts
+    // while the first two are still running.
+    let updated = client.set_settings(json!({"max_concurrent": 4})).unwrap();
+    assert_eq!(updated["max_concurrent"], 4);
+    assert_reaches(&mut client, &third_id, "completed", 300);
+    let first_id = first["task_id"].as_str().unwrap().to_string();
+    let second_id = second["task_id"].as_str().unwrap().to_string();
+    assert_reaches(&mut client, &first_id, "completed", 300);
+    assert_reaches(&mut client, &second_id, "completed", 300);
+
+    // A valid patch round-trips and is what a restart would load.
+    let updated = client
+        .set_settings(json!({"connections": 8, "retry_max": 0}))
+        .unwrap();
+    assert_eq!(updated["connections"], 8);
+    assert_eq!(updated["retry_max"], 0);
+    let raw = fs::read_to_string(daemon.root.join("downloads/.aether/settings.json")).unwrap();
+    assert!(raw.contains("\"max_concurrent\": 4"), "{raw}");
+
+    client.shutdown().unwrap();
+    daemon.shutdown();
+}
+
+#[test]
 fn daemon_resume_restarts_a_failed_task() {
     let Some(daemon) = spawn_daemon("resume", 1, None) else {
         eprintln!("fake plugin binary is not built; skipping");

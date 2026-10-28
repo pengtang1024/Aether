@@ -31,6 +31,54 @@ pub struct Settings {
     /// normalised to `None` by `set_settings`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dns: Option<String>,
+    /// Maximum number of simultaneously running tasks; the rest stay queued.
+    /// `0` is rejected: a queue with no capacity would never start anything.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_concurrent: Option<u64>,
+    /// Global download limit in bytes per second, shared by the tasks started
+    /// while it is in force. `0` removes the limit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_speed_bps: Option<u64>,
+    /// Parallel connections one HTTP(S) task may open, capped at
+    /// [`CONNECTIONS_MAX`] by the http plugin. Resolution turns `None` into
+    /// [`CONNECTIONS_DEFAULT`], so the setting always reports a real count.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connections: Option<u32>,
+    /// Automatic retry cap per task; `0` disables automatic retries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry_max: Option<u32>,
+}
+
+/// The upper bound the http plugin honours for [`Settings::connections`]:
+/// it clamps `Budget::connections` to this when it opens range connections.
+pub const CONNECTIONS_MAX: u32 = 16;
+
+/// The connection count the daemon assumes when no setting asks for one; it
+/// must stay equal to `Budget::default().connections` (asserted in the tests).
+pub const CONNECTIONS_DEFAULT: u32 = 4;
+
+/// Every key `set_settings` accepts. The file is parsed with
+/// `deny_unknown_fields`, so the RPC rejects the same typos instead of
+/// silently storing nothing.
+pub const KEYS: [&str; 8] = [
+    "proxy",
+    "user_agent",
+    "ip_mode",
+    "dns",
+    "max_concurrent",
+    "max_speed_bps",
+    "connections",
+    "retry_max",
+];
+
+/// The limits in force: `settings.json` wins, the boot configuration
+/// (`AETHER_MAX_*`) fills what the file leaves out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Limits {
+    pub max_concurrent: usize,
+    /// `None` means no limit.
+    pub max_speed_bps: Option<u64>,
+    pub retry_max: u32,
 }
 
 impl Settings {
@@ -61,6 +109,69 @@ impl Settings {
             ip_mode: self.ip_mode,
             dns,
         })
+    }
+
+    /// Resolve the limits the daemon runs with and write them back, so
+    /// `get_settings` reports what is in force instead of `null`. A value the
+    /// engine cannot honour is logged and replaced by the boot value: a
+    /// daemon that refuses to start over one bad line in a hand-edited file
+    /// is worse than one that says so and keeps running.
+    pub fn resolve_limits(&mut self, boot: Limits) -> Limits {
+        let resolved = Limits {
+            max_concurrent: match self.max_concurrent {
+                Some(0) => {
+                    eprintln!(
+                        "aether-daemon: ignoring max_concurrent 0, using {}",
+                        boot.max_concurrent
+                    );
+                    boot.max_concurrent
+                }
+                Some(value) => value as usize,
+                None => boot.max_concurrent,
+            },
+            // `0` is the stored form of "no limit"; `None` means the file
+            // never chose, so the boot value applies.
+            max_speed_bps: match self.max_speed_bps {
+                Some(0) => None,
+                Some(value) => Some(value),
+                None => boot.max_speed_bps,
+            },
+            retry_max: self.retry_max.unwrap_or(boot.retry_max),
+        };
+        let connections = match self.connections {
+            Some(value) if (1..=CONNECTIONS_MAX).contains(&value) => value,
+            Some(value) => {
+                eprintln!(
+                    "aether-daemon: ignoring connections {value}, using {CONNECTIONS_DEFAULT}"
+                );
+                CONNECTIONS_DEFAULT
+            }
+            None => CONNECTIONS_DEFAULT,
+        };
+        self.max_concurrent = Some(resolved.max_concurrent as u64);
+        self.max_speed_bps = Some(resolved.max_speed_bps.unwrap_or(0));
+        self.retry_max = Some(resolved.retry_max);
+        self.connections = Some(connections);
+        resolved
+    }
+
+    /// Reject values the engine cannot honour before anything is applied or
+    /// stored, so `set_settings` can report the error and leave the previous
+    /// settings running.
+    pub fn validate(&self) -> Result<(), DaemonError> {
+        if self.max_concurrent == Some(0) {
+            return Err(DaemonError::Protocol(
+                "max_concurrent must be at least 1".into(),
+            ));
+        }
+        if let Some(connections) = self.connections {
+            if !(1..=CONNECTIONS_MAX).contains(&connections) {
+                return Err(DaemonError::Protocol(format!(
+                    "connections must be within 1..={CONNECTIONS_MAX}, got {connections}"
+                )));
+            }
+        }
+        Ok(())
     }
 
     /// Missing files are the normal first-run case. A corrupt file is reported
@@ -231,5 +342,121 @@ mod tests {
         fs::write(&path, br#"{"ip_modes": "ipv4_only"}"#).unwrap();
         assert_eq!(Settings::load(&path), Settings::default());
         fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn resolves_limits_from_the_file_and_the_boot_config() {
+        let boot = Limits {
+            max_concurrent: 3,
+            max_speed_bps: None,
+            retry_max: 5,
+        };
+
+        // Nothing stored: the boot values apply and are written back, so
+        // `get_settings` reports what runs instead of `null`.
+        let mut settings = Settings::default();
+        assert_eq!(settings.resolve_limits(boot), boot);
+        assert_eq!(settings.max_concurrent, Some(3));
+        assert_eq!(settings.max_speed_bps, Some(0));
+        assert_eq!(settings.retry_max, Some(5));
+        assert_eq!(settings.connections, Some(CONNECTIONS_DEFAULT));
+        // The daemon's fallback is the plugin's own default, so filling the
+        // setting in changes nothing about how a task starts.
+        assert_eq!(
+            CONNECTIONS_DEFAULT,
+            aether_plugin_sdk::Budget::default().connections
+        );
+
+        // A stored limit wins; a stored speed of 0 means "no limit".
+        let mut settings = Settings {
+            max_concurrent: Some(7),
+            max_speed_bps: Some(0),
+            connections: Some(8),
+            retry_max: Some(0),
+            ..Settings::default()
+        };
+        assert_eq!(
+            settings.resolve_limits(boot),
+            Limits {
+                max_concurrent: 7,
+                max_speed_bps: None,
+                retry_max: 0,
+            }
+        );
+        assert_eq!(settings.connections, Some(8));
+    }
+
+    #[test]
+    fn repairs_limits_the_engine_cannot_honour_at_boot() {
+        let boot = Limits {
+            max_concurrent: 3,
+            max_speed_bps: Some(1024),
+            retry_max: 5,
+        };
+        let mut settings = Settings {
+            max_concurrent: Some(0),
+            connections: Some(CONNECTIONS_MAX + 1),
+            ..Settings::default()
+        };
+        assert_eq!(settings.resolve_limits(boot).max_concurrent, 3);
+        assert_eq!(
+            settings.connections,
+            Some(CONNECTIONS_DEFAULT),
+            "an out-of-range connection count falls back to the plugin default"
+        );
+        // The repaired settings are usable…
+        settings.validate().unwrap();
+
+        // …while a patch that carries the bad value is rejected up front.
+        let no_capacity = Settings {
+            max_concurrent: Some(0),
+            ..Settings::default()
+        };
+        assert!(no_capacity.validate().is_err());
+        let too_many = Settings {
+            connections: Some(CONNECTIONS_MAX + 1),
+            ..Settings::default()
+        };
+        assert!(too_many.validate().is_err());
+        assert!(Settings::default().validate().is_ok());
+    }
+
+    #[test]
+    fn roundtrips_scheduler_limits() {
+        let path = temp_path("limits");
+        let settings = Settings {
+            max_concurrent: Some(5),
+            max_speed_bps: Some(2048 * 1024),
+            connections: Some(CONNECTIONS_MAX),
+            retry_max: Some(0),
+            ..Settings::default()
+        };
+        settings.save(&path).unwrap();
+        assert_eq!(Settings::load(&path), settings);
+        fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn every_serialized_field_is_a_known_key() {
+        use aether_plugin_sdk::IpMode;
+
+        // The RPC accepts exactly what the file holds, so a key added to the
+        // struct without a `set_settings` branch cannot slip through.
+        let settings = Settings {
+            proxy: Some(ProxySetting::System),
+            user_agent: Some("TestUA/9".into()),
+            ip_mode: Some(IpMode::Ipv4Only),
+            dns: Some("1.1.1.1".into()),
+            max_concurrent: Some(3),
+            max_speed_bps: Some(1),
+            connections: Some(4),
+            retry_max: Some(5),
+        };
+        let object = serde_json::to_value(settings).unwrap();
+        let object = object.as_object().unwrap();
+        assert_eq!(object.len(), KEYS.len());
+        for key in object.keys() {
+            assert!(KEYS.contains(&key.as_str()), "unknown key {key}");
+        }
     }
 }
