@@ -42,8 +42,10 @@ export global MaterialPalette {
     property <bool> dark-color-scheme: color-scheme != ColorScheme.light;
 
     // ---- Brand seed ------------------------------------------------------
-    // Aether's brand primary. Every accent role below is derived from it.
-    out property <brush> brand-primary: #6750A4;
+    // Aether extension: follow the accent chosen in the appearance settings
+    // so Material widgets (switches, combos, buttons) recolor with the rest
+    // of the app. Originally a static #6750A4 (M3 baseline primary).
+    out property <brush> brand-primary: Aether.accent-base;
     out property <brush> brand-on-primary: #FFFFFF;
 
     // ---- Core M3 roles ---------------------------------------------------

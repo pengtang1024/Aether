@@ -51,6 +51,10 @@ struct State {
     /// Settings JSON last pushed into the window, so the mirror is only
     /// written when the daemon actually reported a change.
     pushed_settings: Option<serde_json::Value>,
+    /// UI-local preferences (accent, motion, flow, start page, after-done).
+    prefs: UiPrefs,
+    /// Last page index seen in the window, for "上次页面" persistence.
+    seen_page: i32,
     last_notice: Option<String>,
     /// Installed plugins mirrored from the snapshot (row id → plugin id).
     plugins: Vec<PluginInfo>,
@@ -79,6 +83,8 @@ impl State {
             proxy_url: String::new(),
             proxy_mode: "跟随系统".into(),
             pushed_settings: None,
+            prefs: UiPrefs::load(),
+            seen_page: 0,
             last_notice: None,
             plugins: Vec::new(),
             plugins_sig: String::new(),
@@ -708,6 +714,96 @@ fn save_theme_mode(mode: i32) {
     let _ = fs::write(path, mode.to_string());
 }
 
+/// UI-local preferences that have no daemon counterpart. Stored as JSON in
+/// the same config directory as the theme file.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+struct UiPrefs {
+    /// Accent preset index, see `apply-appearance()` in ui/app.slint.
+    accent: i32,
+    /// Transitions enabled; false zeroes the motion tokens (accessibility).
+    motion: bool,
+    /// Decorative flow lines at the window edges.
+    flow: bool,
+    /// 0 = 主页, 1 = 下载列表, 2 = 上次页面.
+    start_page: i32,
+    /// Last visited page index, used when `start_page == 2`.
+    last_page: i32,
+    /// 0 = 不操作, 1 = 打开所在文件夹, 2 = 打开文件.
+    after_done: i32,
+}
+
+impl Default for UiPrefs {
+    fn default() -> Self {
+        UiPrefs {
+            accent: 0,
+            motion: true,
+            flow: true,
+            start_page: 0,
+            last_page: 0,
+            after_done: 0,
+        }
+    }
+}
+
+impl UiPrefs {
+    fn config_path() -> Option<PathBuf> {
+        theme_config_path().map(|theme| theme.with_file_name("ui.json"))
+    }
+
+    fn load() -> Self {
+        let Some(path) = Self::config_path() else {
+            return Self::default();
+        };
+        fs::read_to_string(path)
+            .ok()
+            .and_then(|raw| serde_json::from_str(&raw).ok())
+            .unwrap_or_default()
+    }
+
+    fn save(&self) {
+        let Some(path) = Self::config_path() else {
+            return;
+        };
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let Ok(raw) = serde_json::to_string_pretty(self) else {
+            return;
+        };
+        let _ = fs::write(path, raw);
+    }
+}
+
+/// Reveal or open a path with the desktop's default handler. Used by the
+/// "after done" action; failures are ignored (the download already finished).
+fn open_path(path: &std::path::Path) {
+    #[cfg(target_os = "linux")]
+    let mut command = {
+        let mut command = Command::new("xdg-open");
+        command.arg(path);
+        command
+    };
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut command = Command::new("open");
+        command.arg(path);
+        command
+    };
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut command = Command::new("cmd");
+        command.args(["/c", "start", ""]);
+        command.arg(path);
+        command
+    };
+    let _ = command
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+}
+
 /// Resolve the desktop's light/dark preference without pulling in a
 /// platform-specific theme crate. Unknown systems fall back to light.
 fn system_is_dark() -> bool {
@@ -788,6 +884,23 @@ fn main() -> Result<(), slint::PlatformError> {
     };
     if let Some(mode) = env_theme.or_else(read_theme_mode) {
         ui.set_theme_mode(mode);
+    }
+    // UI-local preferences: push into the window (which applies accent /
+    // motion / flow through apply-appearance) and pick the start page.
+    {
+        let prefs = state.borrow().prefs.clone();
+        ui.set_settings_accent(prefs.accent);
+        ui.set_settings_motion(prefs.motion);
+        ui.set_settings_flow(prefs.flow);
+        ui.set_settings_start_page(prefs.start_page);
+        ui.set_settings_after_done(prefs.after_done);
+        let page = match prefs.start_page {
+            1 => 1,
+            2 => prefs.last_page.clamp(0, 2),
+            _ => 0,
+        };
+        ui.set_page(page);
+        state.borrow_mut().seen_page = page;
     }
 
     // Initial data.
@@ -1014,6 +1127,71 @@ fn main() -> Result<(), slint::PlatformError> {
                     }
                     // Persisted locally, no daemon round-trip.
                     "theme" => {}
+                    // UI-local preferences: persist and apply immediately.
+                    "accent" => {
+                        let index = match value.as_str() {
+                            "靛蓝" => 1,
+                            "青碧" => 2,
+                            "苔绿" => 3,
+                            "琥珀" => 4,
+                            "蔷薇" => 5,
+                            _ => 0,
+                        };
+                        st.prefs.accent = index;
+                        st.prefs.save();
+                        if let Some(ui) = ui_handle.upgrade() {
+                            ui.set_settings_accent(index);
+                        }
+                    }
+                    "motion" | "flow-background" => {
+                        let enabled = value.as_str() == "true";
+                        if key.as_str() == "motion" {
+                            st.prefs.motion = enabled;
+                            if let Some(ui) = ui_handle.upgrade() {
+                                ui.set_settings_motion(enabled);
+                            }
+                        } else {
+                            st.prefs.flow = enabled;
+                            if let Some(ui) = ui_handle.upgrade() {
+                                ui.set_settings_flow(enabled);
+                            }
+                        }
+                        st.prefs.save();
+                    }
+                    "start-page" => {
+                        st.prefs.start_page = match value.as_str() {
+                            "下载列表" => 1,
+                            "上次页面" => 2,
+                            _ => 0,
+                        };
+                        st.prefs.save();
+                        if let Some(ui) = ui_handle.upgrade() {
+                            ui.set_settings_start_page(st.prefs.start_page);
+                        }
+                    }
+                    "after-done" => {
+                        st.prefs.after_done = match value.as_str() {
+                            "打开所在文件夹" => 1,
+                            "打开文件" => 2,
+                            _ => 0,
+                        };
+                        st.prefs.save();
+                        if let Some(ui) = ui_handle.upgrade() {
+                            ui.set_settings_after_done(st.prefs.after_done);
+                        }
+                    }
+                    "reset-settings" => {
+                        st.prefs = UiPrefs::default();
+                        st.prefs.save();
+                        if let Some(ui) = ui_handle.upgrade() {
+                            ui.set_settings_accent(0);
+                            ui.set_settings_motion(true);
+                            ui.set_settings_flow(true);
+                            ui.set_settings_start_page(0);
+                            ui.set_settings_after_done(0);
+                        }
+                        hint = Some("界面偏好已恢复默认".into());
+                    }
                     // The settings page still shows controls that do nothing;
                     // saying so beats a silent no-op (honest UI).
                     other => hint = Some(format!("设置项「{other}」尚未接线")),
@@ -1149,6 +1327,32 @@ fn main() -> Result<(), slint::PlatformError> {
             refresh_rows(&ui, &state);
             if drawer_open {
                 refresh_detail(&ui, &state);
+            }
+            // Persist the page for "上次页面"; run the after-done action for
+            // tasks that completed since the last tick.
+            {
+                let mut st = state.borrow_mut();
+                let page = ui.get_page();
+                if page != st.seen_page {
+                    st.seen_page = page;
+                    st.prefs.last_page = page;
+                    st.prefs.save();
+                }
+                let mut done = Vec::new();
+                st.backend.take_completed(&mut done);
+                let after = st.prefs.after_done;
+                drop(st);
+                for (dir, file) in done {
+                    match after {
+                        1 => open_path(std::path::Path::new(&dir)),
+                        2 => {
+                            if let Some(name) = file {
+                                open_path(&std::path::Path::new(&dir).join(name));
+                            }
+                        }
+                        _ => {}
+                    }
+                }
             }
         });
     }

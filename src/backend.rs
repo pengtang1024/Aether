@@ -81,6 +81,7 @@ mod imp {
     struct Shared {
         snapshot: Snapshot,
         notice: Option<String>,
+        completed: Vec<(String, Option<String>)>,
     }
 
     pub struct Backend {
@@ -95,6 +96,7 @@ mod imp {
             let shared = Arc::new(Mutex::new(Shared {
                 snapshot: Snapshot::default(),
                 notice: None,
+                completed: Vec::new(),
             }));
             let worker_shared = shared.clone();
             thread::spawn(move || worker(receiver, worker_shared));
@@ -158,6 +160,15 @@ mod imp {
             self.shared.lock().unwrap().notice.take()
         }
 
+        /// Drain completed tasks (download dir + file name) since the last
+        /// call; the UI uses them for the "after done" action.
+        pub fn take_completed(&self, out: &mut Vec<(String, Option<String>)>) {
+            // Queue lives on the worker; expose it through the shared snapshot
+            // channel below.
+            let mut guard = self.shared.lock().unwrap();
+            out.append(&mut guard.completed);
+        }
+
         /// Wall-clock epoch millis, used for the records' relative times.
         pub fn now_ms(&self) -> i64 {
             std::time::SystemTime::now()
@@ -190,6 +201,9 @@ mod imp {
         plugins: Vec<PluginInfo>,
         /// Daemon settings, from `get_settings` and `settings_changed` events.
         settings: Option<Value>,
+        /// Completed tasks (download dir + optional file name), drained by
+        /// the UI to run the user's "after done" action.
+        completed: VecDeque<(String, Option<String>)>,
     }
 
     fn worker(receiver: Receiver<Command>, shared: Arc<Mutex<Shared>>) {
@@ -571,6 +585,17 @@ mod imp {
                         record.state = TaskState::Completed;
                         record.speed_bps = 0;
                         record.downloaded = record.total.unwrap_or(record.downloaded);
+                        let dir = record
+                            .target_dir
+                            .clone()
+                            .unwrap_or_else(|| self.download_dir.clone());
+                        let file = record
+                            .filename
+                            .clone()
+                            .or_else(|| Some(name_from_url(&record.url)));
+                        if self.completed.len() < 32 {
+                            self.completed.push_back((dir, file));
+                        }
                     }
                     self.needs_refresh = true;
                 }
@@ -672,6 +697,11 @@ mod imp {
                 .map(|(task_id, record)| self.materialise(task_id, record))
                 .collect::<Vec<_>>();
             let mut guard = shared.lock().unwrap();
+            while let Some(entry) = self.completed.pop_front() {
+                if guard.completed.len() < 32 {
+                    guard.completed.push(entry);
+                }
+            }
             guard.snapshot = Snapshot {
                 tasks,
                 history: self.global.clone(),
@@ -883,6 +913,8 @@ mod stub {
         pub fn set_proxy(&self, _mode: &str, _url: &str) {}
 
         pub fn set_setting(&self, _patch: serde_json::Value) {}
+
+        pub fn take_completed(&self, _out: &mut Vec<(String, Option<String>)>) {}
 
         pub fn set_plugin_enabled(&self, _row: i32, _enabled: bool) {}
 

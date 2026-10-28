@@ -42,15 +42,21 @@ export global Aether {
     out property <color> on-surface-muted: dark ? #9A92A8 : #7A7185;
 
     // ---- Brand -----------------------------------------------------------
-    out property <color> primary: #6750A4;
+    // Accent slots are `in-out`: the appearance settings re-tint them from
+    // the app shell, and every derived token below follows automatically.
+    in-out property <color> accent-base: #6750A4;
+    in-out property <color> accent-container: dark ? #4B3585 : #EADDFF;
+    in-out property <color> on-accent-container: dark ? #EADDFF : #21005D;
+    in-out property <color> accent-bright: dark ? #CBB6FF : #5B3FA0;
+    out property <color> primary: accent-base;
     out property <color> on-primary: #FFFFFF;
-    out property <color> primary-container: dark ? #4B3585 : #EADDFF;
-    out property <color> on-primary-container: dark ? #EADDFF : #21005D;
-    out property <color> primary-bright: dark ? #CBB6FF : #5B3FA0;
-    out property <color> primary-soft: dark ? #6750A4.with-alpha(0.18) : #6750A4.with-alpha(0.12);
-    out property <color> primary-softer: dark ? #6750A4.with-alpha(0.09) : #6750A4.with-alpha(0.06);
-    out property <color> accent-top: dark ? #8B6FE8 : #7C5CD6;
-    out property <color> accent-bottom: dark ? #5B3FA0 : #5B3FA0;
+    out property <color> primary-container: accent-container;
+    out property <color> on-primary-container: on-accent-container;
+    out property <color> primary-bright: accent-bright;
+    out property <color> primary-soft: accent-base.with-alpha(dark ? 0.18 : 0.12);
+    out property <color> primary-softer: accent-base.with-alpha(dark ? 0.09 : 0.06);
+    out property <color> accent-top: accent-base.brighter(dark ? 0.28 : 0.18);
+    out property <color> accent-bottom: accent-base;
 
     // ---- Secondary -------------------------------------------------------
     out property <color> secondary-container: dark ? #3A3345 : #E8DEF8;
@@ -153,9 +159,11 @@ export global Aether {
     out property <int> weight-semibold: 600;
 
     // ---- Motion ----------------------------------------------------------
-    out property <duration> motion-short: 120ms;
-    out property <duration> motion-medium: 220ms;
-    out property <duration> motion-long: 400ms;
+    // Motion tokens are `in-out` so the appearance settings can zero them
+    // (accessibility: disable animations) without touching every call site.
+    in-out property <duration> motion-short: 120ms;
+    in-out property <duration> motion-medium: 220ms;
+    in-out property <duration> motion-long: 400ms;
 
     // ---- Elevation / overlays --------------------------------------------
     out property <color> scrim: dark ? #050409.with-alpha(0.66) : #201A2B.with-alpha(0.32);
@@ -163,11 +171,11 @@ export global Aether {
     out property <color> shadow-soft: dark ? #000000.with-alpha(0.35) : #3A2F4B.with-alpha(0.14);
     out property <color> shadow-card: dark ? #000000.with-alpha(0.22) : #3A2F4B.with-alpha(0.12);
     out property <color> shadow-popup: dark ? #000000.with-alpha(0.45) : #3A2F4B.with-alpha(0.20);
-    out property <color> glow-primary: dark ? #6750A4.with-alpha(0.16) : #6750A4.with-alpha(0.08);
-    out property <color> glow-primary-soft: dark ? #6750A4.with-alpha(0.09) : #6750A4.with-alpha(0.05);
+    out property <color> glow-primary: accent-base.with-alpha(dark ? 0.16 : 0.08);
+    out property <color> glow-primary-soft: accent-base.with-alpha(dark ? 0.09 : 0.05);
     out property <color> glow-live: dark ? #6FE3C4.with-alpha(0.07) : #0F8A73.with-alpha(0.04);
     out property <color> hover-layer: on-surface.with-alpha(0.04);
-    out property <color> band: dark ? #000000.with-alpha(0.10) : #6750A4.with-alpha(0.035);
+    out property <color> band: dark ? #000000.with-alpha(0.10) : accent-base.with-alpha(0.035);
     out property <length> elevation-1: 3px;
     out property <length> elevation-2: 8px;
 }

@@ -55,6 +55,66 @@ export component AppWindow inherits Window {
     in-out property <int> settings-ip-mode: 0;
     in-out property <int> settings-proxy-mode: 0;
     in-out property <string> settings-proxy-url: "";
+    // UI-local preferences (settings page).
+    in-out property <int> settings-start-page: 0;   // 0=主页, 1=下载列表, 2=上次页面
+    in-out property <int> settings-after-done: 0;   // 0=不操作, 1=打开文件夹, 2=打开文件
+    in-out property <int> settings-accent: 0;       // preset index, see apply-appearance()
+    in-out property <bool> settings-motion: true;
+    in-out property <bool> settings-flow: true;
+    // Scheduler limits mirrored from the daemon (settings page).
+    in-out property <int> settings-max-tasks: 0;        // index into 3/5/10/16
+    in-out property <int> settings-max-connections: 1;  // index into 2/4/8/16
+    in-out property <int> settings-retry: 2;            // index into 不重试/3/5/10
+    in-out property <bool> settings-global-limit: true;
+    in-out property <float> settings-download-limit-kb: 2048;
+
+    // Apply accent preset / motion / flow in one place; called at init and
+    // whenever the corresponding settings property changes.
+    public function apply-appearance() {
+        // Accent presets: [base, dark container, light container, dark on-container,
+        // light on-container, dark bright, light bright].
+        if (root.settings-accent == 1) {
+            // 靛蓝 indigo
+            Aether.accent-base = #4355B9;
+            Aether.accent-container = Aether.dark ? #344390 : #DFE0FF;
+            Aether.on-accent-container = Aether.dark ? #DFE0FF : #00105C;
+            Aether.accent-bright = Aether.dark ? #BEC3FF : #3E52A3;
+        } else if (root.settings-accent == 2) {
+            // 青碧 teal
+            Aether.accent-base = #006A6A;
+            Aether.accent-container = Aether.dark ? #005052 : #9CF1F0;
+            Aether.on-accent-container = Aether.dark ? #9CF1F0 : #002020;
+            Aether.accent-bright = Aether.dark ? #80D5D4 : #004F50;
+        } else if (root.settings-accent == 3) {
+            // 苔绿 green
+            Aether.accent-base = #3A6D3C;
+            Aether.accent-container = Aether.dark ? #2D5430 : #B5F1B8;
+            Aether.on-accent-container = Aether.dark ? #B5F1B8 : #002106;
+            Aether.accent-bright = Aether.dark ? #9AD59D : #2D5230;
+        } else if (root.settings-accent == 4) {
+            // 琥珀 amber
+            Aether.accent-base = #8A5100;
+            Aether.accent-container = Aether.dark ? #5A3E00 : #FFDDB3;
+            Aether.on-accent-container = Aether.dark ? #FFDDB3 : #2C1600;
+            Aether.accent-bright = Aether.dark ? #FFBC7C : #744700;
+        } else if (root.settings-accent == 5) {
+            // 蔷薇 rose
+            Aether.accent-base = #993F73;
+            Aether.accent-container = Aether.dark ? #772D57 : #FFD9E4;
+            Aether.on-accent-container = Aether.dark ? #FFD9E4 : #3E0021;
+            Aether.accent-bright = Aether.dark ? #FFAFD1 : #7E2E5D;
+        } else {
+            // Aurora 紫 (default)
+            Aether.accent-base = #6750A4;
+            Aether.accent-container = Aether.dark ? #4B3585 : #EADDFF;
+            Aether.on-accent-container = Aether.dark ? #EADDFF : #21005D;
+            Aether.accent-bright = Aether.dark ? #CBB6FF : #5B3FA0;
+        }
+        Aether.motion-short = root.settings-motion ? 120ms : 0ms;
+        Aether.motion-medium = root.settings-motion ? 220ms : 0ms;
+        Aether.motion-long = root.settings-motion ? 400ms : 0ms;
+        root.flow-enabled = root.settings-flow;
+    }
     in-out property <int> theme-mode: 0;          // 0 = follow system, 1 = light, 2 = dark
     in-out property <string> rail-hint: "";
     in-out property <string> support-hint: "";
@@ -116,9 +176,12 @@ export component AppWindow inherits Window {
         ColorSchemeSelector.color-scheme = Aether.dark ? ColorScheme.dark : ColorScheme.light;
     }
 
-    init => { self.apply-theme(); }
-    changed theme-mode => { self.apply-theme(); }
-    changed system-dark => { self.apply-theme(); }
+    init => { self.apply-theme(); self.apply-appearance(); }
+    changed theme-mode => { self.apply-theme(); self.apply-appearance(); }
+    changed system-dark => { self.apply-theme(); self.apply-appearance(); }
+    changed settings-accent => { self.apply-appearance(); }
+    changed settings-motion => { self.apply-appearance(); }
+    changed settings-flow => { self.apply-appearance(); }
 
     // ---- signals ---------------------------------------------------------
     callback task-action(int, int);
@@ -418,6 +481,16 @@ export component AppWindow inherits Window {
                         network-ip-mode <=> root.settings-ip-mode;
                         network-proxy-mode <=> root.settings-proxy-mode;
                         network-proxy-url <=> root.settings-proxy-url;
+                        start-page <=> root.settings-start-page;
+                        after-done <=> root.settings-after-done;
+                        accent-index <=> root.settings-accent;
+                        motion-on <=> root.settings-motion;
+                        flow-on <=> root.settings-flow;
+                        settings-max-tasks <=> root.settings-max-tasks;
+                        settings-max-connections <=> root.settings-max-connections;
+                        settings-retry <=> root.settings-retry;
+                        settings-global-limit <=> root.settings-global-limit;
+                        settings-download-limit-kb <=> root.settings-download-limit-kb;
                         settings-changed(k, v) => { root.settings-changed(k, v); }
                         support-action(action) => { root.support-action(action); }
                         plugin-toggled(id, enabled) => { root.plugin-toggled(id, enabled); }
