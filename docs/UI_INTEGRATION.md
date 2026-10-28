@@ -57,7 +57,7 @@ let subscription = Client::connect(&socket)?.subscribe()?;
 {"event":"completed","task_id":"...","files":[...]}
 {"event":"failed","task_id":"...","error":{...}}
 {"event":"task_deleted","task_id":"..."}
-{"event":"settings_changed","settings":{"proxy":{...}}}
+{"event":"settings_changed","settings":{"proxy":{...},"user_agent":null,"ip_mode":null,"dns":null}}
 {"event":"retry_scheduled","task_id":"...","attempt":2,"delay_secs":60}
 ```
 
@@ -87,11 +87,31 @@ client.task_record(task_id)?;
 client.logs(task_id, 200)?; // Vec<TaskLog> { level, message, created_at, fields? }，旧→新
 // 任务列表里每项都有 priority（整数，默认 0）；可据此显示“高优先级”标签或自排序。
 
-// 设置页（代理）
-client.settings()?; // {"proxy": null} 或 {"proxy":{"mode":"system|none|custom",…}}
+// 设置页（网络）
+client.settings()?; // {"proxy": …, "user_agent": …, "ip_mode": …, "dns": …}
+//   缺席的 key = 该设置未启用（None）。字段：
+//   proxy      null | {"mode":"system|none|custom|pac", …}
+//   user_agent 自定义 UA 字符串；未设置时插件发内置 Aether/<version>
+//   ip_mode    "ipv4_only" | "ipv6_only"；未设置 = 双栈按系统顺序
+//   dns        逗号/空格分隔的服务器列表字符串；未设置 = 系统 DNS
 client.set_settings(json!({
     "proxy": {"mode": "custom", "url": "socks5://127.0.0.1:1080"}
 }))?; // 部分更新；{"proxy": null} 表示恢复默认；校验失败返回错误
+
+// 网络三键同样是部分更新：key 存在才改，null 清空，空白串等价于清空。
+client.set_settings(json!({
+    "user_agent": "MyClient/1.0",
+    "ip_mode": "ipv6_only",        // "ipv4_only" | "ipv6_only" | null
+    "dns": "223.5.5.5, 1.1.1.1"    // 非法地址列表会被整体拒绝（返回错误）
+}))?;
+// 语义（诚实 UI 必读）：
+// - dns 指定后「仅用这些服务器」，解析失败即报错，不回退系统 DNS；
+// - dns/ip_mode/user_agent 只作用于 HTTP 族插件（http/metalink/webdav/
+//   pan/cloud/ipfs/thunder/media）；FTP 与 BT 不覆盖；
+// - 网络配置实际变化时空闲插件进程会被重启（运行中任务保持原进程），
+//   UI 提示「空闲插件重启后生效」即对应此行为；
+// - 每次 set_settings 成功后广播 settings_changed 事件（完整 settings
+//   对象），UI 应以事件值回填控件而不是本地猜测归一化结果。
 
 // PAC：url 或 script 二选一
 client.set_settings(json!({"proxy": {"mode": "pac", "url": "http://wpad/wpad.dat"}}))?;

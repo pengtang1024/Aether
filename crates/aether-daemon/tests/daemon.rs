@@ -2,7 +2,10 @@
 //! Daemon + fake plugin end-to-end tests.
 
 use std::fs;
+use std::io::{Read, Write};
+use std::net::{IpAddr, Ipv6Addr, SocketAddr, TcpListener, UdpSocket};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -87,10 +90,50 @@ fn spawn_daemon_full(
         retry_max,
         retry_base_secs,
         proxy,
+        false,
     )
 }
 
+/// Start a daemon that only stages the real HTTP plugin, for tests that need
+/// actual network behaviour (user agent, DNS servers, IP mode).
+fn spawn_http_daemon(label: &str) -> Option<Daemon> {
+    spawn_daemon_at(temp_dir(label), 1, None, 5, 30, None, true)
+}
+
+/// Stage the built `aether-plugin-http` binary plus its manifest. Returns
+/// `None` when the binary has not been built yet; the caller skips then.
+fn stage_http_plugin(root: &Path) -> Option<()> {
+    let exe = std::env::current_exe().ok()?;
+    let debug_dir = exe.parent()?.parent()?;
+    let binary = debug_dir.join(format!(
+        "aether-plugin-http{}",
+        std::env::consts::EXE_SUFFIX
+    ));
+    if !binary.is_file() {
+        return None;
+    }
+    let manifest_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("aether-plugin-http")
+        .join("plugin.json");
+    let manifest: Value = serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+    let package = root.join("plugins").join("http");
+    fs::create_dir_all(package.join("bin")).unwrap();
+    fs::write(
+        package.join("plugin.json"),
+        serde_json::to_vec_pretty(&manifest).unwrap(),
+    )
+    .unwrap();
+    let relative = manifest["executable"][aether_plugin_sdk::current_platform_key()]
+        .as_str()
+        .unwrap()
+        .to_string();
+    fs::copy(&binary, package.join(relative)).unwrap();
+    Some(())
+}
+
 /// Start a daemon over an existing root; used to simulate a restart.
+#[allow(clippy::too_many_arguments)]
 fn spawn_daemon_at(
     root: PathBuf,
     max_concurrent: usize,
@@ -98,28 +141,33 @@ fn spawn_daemon_at(
     retry_max: u32,
     retry_base_secs: u64,
     proxy: Option<&str>,
+    stage_http: bool,
 ) -> Option<Daemon> {
-    let fake = fake_binary()?;
-    let package = root.join("plugins").join("fake");
-    fs::create_dir_all(package.join("bin")).unwrap();
-    let executable_name = format!("aether-plugin-fake{}", std::env::consts::EXE_SUFFIX);
-    fs::copy(&fake, package.join("bin").join(&executable_name)).unwrap();
-    fs::write(
-        package.join("plugin.json"),
-        serde_json::to_vec_pretty(&json!({
-            "id": "fake",
-            "name": "Fake plugin",
-            "version": "0.1.0",
-            "api": aether_plugin_sdk::API_VERSION,
-            "protocols": ["http"],
-            "capabilities": ["network", "filesystem:task"],
-            "executable": {
-                aether_plugin_sdk::current_platform_key(): format!("bin/{executable_name}")
-            }
-        }))
-        .unwrap(),
-    )
-    .unwrap();
+    if stage_http {
+        stage_http_plugin(&root)?;
+    } else {
+        let fake = fake_binary()?;
+        let package = root.join("plugins").join("fake");
+        fs::create_dir_all(package.join("bin")).unwrap();
+        let executable_name = format!("aether-plugin-fake{}", std::env::consts::EXE_SUFFIX);
+        fs::copy(&fake, package.join("bin").join(&executable_name)).unwrap();
+        fs::write(
+            package.join("plugin.json"),
+            serde_json::to_vec_pretty(&json!({
+                "id": "fake",
+                "name": "Fake plugin",
+                "version": "0.1.0",
+                "api": aether_plugin_sdk::API_VERSION,
+                "protocols": ["http"],
+                "capabilities": ["network", "filesystem:task"],
+                "executable": {
+                    aether_plugin_sdk::current_platform_key(): format!("bin/{executable_name}")
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+    }
 
     let socket = root.join("daemon.sock");
     let config = DaemonConfig {
@@ -813,7 +861,7 @@ fn daemon_resolves_pac_per_url() {
 #[test]
 fn daemon_resumes_pending_retries_after_a_restart() {
     let root = temp_dir("retryrestart");
-    let Some(daemon) = spawn_daemon_at(root.clone(), 1, None, 1, 2, None) else {
+    let Some(daemon) = spawn_daemon_at(root.clone(), 1, None, 1, 2, None, false) else {
         eprintln!("fake plugin binary is not built; skipping");
         return;
     };
@@ -839,7 +887,7 @@ fn daemon_resumes_pending_retries_after_a_restart() {
     daemon.stop();
 
     // The restarted daemon must pick the schedule up and run the retry.
-    let Some(daemon) = spawn_daemon_at(root, 1, None, 1, 2, None) else {
+    let Some(daemon) = spawn_daemon_at(root, 1, None, 1, 2, None, false) else {
         eprintln!("fake plugin binary is not built; skipping");
         return;
     };
@@ -876,7 +924,7 @@ fn daemon_resumes_pending_retries_after_a_restart() {
 
 #[test]
 fn daemon_manual_resume_drops_a_pending_retry() {
-    let Some(daemon) = spawn_daemon_at(temp_dir("retryresume"), 1, None, 5, 60, None) else {
+    let Some(daemon) = spawn_daemon_at(temp_dir("retryresume"), 1, None, 5, 60, None, false) else {
         eprintln!("fake plugin binary is not built; skipping");
         return;
     };
@@ -1102,7 +1150,7 @@ fn plugin_toggles_persist_and_refuse_running_work() {
     daemon.stop();
 
     let restarted =
-        spawn_daemon_at(root, 1, None, 5, 30, None).expect("restart over the existing root");
+        spawn_daemon_at(root, 1, None, 5, 30, None, false).expect("restart over the existing root");
     let mut client = connect(&restarted.socket);
     assert!(!client.plugins().unwrap()[0].enabled);
 
@@ -1172,4 +1220,325 @@ fn wait_started(client: &mut Client, task_id: &str, attempts: usize) {
         thread::sleep(Duration::from_millis(50));
     }
     panic!("task {task_id} never started");
+}
+
+// ---- network settings reach the real HTTP plugin ---------------------------
+
+/// Recorded probe/download requests: "<METHOD> <User-Agent>".
+type RequestLog = Arc<Mutex<Vec<String>>>;
+
+/// Tiny HTTP server: answers every request with a 1024-byte body and records
+/// the method and User-Agent it saw.
+struct HttpStub {
+    addr: SocketAddr,
+    requests: RequestLog,
+}
+
+fn spawn_http_stub(ip: IpAddr) -> Option<HttpStub> {
+    let listener = TcpListener::bind(SocketAddr::new(ip, 0)).ok()?;
+    let addr = listener.local_addr().unwrap();
+    let requests: RequestLog = Arc::new(Mutex::new(Vec::new()));
+    let log = requests.clone();
+    thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else {
+                break;
+            };
+            let mut data = Vec::new();
+            let mut buffer = [0_u8; 4096];
+            // Read until the end of the request headers (GET/HEAD have no body).
+            loop {
+                let Ok(size) = stream.read(&mut buffer) else {
+                    break;
+                };
+                if size == 0 {
+                    break;
+                }
+                data.extend_from_slice(&buffer[..size]);
+                if data.windows(4).any(|window| window == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let text = String::from_utf8_lossy(&data);
+            let method = text.split(' ').next().unwrap_or_default().to_string();
+            let user_agent = text
+                .lines()
+                .find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.eq_ignore_ascii_case("User-Agent")
+                        .then(|| value.trim().to_string())
+                })
+                .unwrap_or_default();
+            log.lock().unwrap().push(format!("{method} {user_agent}"));
+            let body = vec![7_u8; 1024];
+            let head = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            let _ = stream.write_all(head.as_bytes());
+            if method != "HEAD" {
+                let _ = stream.write_all(&body);
+            }
+        }
+    });
+    Some(HttpStub { addr, requests })
+}
+
+/// Minimal DNS over UDP: answers A queries with 127.0.0.1 and AAAA with ::1.
+/// Returns the stub address plus the queries it answered ("qtype=qtype name"),
+/// for assertions and failure diagnostics.
+fn spawn_dns_stub() -> (SocketAddr, Arc<Mutex<Vec<String>>>) {
+    let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+    let addr = socket.local_addr().unwrap();
+    let queries: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let log = queries.clone();
+    thread::spawn(move || {
+        let mut buffer = [0_u8; 1500];
+        while let Ok((size, source)) = socket.recv_from(&mut buffer) {
+            if size < 17 {
+                continue;
+            }
+            let query = &buffer[..size];
+            // Find the end of the question: labels, root label, qtype, qclass.
+            let mut index = 12;
+            let mut name = Vec::new();
+            while index < size && buffer[index] != 0 {
+                let label_len = buffer[index] as usize;
+                name.extend_from_slice(&buffer[index + 1..index + 1 + label_len]);
+                name.push(b'.');
+                index += 1 + label_len;
+            }
+            let question_end = index + 1 + 4;
+            if question_end > size {
+                continue;
+            }
+            let qtype = u16::from_be_bytes([buffer[index + 1], buffer[index + 2]]);
+            log.lock().unwrap().push(format!(
+                "qtype={qtype} name={}",
+                String::from_utf8_lossy(&name)
+            ));
+            // A -> 127.0.0.1, AAAA -> ::1; the HTTP stub listens on IPv4, so
+            // an AAAA answer still fails to connect and reqwest falls through
+            // to the A address.
+            let (record_type, rdata): (u16, Vec<u8>) = if qtype == 28 {
+                (28, vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1])
+            } else {
+                (1, vec![127, 0, 0, 1])
+            };
+            let mut response = Vec::with_capacity(question_end + 16);
+            response.extend_from_slice(&query[0..2]); // transaction id
+            response.extend_from_slice(&[0x81, 0x80]); // QR|RD, RA, RCODE 0
+            response.extend_from_slice(&[0, 1, 0, 1, 0, 0, 0, 0]); // QDCOUNT/ANCOUNT
+            response.extend_from_slice(&query[12..question_end]); // echoed question
+            response.extend_from_slice(&[0xC0, 0x0C]); // name pointer
+            response.extend_from_slice(&record_type.to_be_bytes());
+            response.extend_from_slice(&[0, 1, 0, 0, 0, 60]); // class IN, TTL 60
+            response.extend_from_slice(&(rdata.len() as u16).to_be_bytes()); // RDLENGTH
+            response.extend_from_slice(&rdata);
+            let _ = socket.send_to(&response, source);
+        }
+    });
+    (addr, queries)
+}
+
+fn observed_user_agents(stub: &HttpStub) -> Vec<String> {
+    stub.requests
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|entry| {
+            entry
+                .split_once(' ')
+                .map(|(_, agent)| agent.to_string())
+                .unwrap_or_default()
+        })
+        .collect()
+}
+
+fn clear_requests(stub: &HttpStub) {
+    stub.requests.lock().unwrap().clear();
+}
+
+#[test]
+fn daemon_hands_the_user_agent_to_http_plugins() {
+    let Some(daemon) = spawn_http_daemon("user-agent") else {
+        eprintln!("http plugin binary is not built; skipping");
+        return;
+    };
+    let socket = daemon.socket.clone();
+    let Some(stub) = spawn_http_stub(IpAddr::from([127, 0, 0, 1])) else {
+        eprintln!("cannot bind the http stub; skipping");
+        return;
+    };
+    let mut client = connect(&socket);
+
+    // The default user agent is the built-in Aether one.
+    let added = client
+        .add(
+            &format!("http://127.0.0.1:{}/default.bin", stub.addr.port()),
+            None,
+            None,
+        )
+        .unwrap();
+    let task_id = added["task_id"].as_str().unwrap().to_string();
+    assert_reaches(&mut client, &task_id, "completed", 300);
+    let agents = observed_user_agents(&stub);
+    assert!(!agents.is_empty(), "the stub saw no requests");
+    assert!(
+        agents.iter().all(|agent| agent.starts_with("Aether/0.2.0")),
+        "unexpected default user agents: {agents:?}"
+    );
+
+    // A daemon-wide user agent overrides the built-in one on every request.
+    client
+        .set_settings(json!({"user_agent": "AetherTest/42"}))
+        .unwrap();
+    clear_requests(&stub);
+    let added = client
+        .add(
+            &format!("http://127.0.0.1:{}/custom.bin", stub.addr.port()),
+            None,
+            None,
+        )
+        .unwrap();
+    let task_id = added["task_id"].as_str().unwrap().to_string();
+    assert_reaches(&mut client, &task_id, "completed", 300);
+    let agents = observed_user_agents(&stub);
+    assert!(
+        agents.iter().all(|agent| agent == "AetherTest/42"),
+        "the custom user agent did not reach the plugin: {agents:?}"
+    );
+
+    client.shutdown().unwrap();
+    daemon.shutdown();
+}
+
+#[test]
+fn daemon_hands_dns_servers_to_http_plugins() {
+    let Some(daemon) = spawn_http_daemon("dns") else {
+        eprintln!("http plugin binary is not built; skipping");
+        return;
+    };
+    let socket = daemon.socket.clone();
+    let Some(stub) = spawn_http_stub(IpAddr::from([127, 0, 0, 1])) else {
+        eprintln!("cannot bind the http stub; skipping");
+        return;
+    };
+    let (dns_addr, dns_queries) = spawn_dns_stub();
+    let mut client = connect(&socket);
+
+    client
+        .set_settings(json!({"dns": format!("127.0.0.1:{}", dns_addr.port())}))
+        .unwrap();
+
+    // `.test` is reserved for testing (RFC 6761): real resolvers have no
+    // answers for it, and it is not a special-purpose zone for the resolver
+    // itself (unlike `.invalid`, which hickory answers locally without any
+    // network query), so the query must reach the configured DNS server.
+    let host = format!(
+        "aether-dns-{}.test",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+    );
+    let url = format!("http://{host}:{}/dns.bin", stub.addr.port());
+    let added = match client.add(&url, None, None) {
+        Ok(added) => added,
+        Err(error) => {
+            eprintln!("add failed: {error}");
+            eprintln!("http stub requests: {:#?}", stub.requests.lock().unwrap());
+            eprintln!("dns stub queries: {:#?}", dns_queries.lock().unwrap());
+            panic!("add rejected a resolvable URL: {error}");
+        }
+    };
+    let task_id = added["task_id"].as_str().unwrap().to_string();
+    if !wait_for_state(&mut client, &task_id, "completed", 300) {
+        eprintln!("http stub requests: {:#?}", stub.requests.lock().unwrap());
+        eprintln!("dns stub queries: {:#?}", dns_queries.lock().unwrap());
+        eprintln!("task logs: {:#?}", client.logs(&task_id, 50).unwrap());
+        panic!(
+            "task never completed (state: {})",
+            task_state(&mut client, &task_id)
+        );
+    }
+    // The download's name lookup must have gone to the configured server.
+    let queries = dns_queries.lock().unwrap();
+    assert!(
+        queries.iter().any(|entry| entry.contains(&host)),
+        "the DNS stub saw no query for {host}: {queries:?}"
+    );
+    assert_eq!(
+        fs::read(daemon.root.join("downloads").join("dns.bin"))
+            .unwrap()
+            .len(),
+        1024
+    );
+
+    client.shutdown().unwrap();
+    daemon.shutdown();
+}
+
+#[test]
+fn daemon_ip_mode_rejects_ipv4_targets_in_ipv6_only_mode() {
+    let Some(daemon) = spawn_http_daemon("ip-mode-v6") else {
+        eprintln!("http plugin binary is not built; skipping");
+        return;
+    };
+    let socket = daemon.socket.clone();
+    let Some(stub) = spawn_http_stub(IpAddr::from([127, 0, 0, 1])) else {
+        eprintln!("cannot bind the http stub; skipping");
+        return;
+    };
+    let mut client = connect(&socket);
+
+    client
+        .set_settings(json!({"ip_mode": "ipv6_only"}))
+        .unwrap();
+    // A literal IPv4 target can never satisfy IPv6-only: the socket is bound
+    // to the IPv6 wildcard, so the download fails (probe errors are swallowed
+    // on purpose to keep URLs addable, the failure surfaces on the task).
+    let added = client
+        .add(
+            &format!("http://127.0.0.1:{}/v4.bin", stub.addr.port()),
+            None,
+            None,
+        )
+        .unwrap();
+    let task_id = added["task_id"].as_str().unwrap().to_string();
+    assert_reaches(&mut client, &task_id, "failed", 300);
+
+    client.shutdown().unwrap();
+    daemon.shutdown();
+}
+
+#[test]
+fn daemon_ip_mode_allows_ipv6_targets_in_ipv6_only_mode() {
+    // Some CI runners disable IPv6; skip instead of failing there.
+    let Some(stub) = spawn_http_stub(IpAddr::V6(Ipv6Addr::LOCALHOST)) else {
+        eprintln!("IPv6 loopback is not available; skipping");
+        return;
+    };
+    let Some(daemon) = spawn_http_daemon("ip-mode-v6-ok") else {
+        eprintln!("http plugin binary is not built; skipping");
+        return;
+    };
+    let socket = daemon.socket.clone();
+    let mut client = connect(&socket);
+
+    client
+        .set_settings(json!({"ip_mode": "ipv6_only"}))
+        .unwrap();
+    let added = client
+        .add(
+            &format!("http://[::1]:{}/v6.bin", stub.addr.port()),
+            None,
+            None,
+        )
+        .unwrap();
+    let task_id = added["task_id"].as_str().unwrap().to_string();
+    assert_reaches(&mut client, &task_id, "completed", 300);
+
+    client.shutdown().unwrap();
+    daemon.shutdown();
 }

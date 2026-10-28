@@ -129,6 +129,7 @@ fn manifest() -> PluginManifest {
 
 fn init(data_dir: &Path) -> Init {
     Init {
+        network: None,
         host_version: "0.2.0".into(),
         data_dir: data_dir.to_string_lossy().into_owned(),
         log_level: LogLevel::Debug,

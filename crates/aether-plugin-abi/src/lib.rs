@@ -78,12 +78,14 @@ fn run_loop<P: Plugin>(mut plugin: P, commands: Receiver<HostCommand>, events: S
             log_level,
             proxy,
             limits,
+            network,
         }) => Init {
             host_version,
             data_dir,
             log_level,
             proxy,
             limits,
+            network,
         },
         _ => return,
     };

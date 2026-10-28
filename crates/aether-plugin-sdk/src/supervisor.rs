@@ -303,6 +303,7 @@ impl PluginProcess {
             log_level: init.log_level,
             proxy: init.proxy,
             limits: init.limits,
+            network: init.network,
         })?;
 
         match self.recv_event(HANDSHAKE_TIMEOUT)? {

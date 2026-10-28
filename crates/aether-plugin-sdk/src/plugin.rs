@@ -109,12 +109,14 @@ pub fn run<P: Plugin, R: Read>(
             log_level,
             proxy,
             limits,
+            network,
         }) => Init {
             host_version,
             data_dir,
             log_level,
             proxy,
             limits,
+            network,
         },
         Some(other) => return Err(SdkError::Protocol(format!("expected init, got {other:?}"))),
         None => return Err(SdkError::Protocol("host closed stdin before init".into())),
@@ -222,6 +224,7 @@ mod tests {
                 log_level: LogLevel::Info,
                 proxy: None,
                 limits: Default::default(),
+                network: None,
             },
         )
         .unwrap();

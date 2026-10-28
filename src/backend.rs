@@ -8,6 +8,7 @@
 use std::collections::VecDeque;
 
 use aether_daemon::{PluginInfo, Stats};
+use serde_json::Value;
 
 use crate::model::Task;
 
@@ -25,6 +26,8 @@ pub struct Snapshot {
     pub stats: Option<Stats>,
     /// Installed plugins, sorted by id (stable order doubles as row ids).
     pub plugins: Vec<PluginInfo>,
+    /// Current daemon settings (`get_settings`), `None` while disconnected.
+    pub settings: Option<Value>,
 }
 
 #[cfg(unix)]
@@ -64,6 +67,10 @@ mod imp {
         Proxy {
             mode: String,
             url: String,
+        },
+        /// One `set_settings` patch, e.g. `{"dns": "223.5.5.5"}`.
+        Setting {
+            patch: Value,
         },
         Plugin {
             row: i32,
@@ -107,6 +114,7 @@ mod imp {
                 download_dir: guard.snapshot.download_dir.clone(),
                 stats: guard.snapshot.stats.clone(),
                 plugins: guard.snapshot.plugins.clone(),
+                settings: guard.snapshot.settings.clone(),
             }
         }
 
@@ -132,6 +140,11 @@ mod imp {
                 mode: mode.to_string(),
                 url: url.to_string(),
             });
+        }
+
+        /// Send one `set_settings` patch (key → value pairs) to the daemon.
+        pub fn set_setting(&self, patch: Value) {
+            let _ = self.commands.send(Command::Setting { patch });
         }
 
         /// Enable/disable the plugin displayed at row `row` (index into the
@@ -175,6 +188,8 @@ mod imp {
         stats: Option<Stats>,
         stats_sampled: Option<Instant>,
         plugins: Vec<PluginInfo>,
+        /// Daemon settings, from `get_settings` and `settings_changed` events.
+        settings: Option<Value>,
     }
 
     fn worker(receiver: Receiver<Command>, shared: Arc<Mutex<Shared>>) {
@@ -284,6 +299,7 @@ mod imp {
             self.reverse.clear();
             self.stats = None;
             self.plugins.clear();
+            self.settings = None;
             self.needs_refresh = true;
         }
 
@@ -300,6 +316,11 @@ mod imp {
             self.client = Some(client);
             self.subscription = Some(subscription);
             self.refresh_all()?;
+            // Seed the settings mirror so the page shows real daemon state.
+            if let Some(client) = self.client.as_mut() {
+                let value = client.call("get_settings", None, None, None, None, json!({}))?;
+                self.settings = Some(value["settings"].clone());
+            }
             Ok(())
         }
 
@@ -409,6 +430,9 @@ mod imp {
                         json!({"proxy": proxy}),
                     )?;
                 }
+                Command::Setting { patch } => {
+                    client.call("set_settings", None, None, None, None, patch)?;
+                }
                 Command::Plugin { row, enabled } => {
                     let Some(plugin) = self.plugins.get(row as usize) else {
                         return Ok(());
@@ -500,6 +524,11 @@ mod imp {
             let Some(kind) = event["event"].as_str() else {
                 return;
             };
+            // Settings events carry no task id; keep the mirror current.
+            if kind == "settings_changed" {
+                self.settings = Some(event["settings"].clone());
+                return;
+            }
             let Some(task_id) = event["task_id"].as_str().map(ToOwned::to_owned) else {
                 return;
             };
@@ -650,6 +679,7 @@ mod imp {
                 download_dir: self.download_dir.clone(),
                 stats: self.stats.clone(),
                 plugins: self.plugins.clone(),
+                settings: self.settings.clone(),
             };
         }
 
@@ -851,6 +881,8 @@ mod stub {
         pub fn add_task(&self, _url: &str, _path: &str, _speed_limit_kb: f32) {}
 
         pub fn set_proxy(&self, _mode: &str, _url: &str) {}
+
+        pub fn set_setting(&self, _patch: serde_json::Value) {}
 
         pub fn set_plugin_enabled(&self, _row: i32, _enabled: bool) {}
 

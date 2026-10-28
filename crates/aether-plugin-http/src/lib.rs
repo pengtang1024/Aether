@@ -4,6 +4,7 @@
 //! from the staging state file, pause/resume/cancel and SHA-256 verification.
 
 pub mod client;
+pub mod dns;
 pub mod download;
 pub mod metalink;
 pub mod plugin;

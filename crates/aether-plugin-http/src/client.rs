@@ -1,7 +1,9 @@
 //! HTTP client construction, probing and filename handling.
 
+use std::sync::Arc;
 use std::time::Duration;
 
+use crate::dns;
 use aether_plugin_sdk::fsutil::sanitize_filename;
 use aether_plugin_sdk::{Init, ProxyMode};
 use percent_encoding::percent_decode_str;
@@ -23,6 +25,9 @@ pub enum ClientError {
 
     #[error("invalid proxy configuration: {0}")]
     Proxy(String),
+
+    #[error("invalid DNS configuration: {0}")]
+    Resolver(String),
 }
 
 #[derive(Debug, Clone)]
@@ -67,11 +72,26 @@ pub fn build_client_with_auth(
 }
 
 /// Build a client with a custom User-Agent and optional Basic auth.
+///
+/// Precedence for the user agent: the explicit per-call one (task/plugin
+/// specific) wins, then the daemon-wide user agent from `Init::network`, then
+/// the built-in `Aether/<version>` default.
 pub fn build_client_custom(
     init: &Init,
     user_agent: Option<&str>,
     auth: Option<(&str, &str)>,
 ) -> Result<Client, ClientError> {
+    let network = init.network.as_ref();
+    let user_agent = user_agent
+        .map(ToOwned::to_owned)
+        .or_else(|| network.and_then(|config| config.user_agent.clone()))
+        .unwrap_or_else(|| {
+            format!(
+                "Aether/{} (+https://github.com/pengtang1024/Aether)",
+                init.host_version
+            )
+        });
+
     let mut headers = reqwest::header::HeaderMap::new();
     if let Some((username, password)) = auth {
         let encoded = base64_encode(format!("{username}:{password}").as_bytes());
@@ -83,12 +103,23 @@ pub fn build_client_custom(
     let mut builder = Client::builder()
         .connect_timeout(Duration::from_secs(15))
         .default_headers(headers)
-        .user_agent(user_agent.map(ToOwned::to_owned).unwrap_or_else(|| {
-            format!(
-                "Aether/{} (+https://github.com/pengtang1024/Aether)",
-                init.host_version
-            )
-        }));
+        .user_agent(user_agent);
+
+    if let Some(config) = network {
+        // Binding a wildcard address restricts connections to one family; the
+        // resolver applies the same filter for resolved hostnames.
+        if let Some(local_address) = config.local_address() {
+            builder = builder.local_address(local_address);
+        }
+        if config
+            .dns
+            .as_ref()
+            .is_some_and(|servers| !servers.is_empty())
+        {
+            let resolver = dns::custom_resolver(config).map_err(ClientError::Resolver)?;
+            builder = builder.dns_resolver(Arc::new(resolver));
+        }
+    }
 
     if let Some(proxy) = &init.proxy {
         match proxy.mode {

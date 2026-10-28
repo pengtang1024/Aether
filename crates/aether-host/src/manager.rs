@@ -6,8 +6,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use aether_plugin_sdk::{
-    Budget, Init, LogLevel, PluginEvent, PluginKind, PluginProcess, ProbeResult, ProxyConfig,
-    TaskPaths, TaskSpec,
+    Budget, Init, LogLevel, NetworkConfig, PluginEvent, PluginKind, PluginProcess, ProbeResult,
+    ProxyConfig, TaskPaths, TaskSpec,
 };
 
 use crate::abi::AbiPlugin;
@@ -22,6 +22,9 @@ pub struct PluginManager {
     /// Passed to every plugin process on spawn. `None` keeps the plugin's own
     /// default (usually "honor the environment").
     proxy: Option<ProxyConfig>,
+    /// Host-wide network behaviour (user agent, IP mode, DNS servers) handed
+    /// to plugin processes on spawn.
+    network: Option<NetworkConfig>,
     processes: HashMap<String, RunningPlugin>,
 }
 
@@ -49,6 +52,7 @@ impl PluginManager {
             data_dir: data_dir.into(),
             host_version: host_version.into(),
             proxy: None,
+            network: None,
             processes: HashMap::new(),
         }
     }
@@ -61,6 +65,12 @@ impl PluginManager {
 
     pub fn proxy(&self) -> Option<&ProxyConfig> {
         self.proxy.as_ref()
+    }
+
+    /// Set the network configuration handed to plugin processes. Like the
+    /// proxy, it takes effect on the next spawn.
+    pub fn set_network(&mut self, network: Option<NetworkConfig>) {
+        self.network = network;
     }
 
     pub fn registry(&self) -> &PluginRegistry {
@@ -197,6 +207,7 @@ impl PluginManager {
                 log_level: LogLevel::Info,
                 proxy: self.proxy.clone(),
                 limits: Default::default(),
+                network: self.network.clone(),
             };
             let running = match entry.manifest.kind {
                 PluginKind::Process => RunningPlugin::Process(PluginProcess::spawn(

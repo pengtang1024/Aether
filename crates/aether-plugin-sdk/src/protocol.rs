@@ -22,6 +22,8 @@ pub enum HostCommand {
         log_level: LogLevel,
         proxy: Option<ProxyConfig>,
         limits: Limits,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        network: Option<NetworkConfig>,
     },
     /// Ask whether a URL / file is supported. `proxy` is the Host-resolved
     /// proxy for this input (PAC), so probes use the same route as the task.
@@ -312,6 +314,91 @@ impl ProxyConfig {
     }
 }
 
+/// Which IP address families plugin connections may use. `None` (the default
+/// everywhere) keeps the system's usual order: try everything, prefer IPv4.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IpMode {
+    Ipv4Only,
+    Ipv6Only,
+}
+
+/// Host-wide network behaviour a plugin should honor for its own sockets.
+///
+/// All fields are optional: `None`/absent means "keep the plugin default".
+/// Old plugins that do not know this field simply ignore it (plain serde),
+/// and old hosts never send it, so both upgrade orders stay compatible.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NetworkConfig {
+    /// Overrides the built-in `Aether/<version>` user agent. Plugins that
+    /// deliberately set their own (e.g. a site-specific one) keep theirs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_agent: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ip_mode: Option<IpMode>,
+    /// DNS servers as validated by [`NetworkConfig::dns_addrs`], one entry per
+    /// server (`"223.5.5.5"` or `"[::1]:5353"`). When set, name resolution
+    /// goes to these servers only; the system resolver is not consulted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dns: Option<Vec<String>>,
+}
+
+impl NetworkConfig {
+    /// The wildcard address plugins bind to so the OS only offers sockets of
+    /// the requested family.
+    pub fn local_address(&self) -> Option<std::net::IpAddr> {
+        match self.ip_mode {
+            Some(IpMode::Ipv4Only) => Some(std::net::Ipv4Addr::UNSPECIFIED.into()),
+            Some(IpMode::Ipv6Only) => Some(std::net::Ipv6Addr::UNSPECIFIED.into()),
+            None => None,
+        }
+    }
+
+    /// Server strings from `dns` as socket addresses (default port 53).
+    pub fn dns_addrs(&self) -> Result<Vec<std::net::SocketAddr>, String> {
+        self.dns
+            .iter()
+            .flatten()
+            .map(|server| dns_server_addr(server))
+            .collect()
+    }
+
+    /// Validate and normalise a user-typed server list ("1.2.3.4, [::1]:5353").
+    /// Returns the trimmed per-server strings for storage.
+    pub fn parse_dns_servers(text: &str) -> Result<Vec<String>, String> {
+        let mut servers = Vec::new();
+        for part in text.split([',', ' ', ';']) {
+            let server = part.trim();
+            if server.is_empty() {
+                continue;
+            }
+            dns_server_addr(server)?;
+            servers.push(server.to_string());
+        }
+        if servers.is_empty() {
+            return Err("DNS server list is empty".into());
+        }
+        Ok(servers)
+    }
+}
+
+/// One DNS server string -> socket address. Bare IPs default to port 53;
+/// `[::1]:5353` needs the brackets. Hostnames are rejected: the DNS servers
+/// themselves must be reachable without name resolution.
+pub fn dns_server_addr(server: &str) -> Result<std::net::SocketAddr, String> {
+    if let Ok(ip) = server.parse::<std::net::IpAddr>() {
+        return Ok(std::net::SocketAddr::new(ip, 53));
+    }
+    if let Ok(addr) = server.parse::<std::net::SocketAddr>() {
+        if addr.port() != 0 {
+            return Ok(addr);
+        }
+    }
+    Err(format!(
+        "invalid DNS server {server:?} (use an IP like 223.5.5.5 or [::1]:5353)"
+    ))
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Init {
     pub host_version: String,
@@ -319,6 +406,8 @@ pub struct Init {
     pub log_level: LogLevel,
     pub proxy: Option<ProxyConfig>,
     pub limits: Limits,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub network: Option<NetworkConfig>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -595,5 +684,86 @@ mod tests {
             serde_json::to_string(&Capability::FilesystemTask).unwrap(),
             "\"filesystem:task\""
         );
+    }
+
+    #[test]
+    fn parses_dns_server_lists() {
+        use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+
+        let servers = NetworkConfig::parse_dns_servers("223.5.5.5, [::1]:5353").unwrap();
+        assert_eq!(servers, vec!["223.5.5.5", "[::1]:5353"]);
+
+        let config = NetworkConfig {
+            dns: Some(servers),
+            ..NetworkConfig::default()
+        };
+        assert_eq!(
+            config.dns_addrs().unwrap(),
+            vec![
+                SocketAddr::new(IpAddr::V4(Ipv4Addr::new(223, 5, 5, 5)), 53),
+                SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), 5353),
+            ]
+        );
+
+        // Splitting on commas, spaces and semicolons ignores empties.
+        let servers = NetworkConfig::parse_dns_servers(" 1.1.1.1 ;; 9.9.9.9,").unwrap();
+        assert_eq!(servers, vec!["1.1.1.1", "9.9.9.9"]);
+
+        // Resolvable hostnames are rejected: bootstrap resolution would need
+        // the very servers we are configuring.
+        assert!(NetworkConfig::parse_dns_servers("dns.google").is_err());
+        assert!(NetworkConfig::parse_dns_servers("223.5.5.5, dns.google").is_err());
+        assert!(NetworkConfig::parse_dns_servers("   ").is_err());
+        assert!(NetworkConfig::parse_dns_servers("10.0.0.1:70000").is_err());
+    }
+
+    #[test]
+    fn network_config_maps_ip_modes_and_serializes_compactly() {
+        assert_eq!(NetworkConfig::default().local_address(), None);
+
+        let v4 = NetworkConfig {
+            ip_mode: Some(IpMode::Ipv4Only),
+            ..NetworkConfig::default()
+        };
+        assert_eq!(
+            v4.local_address(),
+            Some(std::net::Ipv4Addr::UNSPECIFIED.into())
+        );
+
+        let v6 = NetworkConfig {
+            ip_mode: Some(IpMode::Ipv6Only),
+            ..NetworkConfig::default()
+        };
+        assert_eq!(
+            v6.local_address(),
+            Some(std::net::Ipv6Addr::UNSPECIFIED.into())
+        );
+
+        // snake_case on the wire, absent fields stay absent.
+        let raw = serde_json::to_string(&NetworkConfig {
+            ip_mode: Some(IpMode::Ipv6Only),
+            user_agent: Some("TestUA/1".into()),
+            dns: None,
+        })
+        .unwrap();
+        assert_eq!(raw, r#"{"user_agent":"TestUA/1","ip_mode":"ipv6_only"}"#);
+
+        // An Init from an older host without `network` still parses.
+        let legacy = r#"{"host_version":"0.2.0","data_dir":"/tmp","log_level":"info","proxy":null,"limits":{"max_connections":8,"download_bps":0,"upload_bps":0}}"#;
+        let init: Init = serde_json::from_str(legacy).unwrap();
+        assert_eq!(init.network, None);
+
+        // MessagePack round-trip keeps the new field.
+        let init = Init {
+            host_version: "0.2.0".into(),
+            data_dir: "/tmp".into(),
+            log_level: LogLevel::Info,
+            proxy: None,
+            limits: Limits::default(),
+            network: Some(v4),
+        };
+        let decoded: Init =
+            rmp_serde::from_slice(&rmp_serde::to_vec_named(&init).unwrap()).unwrap();
+        assert_eq!(decoded, init);
     }
 }

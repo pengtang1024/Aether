@@ -118,7 +118,8 @@ struct State {
     canceling: HashSet<String>,
     /// Automatic retry schedule per failed task: attempt count and next start.
     retries: HashMap<String, RetrySchedule>,
-    /// Persisted daemon settings (currently just the proxy).
+    /// Persisted daemon settings: proxy plus network behaviour (user agent,
+    /// IP mode, DNS servers).
     settings: Settings,
     settings_path: PathBuf,
     /// PAC evaluator, present only while the proxy setting is `pac`.
@@ -207,6 +208,7 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
         settings.proxy = Some(ProxySetting::parse_spec(spec).map_err(DaemonError::Protocol)?);
     }
     manager.set_proxy(init_proxy(settings.proxy.as_ref()));
+    manager.set_network(settings.network());
     let update_status = match (&config.update_url, &config.update_public_key) {
         (Some(url), Some(key)) => {
             let status = Arc::new(Mutex::new(serde_json::json!({
@@ -889,7 +891,9 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
         "get_settings" => Ok(json!({ "settings": state.settings })),
         "set_settings" => {
             // Partial update: only keys that are present change. `proxy: null`
-            // clears the proxy and falls back to the plugin default.
+            // clears the proxy and falls back to the plugin default; blank
+            // user_agent/dns input clears those knobs the same way.
+            let network_before = state.settings.network();
             if let Some(proxy) = request.settings.get("proxy") {
                 let proxy: Option<ProxySetting> =
                     serde_json::from_value(proxy.clone()).map_err(|error| {
@@ -914,6 +918,39 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
                 state.system_proxy = SystemProxyCache::default();
                 state.system_pac = None;
             }
+            if let Some(user_agent) = request.settings.get("user_agent") {
+                let user_agent: Option<String> = serde_json::from_value(user_agent.clone())
+                    .map_err(|error| {
+                        DaemonError::Protocol(format!("invalid user_agent: {error}"))
+                    })?;
+                state.settings.user_agent = user_agent.filter(|agent| !agent.trim().is_empty());
+            }
+            if let Some(ip_mode) = request.settings.get("ip_mode") {
+                let ip_mode: Option<aether_plugin_sdk::IpMode> =
+                    serde_json::from_value(ip_mode.clone()).map_err(|error| {
+                        DaemonError::Protocol(format!("invalid ip_mode: {error}"))
+                    })?;
+                state.settings.ip_mode = ip_mode;
+            }
+            if let Some(dns) = request.settings.get("dns") {
+                let dns: Option<String> = serde_json::from_value(dns.clone())
+                    .map_err(|error| DaemonError::Protocol(format!("invalid dns: {error}")))?;
+                let dns = dns.filter(|servers| !servers.trim().is_empty());
+                if let Some(servers) = &dns {
+                    aether_plugin_sdk::NetworkConfig::parse_dns_servers(servers)
+                        .map_err(DaemonError::Protocol)?;
+                }
+                state.settings.dns = dns;
+            }
+            // New values reach plugins on their next spawn; running downloads
+            // keep the clients they were started with. Idle plugin processes
+            // are stopped right away so the very next task uses the new
+            // configuration instead of waiting for a daemon restart.
+            let network_after = state.settings.network();
+            if network_before != network_after {
+                restart_idle_plugins(state);
+            }
+            state.manager.set_network(network_after);
             state.settings.save(&state.settings_path)?;
             broadcast(
                 state,
@@ -953,7 +990,23 @@ fn add_task(state: &mut State, request: Request) -> Result<Value, DaemonError> {
                     .map(|result| (outcome.plugin_id.clone(), result.clone()))
             })
             .max_by_key(|(_, result)| result.priority)
-            .ok_or_else(|| DaemonError::Protocol("no plugin supports this URL".into()))?,
+            .ok_or_else(|| {
+                // Without the per-plugin reasons this error is undiagnosable
+                // ("is my URL malformed, or did every plugin error out?").
+                let reasons = outcomes
+                    .iter()
+                    .map(|outcome| {
+                        let reason = outcome
+                            .error
+                            .clone()
+                            .or_else(|| outcome.result.as_ref().and_then(|r| r.reason.clone()))
+                            .unwrap_or_else(|| "no reason reported".into());
+                        format!("{}: {reason}", outcome.plugin_id)
+                    })
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                DaemonError::Protocol(format!("no plugin supports this URL ({reasons})"))
+            })?,
     };
 
     let (plugin_id, probe) = chosen;
@@ -1395,6 +1448,36 @@ fn recover_tasks(state: &mut State) {
 /// default, because the real proxy is resolved per task.
 fn init_proxy(proxy: Option<&ProxySetting>) -> Option<ProxyConfig> {
     proxy.and_then(ProxySetting::init_config)
+}
+
+/// Network settings ride into plugin processes at spawn, so after a change
+/// every idle plugin process is stopped; its next use respawns it with the
+/// new configuration. Plugins with running or paused work keep their process
+/// (and therefore their old settings) until that work finishes.
+fn restart_idle_plugins(state: &mut State) {
+    let busy: HashSet<String> = state
+        .live
+        .iter()
+        .filter_map(|task_id| {
+            state
+                .store
+                .task(task_id)
+                .ok()
+                .flatten()
+                .map(|task| task.plugin_id)
+        })
+        .collect();
+    for plugin_id in state
+        .manager
+        .registry()
+        .iter()
+        .map(|entry| entry.manifest.id.clone())
+        .collect::<Vec<_>>()
+    {
+        if !busy.contains(&plugin_id) {
+            state.manager.stop(&plugin_id);
+        }
+    }
 }
 
 /// Resolve the proxy for one task. Errors are logged and swallowed: a broken

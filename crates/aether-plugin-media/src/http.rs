@@ -1,39 +1,15 @@
 //! Small HTTP client helpers for playlists and segments.
 
-use std::time::Duration;
-
-use aether_plugin_sdk::{Init, ProxyMode};
+use aether_plugin_sdk::Init;
 use reqwest::blocking::{Client, Response};
 
 use crate::error::MediaError;
 
+/// The media plugin shares the HTTP plugin's client (user agent, IP mode and
+/// DNS settings included); the wrapper only re-frames its error type.
 pub fn build_client(init: &Init) -> Result<Client, MediaError> {
-    let mut builder = Client::builder()
-        .connect_timeout(Duration::from_secs(15))
-        .user_agent(format!(
-            "Aether/{} (+https://github.com/pengtang1024/Aether)",
-            init.host_version
-        ));
-
-    if let Some(proxy) = &init.proxy {
-        match proxy.mode {
-            ProxyMode::Direct => builder = builder.no_proxy(),
-            ProxyMode::System => {}
-            ProxyMode::Custom => {
-                let url = proxy
-                    .url
-                    .as_deref()
-                    .ok_or_else(|| MediaError::Protocol("custom proxy requires a URL".into()))?;
-                let mut configured = reqwest::Proxy::all(url)?;
-                if let (Some(username), Some(password)) = (&proxy.username, &proxy.password) {
-                    configured = configured.basic_auth(username, password);
-                }
-                builder = builder.proxy(configured);
-            }
-        }
-    }
-
-    Ok(builder.build()?)
+    aether_plugin_http::client::build_client(init)
+        .map_err(|error| MediaError::Protocol(error.to_string()))
 }
 
 pub fn get_text(client: &Client, url: &url::Url) -> Result<String, MediaError> {

@@ -480,6 +480,11 @@ component DownloadPanel inherits Rectangle {
 
 component NetworkPanel inherits Rectangle {
     in property <string> app-version: "";
+    // Daemon-backed state, mirrored by the window; edits go out on
+    // `changed` (commit on Enter, or when the clear button empties the field).
+    in-out property <string> dns-value: "";
+    in-out property <string> user-agent-value: "";
+    in-out property <int> ip-mode-index: 0;
     callback changed(string, string);
 
     VerticalLayout {
@@ -519,22 +524,25 @@ component NetworkPanel inherits Rectangle {
             SettingRow {
                 icon-source: AetherIcons.cloud;
                 title: "DNS 服务器";
-                description: "留空则使用系统 DNS";
+                description: "仅 HTTP(S) 生效；指定后失败即报错，不回退系统 DNS";
                 LineEdit {
-                    text: "223.5.5.5, 1.1.1.1";
+                    text <=> root.dns-value;
                     min-width: Aether.field-md;
                     max-width: Aether.field-md;
-                    edited => { root.changed("dns", self.text); }
+                    accepted => { root.changed("dns", self.text); }
+                    // The clear button only fires `edited`; commit an empty
+                    // value so the displayed field never lies.
+                    edited(text) => { if (text == "") { root.changed("dns", text); } }
                 }
             }
             SettingRow {
                 icon-source: AetherIcons.layers;
                 title: "IP 协议";
-                description: "优先尝试 IPv4 还是 IPv6";
+                description: "仅 HTTP(S) 下载生效；BT / FTP 不受影响";
                 divider: false;
                 ComboBox {
                     model: ["IPv4 + IPv6", "仅 IPv4", "仅 IPv6"];
-                    current-index: 0;
+                    current-index <=> root.ip-mode-index;
                     min-width: Aether.field-md;
                     max-width: Aether.field-md;
                     selected => { root.changed("ip-mode", self.current-value); }
@@ -550,12 +558,13 @@ component NetworkPanel inherits Rectangle {
             SettingRow {
                 icon-source: AetherIcons.info;
                 title: "User-Agent";
-                description: "留空使用 Aether 默认值";
+                description: "留空使用 Aether 默认值；改动对空闲插件立即生效";
                 LineEdit {
-                    text: "Aether/" + root.app-version;
+                    text <=> root.user-agent-value;
                     min-width: Aether.field-md;
                     max-width: Aether.field-md;
-                    edited => { root.changed("user-agent", self.text); }
+                    accepted => { root.changed("user-agent", self.text); }
+                    edited(text) => { if (text == "") { root.changed("user-agent", text); } }
                 }
             }
             SettingRow {
@@ -1609,6 +1618,10 @@ export component SettingsPage inherits Rectangle {
     in property <string> data-dir: "";
     in-out property <int> tab: 0;
     in-out property <int> theme-mode: 0;
+    // Daemon-backed network settings (mirrored by the window).
+    in-out property <string> network-dns: "";
+    in-out property <string> network-user-agent: "";
+    in-out property <int> network-ip-mode: 0;
     callback settings-changed(string, string);
     callback support-action(string);
     callback plugin-toggled(int, bool);
@@ -1680,6 +1693,9 @@ export component SettingsPage inherits Rectangle {
                 if root.tab == 1: DownloadPanel { changed(k, v) => { root.settings-changed(k, v); } }
                 if root.tab == 2: NetworkPanel {
                     app-version: root.app-version;
+                    dns-value <=> root.network-dns;
+                    user-agent-value <=> root.network-user-agent;
+                    ip-mode-index <=> root.network-ip-mode;
                     changed(k, v) => { root.settings-changed(k, v); }
                 }
                 if root.tab == 3: BtPanel { changed(k, v) => { root.settings-changed(k, v); } }

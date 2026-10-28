@@ -592,6 +592,21 @@ pub enum DownloadError {
 }
 
 impl DownloadError {
+    /// reqwest's `Display` stops at the request URL and hides the underlying
+    /// cause (DNS failure, TLS handshake, connection refused, …). The message
+    /// is all the user ever sees in the task log, so walk the source chain
+    /// into it.
+    fn reqwest_message(error: &reqwest::Error) -> String {
+        let mut message = error.to_string();
+        let mut source = std::error::Error::source(error);
+        while let Some(cause) = source {
+            message.push_str(": ");
+            message.push_str(&cause.to_string());
+            source = cause.source();
+        }
+        message
+    }
+
     pub fn to_plugin_error(&self) -> PluginError {
         match self {
             Self::Canceled => PluginError::new(ErrorKind::Canceled, "canceled"),
@@ -608,12 +623,14 @@ impl DownloadError {
                     .with_status(*status)
             }
             Self::Http(error) if error.is_timeout() => {
-                PluginError::new(ErrorKind::Timeout, error.to_string()).retryable(true)
+                PluginError::new(ErrorKind::Timeout, Self::reqwest_message(error)).retryable(true)
             }
             Self::Http(error) if error.is_connect() => {
-                PluginError::new(ErrorKind::Connect, error.to_string()).retryable(true)
+                PluginError::new(ErrorKind::Connect, Self::reqwest_message(error)).retryable(true)
             }
-            Self::Http(error) => PluginError::new(ErrorKind::Protocol, error.to_string()),
+            Self::Http(error) => {
+                PluginError::new(ErrorKind::Protocol, Self::reqwest_message(error))
+            }
             Self::RangeIgnored | Self::InvalidRange => {
                 PluginError::new(ErrorKind::RangeMismatch, self.to_string())
             }

@@ -48,6 +48,9 @@ struct State {
     /// push a complete proxy setting.
     proxy_url: String,
     proxy_mode: String,
+    /// Settings JSON last pushed into the window, so the mirror is only
+    /// written when the daemon actually reported a change.
+    pushed_settings: Option<serde_json::Value>,
     last_notice: Option<String>,
     /// Installed plugins mirrored from the snapshot (row id → plugin id).
     plugins: Vec<PluginInfo>,
@@ -75,6 +78,7 @@ impl State {
             detail_data_for: -1,
             proxy_url: String::new(),
             proxy_mode: "跟随系统".into(),
+            pushed_settings: None,
             last_notice: None,
             plugins: Vec::new(),
             plugins_sig: String::new(),
@@ -308,6 +312,36 @@ fn refresh_rows(ui: &AppWindow, state: &Rc<RefCell<State>>) {
 
     if !snapshot.download_dir.is_empty() {
         ui.set_default_download_dir(snapshot.download_dir.clone().into());
+    }
+
+    // Mirror the daemon's settings into the network panel when they change;
+    // the page pushes edits back through `settings-changed`.
+    if snapshot.settings != st.pushed_settings {
+        st.pushed_settings = snapshot.settings.clone();
+        if let Some(settings) = snapshot.settings.as_ref() {
+            ui.set_settings_dns(settings["dns"].as_str().unwrap_or("").to_string().into());
+            ui.set_settings_user_agent(
+                settings["user_agent"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string()
+                    .into(),
+            );
+            ui.set_settings_ip_mode(match settings["ip_mode"].as_str() {
+                Some("ipv4_only") => 1,
+                Some("ipv6_only") => 2,
+                _ => 0,
+            });
+            // Seed the proxy bookkeeping so a later mode switch pushes a
+            // complete setting instead of guessing at the daemon's URL.
+            let mode = settings["proxy"]["mode"].as_str().unwrap_or("system");
+            st.proxy_mode = match mode {
+                "none" => "直连".into(),
+                "custom" => "手动".into(),
+                _ => "跟随系统".into(),
+            };
+            st.proxy_url = settings["proxy"]["url"].as_str().unwrap_or("").into();
+        }
     }
 
     ui.set_count_all(total);
@@ -915,7 +949,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 };
                 save_theme_mode(mode);
             }
-            let mut hint = None;
+            let mut hint: Option<String> = None;
             {
                 let mut st = state.borrow_mut();
                 match key.as_str() {
@@ -929,17 +963,42 @@ fn main() -> Result<(), slint::PlatformError> {
                     "proxy-mode" => {
                         st.proxy_mode = value.to_string();
                         if st.proxy_mode == "手动" && st.proxy_url.trim().is_empty() {
-                            hint = Some("请先填写代理地址，再切换到手动模式");
+                            hint = Some("请先填写代理地址，再切换到手动模式".into());
                         } else {
                             let url = st.proxy_url.clone();
                             st.backend.set_proxy(&st.proxy_mode, &url);
                         }
                     }
-                    _ => {}
+                    // Network settings go through the same set_settings RPC;
+                    // blank input is normalised to "off" by the daemon.
+                    "dns" => {
+                        st.backend
+                            .set_setting(serde_json::json!({"dns": value.as_str()}));
+                        hint = Some("DNS 已保存：空闲插件重启后生效".into());
+                    }
+                    "user-agent" => {
+                        st.backend
+                            .set_setting(serde_json::json!({"user_agent": value.as_str()}));
+                        hint = Some("User-Agent 已保存：空闲插件重启后生效".into());
+                    }
+                    "ip-mode" => {
+                        let patch = match value.as_str() {
+                            "仅 IPv4" => serde_json::json!({"ip_mode": "ipv4_only"}),
+                            "仅 IPv6" => serde_json::json!({"ip_mode": "ipv6_only"}),
+                            _ => serde_json::json!({"ip_mode": null}),
+                        };
+                        st.backend.set_setting(patch);
+                        hint = Some("IP 协议已保存：空闲插件重启后生效".into());
+                    }
+                    // Persisted locally, no daemon round-trip.
+                    "theme" => {}
+                    // The settings page still shows controls that do nothing;
+                    // saying so beats a silent no-op (honest UI).
+                    other => hint = Some(format!("设置项「{other}」尚未接线")),
                 }
             }
             if let (Some(hint), Some(ui)) = (hint, ui_handle.upgrade()) {
-                show_toast(&ui, &state, hint);
+                show_toast(&ui, &state, &hint);
             }
             println!("[settings] {key} = {value}");
         });
