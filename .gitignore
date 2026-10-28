@@ -14,3 +14,6 @@
 # Packaging output
 /build/
 /dist/
+
+# Stray download dir from runs without HOME set
+/downloads/

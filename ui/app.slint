@@ -53,6 +53,8 @@ export component AppWindow inherits Window {
     in-out property <string> settings-dns: "";
     in-out property <string> settings-user-agent: "";
     in-out property <int> settings-ip-mode: 0;
+    in-out property <int> settings-proxy-mode: 0;
+    in-out property <string> settings-proxy-url: "";
     in-out property <int> theme-mode: 0;          // 0 = follow system, 1 = light, 2 = dark
     in-out property <string> rail-hint: "";
     in-out property <string> support-hint: "";
@@ -414,6 +416,8 @@ export component AppWindow inherits Window {
                         network-dns <=> root.settings-dns;
                         network-user-agent <=> root.settings-user-agent;
                         network-ip-mode <=> root.settings-ip-mode;
+                        network-proxy-mode <=> root.settings-proxy-mode;
+                        network-proxy-url <=> root.settings-proxy-url;
                         settings-changed(k, v) => { root.settings-changed(k, v); }
                         support-action(action) => { root.support-action(action); }
                         plugin-toggled(id, enabled) => { root.plugin-toggled(id, enabled); }

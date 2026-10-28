@@ -485,6 +485,8 @@ component NetworkPanel inherits Rectangle {
     in-out property <string> dns-value: "";
     in-out property <string> user-agent-value: "";
     in-out property <int> ip-mode-index: 0;
+    in-out property <int> proxy-mode-index: 0;
+    in-out property <string> proxy-url-value: "";
     callback changed(string, string);
 
     VerticalLayout {
@@ -503,8 +505,8 @@ component NetworkPanel inherits Rectangle {
                 title: "代理模式";
                 description: "跟随系统或为 Aether 单独配置";
                 ComboBox {
-                    model: ["跟随系统", "直连", "手动"];
-                    current-index: 0;
+                    model: ["跟随系统", "直连", "手动", "PAC"];
+                    current-index <=> root.proxy-mode-index;
                     min-width: Aether.field-md;
                     max-width: Aether.field-md;
                     selected => { root.changed("proxy-mode", self.current-value); }
@@ -513,9 +515,10 @@ component NetworkPanel inherits Rectangle {
             SettingRow {
                 icon-source: AetherIcons.link;
                 title: "代理地址";
-                description: "支持 HTTP / SOCKS5";
+                description: "支持 HTTP / SOCKS5；切到手动模式后生效";
                 LineEdit {
-                    text: "http://127.0.0.1:7890";
+                    text <=> root.proxy-url-value;
+                    placeholder-text: "http://127.0.0.1:7890";
                     min-width: Aether.field-md;
                     max-width: Aether.field-md;
                     edited => { root.changed("proxy-url", self.text); }
@@ -1622,6 +1625,8 @@ export component SettingsPage inherits Rectangle {
     in-out property <string> network-dns: "";
     in-out property <string> network-user-agent: "";
     in-out property <int> network-ip-mode: 0;
+    in-out property <int> network-proxy-mode: 0;
+    in-out property <string> network-proxy-url: "";
     callback settings-changed(string, string);
     callback support-action(string);
     callback plugin-toggled(int, bool);
@@ -1696,6 +1701,8 @@ export component SettingsPage inherits Rectangle {
                     dns-value <=> root.network-dns;
                     user-agent-value <=> root.network-user-agent;
                     ip-mode-index <=> root.network-ip-mode;
+                    proxy-mode-index <=> root.network-proxy-mode;
+                    proxy-url-value <=> root.network-proxy-url;
                     changed(k, v) => { root.settings-changed(k, v); }
                 }
                 if root.tab == 3: BtPanel { changed(k, v) => { root.settings-changed(k, v); } }

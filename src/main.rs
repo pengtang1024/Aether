@@ -332,15 +332,26 @@ fn refresh_rows(ui: &AppWindow, state: &Rc<RefCell<State>>) {
                 Some("ipv6_only") => 2,
                 _ => 0,
             });
+            // Proxy: show the daemon's real mode and address instead of
+            // guessing (pac has no user-editable URL, so it is display-only).
+            let proxy = &settings["proxy"];
+            ui.set_settings_proxy_mode(match proxy["mode"].as_str() {
+                Some("none") => 1,
+                Some("custom") => 2,
+                Some("pac") => 3,
+                _ => 0,
+            });
+            ui.set_settings_proxy_url(proxy["url"].as_str().unwrap_or("").into());
             // Seed the proxy bookkeeping so a later mode switch pushes a
             // complete setting instead of guessing at the daemon's URL.
-            let mode = settings["proxy"]["mode"].as_str().unwrap_or("system");
+            let mode = proxy["mode"].as_str().unwrap_or("system");
             st.proxy_mode = match mode {
                 "none" => "直连".into(),
                 "custom" => "手动".into(),
+                "pac" => "PAC".into(),
                 _ => "跟随系统".into(),
             };
-            st.proxy_url = settings["proxy"]["url"].as_str().unwrap_or("").into();
+            st.proxy_url = proxy["url"].as_str().unwrap_or("").into();
         }
     }
 
@@ -962,11 +973,22 @@ fn main() -> Result<(), slint::PlatformError> {
                     }
                     "proxy-mode" => {
                         st.proxy_mode = value.to_string();
-                        if st.proxy_mode == "手动" && st.proxy_url.trim().is_empty() {
-                            hint = Some("请先填写代理地址，再切换到手动模式".into());
-                        } else {
-                            let url = st.proxy_url.clone();
-                            st.backend.set_proxy(&st.proxy_mode, &url);
+                        match st.proxy_mode.as_str() {
+                            // Display-only entry: the PAC URL lives in the
+                            // daemon's start configuration, not in settings.
+                            "PAC" => {
+                                hint = Some(
+                                    "PAC 由启动配置（AETHER_PAC_URL）决定，暂不支持在界面切换"
+                                        .into(),
+                                )
+                            }
+                            "手动" if st.proxy_url.trim().is_empty() => {
+                                hint = Some("请先填写代理地址，再切换到手动模式".into())
+                            }
+                            _ => {
+                                let url = st.proxy_url.clone();
+                                st.backend.set_proxy(&st.proxy_mode, &url);
+                            }
                         }
                     }
                     // Network settings go through the same set_settings RPC;
