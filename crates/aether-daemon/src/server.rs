@@ -101,6 +101,8 @@ struct State {
     manager: PluginManager,
     store: TaskStore,
     download_dir: PathBuf,
+    plugins_dir: PathBuf,
+    data_dir: PathBuf,
     active: HashSet<String>,
     update: Option<Arc<Mutex<serde_json::Value>>>,
     subscribers: Vec<Sender<serde_json::Value>>,
@@ -187,6 +189,10 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
     let registry = PluginRegistry::discover(&[config.plugins_dir.clone()])?;
     let mut manager = PluginManager::new(registry, &data_dir, config.host_version.clone());
     let store = TaskStore::open(data_dir.join("aether.db"))?;
+    // Plugins the user switched off last time stay off.
+    for plugin_id in store.disabled_plugins()? {
+        let _ = manager.registry_mut().set_enabled(&plugin_id, false);
+    }
 
     // Persisted settings, with AETHER_PROXY winning over the file so ops and
     // tests can override a user's choice for one run.
@@ -225,6 +231,8 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
         manager,
         store,
         download_dir: config.download_dir.clone(),
+        plugins_dir: config.plugins_dir.clone(),
+        data_dir: data_dir.clone(),
         active: HashSet::new(),
         update: update_status,
         subscribers: Vec::new(),
@@ -289,6 +297,26 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
     drop(accept_thread);
     let _ = fs::remove_file(&config.socket);
     Ok(())
+}
+
+/// Category bucket for a finalized file, by extension. Order matches the
+/// `stats` JSON: video, archive, app, doc, other.
+fn file_category(relative_path: &str) -> usize {
+    let name = relative_path.rsplit('/').next().unwrap_or(relative_path);
+    let ext = name.rsplit_once('.').map(|(_, ext)| ext.to_lowercase());
+    match ext.as_deref() {
+        Some(
+            "mp4" | "mkv" | "avi" | "mov" | "webm" | "flv" | "wmv" | "ts" | "m4v" | "mp3" | "flac"
+            | "wav" | "ogg",
+        ) => 0,
+        Some("zip" | "rar" | "7z" | "tar" | "gz" | "bz2" | "xz" | "zst" | "lz4") => 1,
+        Some("exe" | "msi" | "dmg" | "deb" | "rpm" | "appimage" | "pkg" | "iso" | "apk") => 2,
+        Some(
+            "pdf" | "doc" | "docx" | "xls" | "xlsx" | "ppt" | "pptx" | "txt" | "md" | "epub"
+            | "mobi",
+        ) => 3,
+        _ => 4,
+    }
 }
 
 fn spawn_update_loop(
@@ -694,6 +722,169 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
             let proxy = resolve_task_proxy(state, &url, true);
             let error = state.pac.as_ref().and_then(PacResolver::last_error);
             Ok(json!({ "url": url, "pac": pac, "proxy": proxy, "pac_error": error }))
+        }
+        "plugins" => {
+            let plugins = state
+                .manager
+                .registry()
+                .iter()
+                .map(|entry| {
+                    json!({
+                        "id": entry.manifest.id,
+                        "name": entry.manifest.name,
+                        "version": entry.manifest.version,
+                        "protocols": entry.manifest.protocols,
+                        "capabilities": entry.manifest.capabilities,
+                        "enabled": entry.enabled,
+                    })
+                })
+                .collect::<Vec<_>>();
+            Ok(json!({ "plugins": plugins }))
+        }
+        "set_plugin_enabled" => {
+            let plugin_id = request
+                .plugin
+                .clone()
+                .ok_or_else(|| DaemonError::Protocol("set_plugin_enabled needs plugin".into()))?;
+            let enabled = request
+                .settings
+                .get("enabled")
+                .and_then(serde_json::Value::as_bool)
+                .ok_or_else(|| {
+                    DaemonError::Protocol("set_plugin_enabled needs settings.enabled".into())
+                })?;
+            if !enabled {
+                // Refuse to pull the rug from under running work.
+                let busy = state.active.iter().any(|task_id| {
+                    state
+                        .store
+                        .task(task_id)
+                        .ok()
+                        .flatten()
+                        .is_some_and(|task| task.plugin_id == plugin_id)
+                });
+                if busy {
+                    return Err(DaemonError::Protocol(format!(
+                        "plugin {plugin_id} still has running tasks"
+                    )));
+                }
+            }
+            state
+                .manager
+                .registry_mut()
+                .set_enabled(&plugin_id, enabled)?;
+            if !enabled {
+                state.manager.stop(&plugin_id);
+                state.live.retain(|task_id| {
+                    state
+                        .store
+                        .task(task_id)
+                        .ok()
+                        .flatten()
+                        .is_none_or(|task| task.plugin_id != plugin_id)
+                });
+            }
+            state.store.set_plugin_disabled(&plugin_id, !enabled)?;
+            let entry = state
+                .manager
+                .registry()
+                .get(&plugin_id)
+                .map(|entry| {
+                    json!({
+                        "id": entry.manifest.id,
+                        "enabled": entry.enabled,
+                    })
+                })
+                .unwrap_or(serde_json::Value::Null);
+            Ok(json!({ "plugin": entry }))
+        }
+        "stats" => {
+            let now = chrono::Local::now();
+            let today_start = now
+                .date_naive()
+                .and_hms_opt(0, 0, 0)
+                .map(|naive| {
+                    naive
+                        .and_local_timezone(chrono::Local)
+                        .single()
+                        .map(|local| local.timestamp_millis())
+                        .unwrap_or(0)
+                })
+                .unwrap_or(0);
+            let week_start = today_start - 7 * 24 * 3600 * 1000;
+            let (today_bytes, today_files) = state.store.completed_since(today_start)?;
+            let (week_bytes, week_files) = state.store.completed_since(week_start)?;
+            // Per-day bars and per-type split come from one file-level query.
+            let files = state.store.completed_files_since(week_start)?;
+            let tz_offset = chrono::Local::now().offset().local_minus_utc() as i64 * 1000;
+            let day_ms = 24 * 3600 * 1000;
+            let today_index = ((today_start + tz_offset) / day_ms) as usize;
+            let first_index = today_index - 6; // slots: 6 days ago … today
+            let mut daily = [0_u64; 7];
+            let mut categories = [0_u64; 5];
+            for (completed_at, size, relative_path) in &files {
+                let day = ((*completed_at + tz_offset) / day_ms) as usize;
+                if day >= first_index {
+                    let slot = (day - first_index).min(6);
+                    daily[slot] += size;
+                }
+                categories[file_category(relative_path)] += size;
+            }
+            // Weekday glyphs for the daily slots, today last.
+            let day_labels: Vec<String> = {
+                let glyphs = ["一", "二", "三", "四", "五", "六", "日"];
+                let today =
+                    chrono::Datelike::weekday(&chrono::Local::now()).num_days_from_monday() as i64;
+                (0..7)
+                    .map(|back| {
+                        let weekday = (today - (6 - back)).rem_euclid(7) as usize;
+                        glyphs[weekday].to_string()
+                    })
+                    .collect()
+            };
+            let (completed, failed) = state.store.outcome_counts()?;
+            let (disk_total, disk_free) = match (
+                fs2::total_space(&state.download_dir),
+                fs2::available_space(&state.download_dir),
+            ) {
+                (Ok(total), Ok(free)) => (total, free),
+                _ => (0, 0),
+            };
+            let queued = state
+                .store
+                .list_tasks(1000)?
+                .into_iter()
+                .filter(|task| task.state == TaskState::Queued)
+                .count() as u64;
+            let registry = state.manager.registry();
+            Ok(json!({
+                "version": env!("CARGO_PKG_VERSION"),
+                "download_dir": state.download_dir.to_string_lossy(),
+                "plugins_dir": state.plugins_dir.to_string_lossy(),
+                "data_dir": state.data_dir.join("aether.db").to_string_lossy(),
+                "disk": { "total": disk_total, "free": disk_free },
+                "today": { "bytes": today_bytes, "files": today_files },
+                "week": { "bytes": week_bytes, "files": week_files },
+                "daily": daily,
+                "daily_labels": day_labels,
+                "categories": {
+                    "video": categories[0],
+                    "archive": categories[1],
+                    "app": categories[2],
+                    "doc": categories[3],
+                    "other": categories[4],
+                },
+                "tasks": {
+                    "completed": completed,
+                    "failed": failed,
+                    "active": state.active.len(),
+                    "queued": queued,
+                },
+                "plugins": {
+                    "total": registry.len(),
+                    "enabled": registry.iter().filter(|entry| entry.enabled).count(),
+                }
+            }))
         }
         "get_settings" => Ok(json!({ "settings": state.settings })),
         "set_settings" => {

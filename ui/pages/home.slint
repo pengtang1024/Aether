@@ -394,7 +394,35 @@ export component HomePage inherits Rectangle {
     in property <string> chart-area: "";
     in property <float> chart-latest: 0;
 
+    // Dashboard counters, filled from the daemon's `stats`.
+    in property <string> today-bytes: "—";
+    in property <string> today-upload: "—";
+    in property <string> peak-speed: "—";
+    in property <string> week-bytes: "—";
+    in property <float> disk-percent: 0;
+    in property <string> disk-percent-text: "0%";
+    in property <string> disk-label: "—";
+    in property <string> disk-free: "";
+    in property <string> engine-name: "—";
+    in property <string> version-name: "—";
+    in property <string> extension-status: "—";
+    in property <bool> extension-connected: false;
+    in property <string> plugins-text: "—";
+    in property <string> protocols-text: "—";
+    in property <string> uptime-text: "—";
+    // Weekly volume bars (fractions), oldest day first; today is the last.
+    in property <[float]> day-bars: [];
+    in property <[string]> day-labels: [];
+    // Finalized bytes by type (video/archive/app/doc) for the storage card.
+    in property <[float]> cat-fractions: [];
+    in property <[string]> cat-values: [];
+    in property <[string]> cat-percents: [];
+    in property <string> weekly-label: "—";
+    in property <string> avg-file: "—";
+    in property <string> success-rate: "—";
+
     in-out property <int> speed-limit-mode: 0;
+    callback limit-picked(int);
 
     callback open-downloads(int);
     callback open-plugins();
@@ -504,11 +532,11 @@ export component HomePage inherits Rectangle {
                         height: 100%;
                         spacing: 6px;
 
-                        MetricCell { label: "今日下载"; value: "18.4 GB"; horizontal-stretch: 1; }
+                        MetricCell { label: "今日下载"; value: root.today-bytes; horizontal-stretch: 1; }
                         Rectangle { width: 1px; height: 18px; background: Aether.outline-faint; cross-axis-self-alignment: center; }
-                        MetricCell { label: "今日上传"; value: "2.1 GB"; horizontal-stretch: 1; }
+                        MetricCell { label: "今日上传"; value: root.today-upload; horizontal-stretch: 1; }
                         Rectangle { width: 1px; height: 18px; background: Aether.outline-faint; cross-axis-self-alignment: center; }
-                        MetricCell { label: "峰值速度"; value: "42.8 MB/s"; horizontal-stretch: 1; }
+                        MetricCell { label: "峰值速度"; value: root.peak-speed; horizontal-stretch: 1; }
                     }
 
                     Rectangle {
@@ -539,7 +567,10 @@ export component HomePage inherits Rectangle {
                         for idx in [0, 1, 2, 3] : SpeedLimitPill {
                             index: idx;
                             mode: root.speed-limit-mode;
-                            clicked => { root.speed-limit-mode = idx; }
+                            clicked => {
+                                root.speed-limit-mode = idx;
+                                root.limit-picked(idx);
+                            }
                         }
                     }
                 }
@@ -597,6 +628,7 @@ export component HomePage inherits Rectangle {
             HorizontalLayout {
                 height: 8px;
                 spacing: 1px;
+                visible: root.count-all > 0;
 
                 Rectangle {
                     horizontal-stretch: root.count-active;
@@ -692,7 +724,7 @@ export component HomePage inherits Rectangle {
                             font-size: Aether.text-micro;
                         }
                         Text {
-                            text: "104.4 GB";
+                            text: root.week-bytes;
                             color: Aether.on-surface;
                             font-size: Aether.text-headline;
                             font-weight: Aether.weight-semibold;
@@ -701,26 +733,18 @@ export component HomePage inherits Rectangle {
                     }
 
                     Rectangle { horizontal-stretch: 1; background: transparent; }
-
-                    Text {
-                        text: "+12%";
-                        color: Aether.success;
-                        font-size: Aether.text-micro;
-                        vertical-alignment: bottom;
-                    }
                 }
 
                 HorizontalLayout {
                     height: Aether.viz-chart;
                     spacing: 6px;
 
-                    DayBar { fraction: 0.36; label: "一"; horizontal-stretch: 1; }
-                    DayBar { fraction: 0.54; label: "二"; horizontal-stretch: 1; }
-                    DayBar { fraction: 0.43; label: "三"; horizontal-stretch: 1; }
-                    DayBar { fraction: 0.82; label: "四"; horizontal-stretch: 1; }
-                    DayBar { fraction: 0.62; label: "五"; horizontal-stretch: 1; }
-                    DayBar { fraction: 1.0; label: "六"; active: true; horizontal-stretch: 1; }
-                    DayBar { fraction: 0.81; label: "日"; horizontal-stretch: 1; }
+                    for fraction[i] in root.day-bars: DayBar {
+                        fraction: fraction;
+                        label: root.day-labels[i];
+                        active: i == 6;
+                        horizontal-stretch: 1;
+                    }
                 }
 
                 Rectangle { vertical-stretch: 1; background: transparent; }
@@ -735,11 +759,11 @@ export component HomePage inherits Rectangle {
                     height: Aether.control-xs;
                     spacing: 8px;
 
-                    MetricCell { label: "上传"; value: "9.6 GB"; horizontal-stretch: 1; }
+                    MetricCell { label: "上传"; value: root.today-upload; horizontal-stretch: 1; }
                     Rectangle { width: 1px; height: 14px; background: Aether.outline-faint; cross-axis-self-alignment: center; }
-                    MetricCell { label: "平均"; value: "21.3 MB/s"; horizontal-stretch: 1; }
+                    MetricCell { label: "平均文件"; value: root.avg-file; horizontal-stretch: 1; }
                     Rectangle { width: 1px; height: 14px; background: Aether.outline-faint; cross-axis-self-alignment: center; }
-                    MetricCell { label: "成功率"; value: "96%"; horizontal-stretch: 1; }
+                    MetricCell { label: "成功率"; value: root.success-rate; horizontal-stretch: 1; }
                 }
             }
         }
@@ -761,8 +785,8 @@ export component HomePage inherits Rectangle {
                     alignment: center;
 
                     RingGauge {
-                        progress: 0.62;
-                        label: "62%";
+                        progress: root.disk-percent;
+                        label: root.disk-percent-text;
                         tone: Aether.success;
                         size: Aether.viz-ring;
                     }
@@ -777,14 +801,14 @@ export component HomePage inherits Rectangle {
                             font-size: Aether.text-micro;
                         }
                         Text {
-                            text: "428 / 690 GB";
+                            text: root.disk-label;
                             color: Aether.on-surface;
                             font-size: Aether.text-body;
                             font-weight: Aether.weight-semibold;
                             font-family: "JetBrains Mono";
                         }
                         Text {
-                            text: "剩余 262 GB";
+                            text: root.disk-free;
                             color: Aether.on-surface-muted;
                             font-size: Aether.text-micro;
                         }
@@ -805,7 +829,7 @@ export component HomePage inherits Rectangle {
                     Rectangle { horizontal-stretch: 1; background: transparent; }
 
                     Text {
-                        text: "27.5 GB · 4 类";
+                        text: root.weekly-label;
                         color: Aether.on-surface;
                         font-size: Aether.text-micro;
                         font-family: "JetBrains Mono";
@@ -813,35 +837,17 @@ export component HomePage inherits Rectangle {
                     }
                 }
 
-                Rectangle {
+                HorizontalLayout {
                     height: 6px;
-                    border-radius: 3px;
-                    clip: true;
-                    background: Aether.surface-container-highest;
+                    spacing: 0;
 
-                    Rectangle {
-                        x: 0;
-                        width: parent.width * 0.46;
+                    for fraction[i] in root.cat-fractions: Rectangle {
+                        horizontal-stretch: fraction * 1000;
                         height: 100%;
-                        background: Aether.primary-bright;
-                    }
-                    Rectangle {
-                        x: parent.width * 0.46;
-                        width: parent.width * 0.31;
-                        height: 100%;
-                        background: Aether.live;
-                    }
-                    Rectangle {
-                        x: parent.width * 0.77;
-                        width: parent.width * 0.19;
-                        height: 100%;
-                        background: Aether.warning;
-                    }
-                    Rectangle {
-                        x: parent.width * 0.96;
-                        width: parent.width * 0.04;
-                        height: 100%;
-                        background: Aether.info;
+                        background: i == 0 ? Aether.primary-bright
+                            : i == 1 ? Aether.live
+                            : i == 2 ? Aether.warning
+                            : Aether.info;
                     }
                 }
 
@@ -849,29 +855,29 @@ export component HomePage inherits Rectangle {
                     height: (storage-card.height - 180px) / 4;
                     dot: Aether.primary-bright;
                     label: "视频";
-                    value: "12.8 GB";
-                    percent: "46%";
+                    value: root.cat-values[0];
+                    percent: root.cat-percents[0];
                 }
                 CategoryRow {
                     height: (storage-card.height - 180px) / 4;
                     dot: Aether.live;
                     label: "压缩包";
-                    value: "8.4 GB";
-                    percent: "31%";
+                    value: root.cat-values[1];
+                    percent: root.cat-percents[1];
                 }
                 CategoryRow {
                     height: (storage-card.height - 180px) / 4;
                     dot: Aether.warning;
                     label: "应用";
-                    value: "5.2 GB";
-                    percent: "19%";
+                    value: root.cat-values[2];
+                    percent: root.cat-percents[2];
                 }
                 CategoryRow {
                     height: (storage-card.height - 180px) / 4;
                     dot: Aether.info;
                     label: "文档";
-                    value: "1.1 GB";
-                    percent: "4%";
+                    value: root.cat-values[3];
+                    percent: root.cat-percents[3];
                 }
             }
         }
@@ -892,33 +898,33 @@ export component HomePage inherits Rectangle {
                 InfoRow {
                     icon-source: AetherIcons.info;
                     label: "版本";
-                    value: "Aether v0.1.0";
+                    value: root.version-name;
                 }
                 InfoRow {
                     icon-source: AetherIcons.layers;
                     label: "引擎";
-                    value: "aria2";
+                    value: root.engine-name;
                 }
                 InfoRow {
                     icon-source: AetherIcons.link;
                     label: "浏览器扩展";
-                    value: "已连接";
-                    connected: true;
+                    value: root.extension-status;
+                    connected: root.extension-connected;
                 }
                 InfoRow {
                     icon-source: AetherIcons.layers;
                     label: "插件";
-                    value: "18 个 · 3 可更新";
+                    value: root.plugins-text;
                 }
                 InfoRow {
                     icon-source: AetherIcons.signal;
                     label: "协议";
-                    value: "6 种 · 全可用";
+                    value: root.protocols-text;
                 }
                 InfoRow {
                     icon-source: AetherIcons.clock;
-                    label: "运行 / 缓存";
-                    value: "2h 18m · 3.2 GB";
+                    label: "运行";
+                    value: root.uptime-text;
                 }
 
                 Rectangle { vertical-stretch: 1; background: transparent; }

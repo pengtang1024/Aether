@@ -1,7 +1,8 @@
-//! Aether — a native Material 3 download manager (UI mockup).
+//! Aether — a native Material 3 download manager.
 //!
-//! Rust drives a small simulated download engine; Slint renders everything with
-//! its own Material 3 widget set. There is no WebView anywhere in the stack.
+//! Rust bridges the Slint window to `aether-daemon` (`src/backend.rs`); Slint
+//! renders everything with its own Material 3 widget set. There is no WebView
+//! anywhere in the stack.
 
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
@@ -20,9 +21,12 @@ use std::time::{Duration, Instant};
 
 use slint::{Model, ModelRc, Timer, TimerMode, VecModel};
 
+use aether_daemon::client::PluginInfo;
 use backend::Backend;
 use chart::{chart_paths, chart_peak};
-use model::{format_eta, format_pair, format_size, format_speed, Status, CHUNK_COUNT};
+use model::{
+    format_eta, format_pair, format_size, format_speed, rel_time, Status, Task, CHUNK_COUNT,
+};
 
 struct State {
     backend: Backend,
@@ -45,6 +49,14 @@ struct State {
     proxy_url: String,
     proxy_mode: String,
     last_notice: Option<String>,
+    /// Installed plugins mirrored from the snapshot (row id → plugin id).
+    plugins: Vec<PluginInfo>,
+    /// Change signature so the catalog model is only rebuilt on real change.
+    plugins_sig: String,
+    /// Session start, for the dashboard uptime row.
+    started: Instant,
+    /// Whether a browser extension native-host manifest is present.
+    extension_installed: bool,
 }
 
 impl State {
@@ -64,6 +76,10 @@ impl State {
             proxy_url: String::new(),
             proxy_mode: "跟随系统".into(),
             last_notice: None,
+            plugins: Vec::new(),
+            plugins_sig: String::new(),
+            started: Instant::now(),
+            extension_installed: browser_extension_installed(),
         }
     }
 
@@ -117,6 +133,97 @@ fn file_tone(name: &str) -> i32 {
         "appimage" | "exe" | "deb" | "rpm" => 4,
         _ => 0,
     }
+}
+
+/// One-line purpose per first-party plugin, shown in the settings catalogue.
+fn plugin_blurb(info: &PluginInfo) -> String {
+    match info.id.as_str() {
+        "http" => "HTTP / HTTPS 多线程下载".into(),
+        "bt" => "BT / 磁力链下载与做种".into(),
+        "ftp" => "FTP / FTPS 站点传输".into(),
+        "sftp" => "SFTP / SSH 文件传输".into(),
+        "media" => "网页音视频嗅探（HLS / DASH）".into(),
+        "extractor" => "yt-dlp 视频站点支持".into(),
+        "rtmp" => "RTMP 直播流录制".into(),
+        "webdav" => "WebDAV 远程目录".into(),
+        "s3" => "S3 / 对象存储".into(),
+        "gdrive" => "Google Drive 分享链接".into(),
+        "onedrive" => "OneDrive 分享链接".into(),
+        "dropbox" => "Dropbox 分享链接".into(),
+        "baidupan" => "百度网盘（官方 API）".into(),
+        "aliyunpan" => "阿里云盘（官方 API）".into(),
+        "thunder" => "迅雷链接".into(),
+        "ipfs" => "IPFS / IPNS 内容".into(),
+        other => {
+            if info.protocols.is_empty() {
+                format!("协议：{other}")
+            } else {
+                format!("协议：{}", info.protocols.join(", "))
+            }
+        }
+    }
+}
+
+/// Catalogue grouping; mirrors the filter tabs (全部/内置/已启用).
+fn plugin_category(id: &str) -> &'static str {
+    match id {
+        "http" => "HTTP",
+        "bt" => "BT",
+        "ftp" | "sftp" => "传输",
+        "media" | "extractor" | "rtmp" => "媒体",
+        "webdav" | "s3" | "ipfs" => "存储",
+        "gdrive" | "onedrive" | "dropbox" | "baidupan" | "aliyunpan" | "thunder" => "网盘",
+        _ => "其他",
+    }
+}
+
+fn plugin_icon(id: &str) -> i32 {
+    match id {
+        "http" => 0,                // link
+        "bt" => 10,                 // seed
+        "ftp" | "sftp" => 5,        // drive
+        "media" | "extractor" => 1, // play
+        "rtmp" => 11,               // signal
+        "webdav" | "s3" | "gdrive" | "onedrive" | "dropbox" | "baidupan" | "aliyunpan" => 3, // cloud
+        "thunder" => 11,
+        "ipfs" => 9, // layers
+        _ => 6,      // list
+    }
+}
+
+fn plugin_tone(id: &str) -> i32 {
+    match id {
+        "http" => 0,
+        "bt" => 1,
+        "ftp" | "sftp" => 2,
+        "media" | "extractor" | "rtmp" => 3,
+        "webdav" | "s3" | "ipfs" => 4,
+        _ => 2,
+    }
+}
+
+/// Standard native-messaging manifest locations; any `aether*.json` counts.
+fn browser_extension_installed() -> bool {
+    let Some(home) = std::env::var_os("HOME") else {
+        return false;
+    };
+    let home = PathBuf::from(home);
+    let dirs = [
+        ".mozilla/native-messaging-hosts",
+        ".config/google-chrome/NativeMessagingHosts",
+        ".config/chromium/NativeMessagingHosts",
+        ".config/BraveSoftware/Brave-Browser/NativeMessagingHosts",
+    ];
+    dirs.iter().any(|dir| {
+        let dir = home.join(dir);
+        dir.is_dir()
+            && std::fs::read_dir(&dir).ok().is_some_and(|entries| {
+                entries.filter_map(Result::ok).any(|entry| {
+                    let name = entry.file_name().to_string_lossy().to_lowercase();
+                    name.starts_with("aether") && name.ends_with(".json")
+                })
+            })
+    })
 }
 
 fn to_row(task: &model::Task, detail_id: i32) -> TaskRow {
@@ -219,19 +326,206 @@ fn refresh_rows(ui: &AppWindow, state: &Rc<RefCell<State>>) {
     ui.set_chart_area(area.into());
     ui.set_chart_latest(latest);
 
-    let times = ["刚刚", "3 分钟前", "今天 09:12", "今天 08:40", "昨天 22:18"];
-    let record_ids: Vec<i32> = tasks.iter().take(times.len()).map(|task| task.id).collect();
-    let records: Vec<RecordRow> = tasks
+    // ---- dashboard counters (daemon `stats`) --------------------------------
+    if let Some(stats) = &snapshot.stats {
+        ui.set_today_bytes(format_size(stats.today_bytes as f64).into());
+        ui.set_week_bytes(format_size(stats.week_bytes as f64).into());
+        ui.set_version_name(format!("Aether v{}", stats.version).into());
+        if !stats.plugins_dir.is_empty() {
+            ui.set_plugins_dir(stats.plugins_dir.clone().into());
+        }
+        if !stats.data_dir.is_empty() {
+            ui.set_data_dir(stats.data_dir.clone().into());
+        }
+        // Weekly bars: fractions against the busiest day, oldest first.
+        let max_daily = stats.daily.iter().copied().fold(0_u64, u64::max);
+        let bars: Vec<f32> = stats
+            .daily
+            .iter()
+            .map(|bytes| {
+                if max_daily > 0 {
+                    (*bytes as f32 / max_daily as f32).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                }
+            })
+            .collect();
+        ui.set_day_bars(ModelRc::new(VecModel::from(bars)));
+        ui.set_day_labels(ModelRc::new(VecModel::from(
+            stats
+                .daily_labels
+                .iter()
+                .map(|label| label.as_str().into())
+                .collect::<Vec<slint::SharedString>>(),
+        )));
+        // Storage card: share of the four visible categories.
+        let four: u64 = stats.categories[..4].iter().sum();
+        let fracs: Vec<f32> = (0..4)
+            .map(|index| {
+                if four > 0 {
+                    (stats.categories[index] as f32 / four as f32).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                }
+            })
+            .collect();
+        ui.set_cat_fractions(ModelRc::new(VecModel::from(fracs)));
+        ui.set_cat_values(ModelRc::new(VecModel::from(
+            stats.categories[..4]
+                .iter()
+                .map(|bytes| format_size(*bytes as f64).into())
+                .collect::<Vec<slint::SharedString>>(),
+        )));
+        ui.set_cat_percents(ModelRc::new(VecModel::from(
+            stats.categories[..4]
+                .iter()
+                .map(|bytes| {
+                    format!(
+                        "{}%",
+                        if four > 0 {
+                            (*bytes as f32 / four as f32 * 100.0).round() as i32
+                        } else {
+                            0
+                        }
+                    )
+                    .into()
+                })
+                .collect::<Vec<slint::SharedString>>(),
+        )));
+        let types = stats.categories.iter().filter(|bytes| **bytes > 0).count();
+        ui.set_weekly_label(
+            format!("{} · {} 类", format_size(stats.week_bytes as f64), types).into(),
+        );
+        ui.set_avg_file(
+            if stats.today_files > 0 {
+                format_size(stats.today_bytes as f64 / stats.today_files as f64)
+            } else {
+                "—".to_string()
+            }
+            .into(),
+        );
+        ui.set_success_rate(
+            if stats.completed + stats.failed > 0 {
+                format!(
+                    "{}%",
+                    (stats.completed as f64 / (stats.completed + stats.failed) as f64 * 100.0)
+                        .round() as i32
+                )
+            } else {
+                "—".to_string()
+            }
+            .into(),
+        );
+        ui.set_engine_name("内置插件宿主".into());
+        ui.set_plugins_text(format!("{}/{} 个", stats.plugins_enabled, stats.plugins_total).into());
+        ui.set_protocols_text(
+            format!(
+                "{} 种",
+                snapshot
+                    .plugins
+                    .iter()
+                    .flat_map(|plugin| plugin.protocols.iter())
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .len()
+            )
+            .into(),
+        );
+        if stats.disk_total > 0 {
+            let used = stats.disk_total.saturating_sub(stats.disk_free);
+            let percent = (used as f64 / stats.disk_total as f64).clamp(0.0, 1.0);
+            ui.set_disk_percent(percent as f32);
+            ui.set_disk_percent_text(format!("{}%", (percent * 100.0).round() as i32).into());
+            ui.set_disk_label(
+                format!(
+                    "{} / {}",
+                    format_size(used as f64),
+                    format_size(stats.disk_total as f64)
+                )
+                .into(),
+            );
+            ui.set_disk_free(format!("剩余 {}", format_size(stats.disk_free as f64)).into());
+        }
+    }
+    let peak_now = snapshot.history.iter().copied().fold(0.0_f64, f64::max);
+    ui.set_peak_speed(if peak_now > 0.0 {
+        format_speed(peak_now).into()
+    } else {
+        "—".into()
+    });
+    let minutes = st.started.elapsed().as_secs() / 60;
+    ui.set_uptime_text(
+        if minutes < 60 {
+            format!("{minutes} 分钟")
+        } else {
+            format!("{}h {}m", minutes / 60, minutes % 60)
+        }
+        .into(),
+    );
+    ui.set_extension_status(
+        if st.extension_installed {
+            "已安装"
+        } else {
+            "未安装"
+        }
+        .into(),
+    );
+    ui.set_extension_connected(st.extension_installed);
+
+    // ---- plugin catalogue (daemon registry) ---------------------------------
+    let sig = snapshot
+        .plugins
         .iter()
-        .take(times.len())
-        .enumerate()
-        .map(|(index, task)| RecordRow {
+        .map(|plugin| format!("{}:{}:{}", plugin.id, plugin.version, plugin.enabled))
+        .collect::<Vec<_>>()
+        .join("|");
+    if sig != st.plugins_sig {
+        st.plugins_sig = sig;
+        st.plugins = snapshot.plugins.clone();
+        let total = snapshot.plugins.len() as i32;
+        let enabled = snapshot.plugins.iter().filter(|p| p.enabled).count() as i32;
+        let rows: Vec<PluginRow> = snapshot
+            .plugins
+            .iter()
+            .enumerate()
+            .map(|(index, info)| PluginRow {
+                id: index as i32,
+                name: info.name.clone().into(),
+                description: plugin_blurb(info).into(),
+                version: info.version.clone().into(),
+                category: plugin_category(&info.id).into(),
+                kind: 0,
+                enabled: info.enabled,
+                update: false,
+                featured: false,
+                icon: plugin_icon(&info.id),
+                tone: plugin_tone(&info.id),
+            })
+            .collect();
+        ui.global::<PluginCatalog>()
+            .set_all(ModelRc::new(VecModel::from(rows)));
+        ui.global::<PluginCatalog>().set_total(total);
+        ui.global::<PluginCatalog>().set_active(enabled);
+        ui.global::<PluginCatalog>().set_builtin(total);
+        ui.global::<PluginCatalog>().set_community(0);
+        ui.global::<PluginCatalog>().set_updates(0);
+    }
+
+    let now_ms = st.backend.now_ms();
+    let terminal: Vec<&Task> = tasks
+        .iter()
+        .filter(|task| matches!(task.status, Status::Completed | Status::Failed))
+        .take(5)
+        .collect();
+    let record_ids: Vec<i32> = terminal.iter().map(|task| task.id).collect();
+    let records: Vec<RecordRow> = terminal
+        .iter()
+        .map(|task| RecordRow {
             id: task.id,
             name: task.name.clone().into(),
             kind_tone: file_tone(&task.name),
             status: task.status.code(),
             status_text: task.status.label().into(),
-            time: times[index].into(),
+            time: rel_time(task.time_ms, now_ms).into(),
         })
         .collect();
     // Keep the repeater stable so hover tips are not reset on every tick.
@@ -650,22 +944,30 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
-    // ---- plugin feedback (catalogue lives in the UI mockup) ----------------
+    // ---- plugin toggles go to the daemon ------------------------------------
     {
         let ui_handle = ui.as_weak();
         let state = state.clone();
-        ui.on_plugin_toggled(move |_id, enabled| {
+        ui.on_plugin_toggled(move |row, enabled| {
             let Some(ui) = ui_handle.upgrade() else {
                 return;
             };
+            let name = state
+                .borrow()
+                .plugins
+                .get(row as usize)
+                .map(|plugin| plugin.name.clone())
+                .unwrap_or_default();
+            state.borrow().backend.set_plugin_enabled(row, enabled);
             show_toast(
                 &ui,
                 &state,
                 if enabled {
-                    "插件已启用（原型）"
+                    format!("已请求启用 {name}，有运行任务时会拒绝")
                 } else {
-                    "插件已停用（原型）"
-                },
+                    format!("已请求停用 {name}")
+                }
+                .as_str(),
             );
         });
     }
@@ -678,12 +980,30 @@ fn main() -> Result<(), slint::PlatformError> {
                 return;
             };
             let message = match action.as_str() {
-                "install" => "插件安装器已打开（原型）",
-                "update-all" => "已开始更新全部可更新插件",
-                "reload" => "插件已重新加载（原型）",
-                _ => "插件操作已记录",
+                "install" => "插件安装器尚未接线",
+                "update-all" => "更新检查尚未接线",
+                "reload" => "daemon 重启时会重新扫描插件目录",
+                _ => "该操作尚未接线",
             };
             show_toast(&ui, &state, message);
+        });
+    }
+
+    // ---- speed limit pills (global throttle is not wired yet) --------------
+    {
+        let ui_handle = ui.as_weak();
+        let state = state.clone();
+        ui.on_speed_limit_picked(move |mode| {
+            let Some(ui) = ui_handle.upgrade() else {
+                return;
+            };
+            let name = match mode {
+                1 => "低",
+                2 => "中",
+                3 => "高",
+                _ => "不限",
+            };
+            show_toast(&ui, &state, &format!("全局限速「{name}」尚未接线"));
         });
     }
 

@@ -1,7 +1,7 @@
 # Aether 架构与界面重设计契约
 
 > 状态：**Host runtime、SDK/CLI 与 16 个第一方插件已实现；Slint UI 已接入 daemon
-> （任务列表、控制、新建、代理），统计卡与部分设置项仍是占位。**  
+> （任务/控制/新建/代理/统计/插件开关），部分设置项仍是占位。**  
 > Linux `.deb`/AppImage 已包含插件；UI 目前仍显示模拟数据。  
 > 本文是产品/架构索引，也是隔壁界面重设计会话的契约；实现细节见链接文档。
 
@@ -145,7 +145,7 @@ PluginRow {
 
 | 部分 | 状态 |
 | --- | --- |
-| Host UI（Slint） | 已接入 daemon：任务/控制/新建/代理；统计与部分设置仍占位 |
+| Host UI（Slint） | 已接入 daemon：任务/控制/新建/代理/统计/插件开关；部分设置仍占位 |
 | 模拟引擎 `src/engine.rs` | 仅演示；不是真实下载 |
 | 插件管理器 / SDK / IPC | 已实现：SDK + Host runtime + SQLite + daemon + CLI；可选 cdylib ABI；尚未接 Slint UI |
 | 浏览器/协议入口 | `aether-native-host` + MV3 扩展 + `aether-url-handler.desktop` 已实现基础；商店上架/Windows IPC 待补 |

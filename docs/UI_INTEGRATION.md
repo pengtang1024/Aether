@@ -2,6 +2,10 @@
 
 > 目标：GUI 不直接持有插件进程/SQLite；只作为 daemon 的本地客户端。
 > 这样 UI 重启不打断下载，daemon 也可以被浏览器/CLI 共用。
+>
+> 状态：已接入（`src/backend.rs`）。列表/计数/速度/ETA、暂停/继续、取消+删除、新建
+> 下载、代理设置、仪表盘统计（`stats`）与插件开关（`plugins`/`set_plugin_enabled`）
+> 均已验证；DNS/IP/UA 等设置字段仍是占位。
 
 ## 1. 连接
 
@@ -122,3 +126,33 @@ let resolved = client.resolve_proxy("https://example.com/file.zip")?;
 3. 订阅事件替换 `src/engine.rs` 的模拟进度。
 4. 保留 `engine.rs` 作为离线演示 fallback，或删除。
 5. 打包时确保 `aether-daemon` + 插件目录存在。
+
+## 8. stats（仪表盘统计）
+
+```
+→ {"id":1,"method":"stats","settings":{}}
+← {"ok":true,"result":{
+     "version":"0.2.0","download_dir":"/…","plugins_dir":"/…","data_dir":"/…/aether.db",
+     "disk":{"total":N,"free":N},
+     "today":{"bytes":N,"files":N},"week":{"bytes":N,"files":N},
+     "tasks":{"completed":N,"failed":N,"active":N,"queued":N},
+     "plugins":{"total":N,"enabled":N}}}
+```
+
+- `today` 按本地时区的当日 00:00 起算（daemon 侧用 chrono Local）；`week` 为近 7 天。
+- 数据库无记录时各项为 0。客户端 `Client::stats()` 返回扁平化的 `Stats` 结构。
+
+## 9. plugins（注册表与启停）
+
+```
+→ {"id":2,"method":"plugins","settings":{}}
+← {"ok":true,"result":{"plugins":[{"id":"bt","name":"…","version":"0.1.0",
+     "protocols":["bt","magnet"],"capabilities":[…],"enabled":true},…]}}
+→ {"id":3,"method":"set_plugin_enabled","plugin":"bt","settings":{"enabled":false}}
+← {"ok":true,"result":{"plugin":{"id":"bt","enabled":false}}}
+```
+
+- 禁用列表存 SQLite `disabled_plugins` 表（schema v5），重启后仍生效。
+- 有运行中任务的插件拒绝停用（报 `plugin X still has running tasks`）；已禁用的
+  插件不参与 probe，因此 `add` 会报 `no plugin supports this URL`。
+- UI 行 id 即 `plugins` 返回顺序的数组下标（registry 按 id 排序，顺序稳定）。

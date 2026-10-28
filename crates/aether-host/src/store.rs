@@ -255,6 +255,20 @@ impl TaskStore {
                 "#,
             )?;
         }
+        if version < 5 {
+            // v5: plugins the user switched off (survives restarts).
+            connection.execute_batch(
+                r#"
+                BEGIN;
+                CREATE TABLE IF NOT EXISTS disabled_plugins (
+                    plugin_id TEXT PRIMARY KEY,
+                    created_at INTEGER NOT NULL
+                );
+                PRAGMA user_version = 5;
+                COMMIT;
+                "#,
+            )?;
+        }
         Ok(())
     }
 
@@ -545,6 +559,85 @@ impl TaskStore {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    /// Sum and count of finalized files for tasks completed since `since_ms`.
+    pub fn completed_since(&self, since_ms: i64) -> Result<(u64, u64), StoreError> {
+        let row = self.connection.query_row(
+            "SELECT COALESCE(SUM(f.size), 0), COUNT(f.task_id)
+             FROM task_files f JOIN tasks t ON t.id = f.task_id
+             WHERE t.state = 'completed' AND t.completed_at >= ?1",
+            [since_ms],
+            |row| Ok((row.get::<_, i64>(0)? as u64, row.get::<_, i64>(1)? as u64)),
+        )?;
+        Ok(row)
+    }
+
+    /// `(completed_at, size, relative_path)` for every finalized file whose
+    /// task completed since `since_ms` — the per-day and per-type breakdowns.
+    pub fn completed_files_since(
+        &self,
+        since_ms: i64,
+    ) -> Result<Vec<(i64, u64, String)>, StoreError> {
+        let mut statement = self.connection.prepare(
+            "SELECT t.completed_at, f.size, f.relative_path
+             FROM task_files f JOIN tasks t ON t.id = f.task_id
+             WHERE t.state = 'completed' AND t.completed_at >= ?1",
+        )?;
+        let rows = statement.query_map([since_ms], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)? as u64,
+                row.get::<_, String>(2)?,
+            ))
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// `(completed, failed)` task counts for the dashboard.
+    pub fn outcome_counts(&self) -> Result<(u64, u64), StoreError> {
+        let row = self.connection.query_row(
+            "SELECT
+                 SUM(CASE WHEN state = 'completed' THEN 1 ELSE 0 END),
+                 SUM(CASE WHEN state = 'failed' THEN 1 ELSE 0 END)
+             FROM tasks",
+            [],
+            |row| {
+                Ok((
+                    row.get::<_, Option<i64>>(0)?.unwrap_or(0) as u64,
+                    row.get::<_, Option<i64>>(1)?.unwrap_or(0) as u64,
+                ))
+            },
+        )?;
+        Ok(row)
+    }
+
+    /// Plugin ids the user disabled; applied to the registry at startup.
+    pub fn disabled_plugins(&self) -> Result<Vec<String>, StoreError> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT plugin_id FROM disabled_plugins ORDER BY plugin_id")?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    pub fn set_plugin_disabled(
+        &mut self,
+        plugin_id: &str,
+        disabled: bool,
+    ) -> Result<(), StoreError> {
+        if disabled {
+            self.connection.execute(
+                "INSERT OR IGNORE INTO disabled_plugins (plugin_id, created_at) VALUES (?1, ?2)",
+                params![plugin_id, now_ms()],
+            )?;
+        } else {
+            self.connection.execute(
+                "DELETE FROM disabled_plugins WHERE plugin_id = ?1",
+                [plugin_id],
+            )?;
+        }
+        Ok(())
+    }
+
     /// The last `limit` log lines for a task, oldest first so callers can print
     /// them in reading order without reversing.
     pub fn logs(&self, task_id: &str, limit: usize) -> Result<Vec<TaskLog>, StoreError> {
@@ -787,7 +880,7 @@ mod tests {
             .connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
         drop(store);
         fs::remove_file(&path).ok();
     }
@@ -811,6 +904,43 @@ mod tests {
         assert_eq!(store.next_queued().unwrap().unwrap().id, "low");
         store.set_state("low", TaskState::Canceled).unwrap();
         assert!(store.next_queued().unwrap().is_none());
+    }
+
+    #[test]
+    fn tracks_disabled_plugins_and_stats() {
+        let mut store = TaskStore::open_in_memory().unwrap();
+        store.set_plugin_disabled("bt", true).unwrap();
+        store.set_plugin_disabled("ftp", true).unwrap();
+        store.set_plugin_disabled("ftp", false).unwrap();
+        assert_eq!(store.disabled_plugins().unwrap(), vec!["bt".to_string()]);
+
+        store.create_task(&new_task("t1")).unwrap();
+        store
+            .complete_task(
+                "t1",
+                &[aether_plugin_sdk::FileInfo {
+                    relative_path: "a.bin".into(),
+                    size: 2048,
+                    checksum: None,
+                }],
+            )
+            .unwrap();
+        let task = store.task("t1").unwrap().unwrap();
+        let completed_at = task.completed_at.unwrap();
+        assert_eq!(
+            store.completed_since(completed_at - 1000).unwrap(),
+            (2048, 1)
+        );
+        assert_eq!(store.completed_since(completed_at + 1000).unwrap(), (0, 0));
+        assert_eq!(store.outcome_counts().unwrap(), (1, 0));
+        assert_eq!(
+            store.completed_files_since(completed_at - 1000).unwrap(),
+            vec![(completed_at, 2048, "a.bin".to_string())]
+        );
+        assert!(store
+            .completed_files_since(completed_at + 1000)
+            .unwrap()
+            .is_empty());
     }
 
     #[test]

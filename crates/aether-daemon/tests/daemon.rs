@@ -1055,6 +1055,104 @@ fn daemon_promotes_queued_tasks_by_priority() {
     daemon.shutdown();
 }
 
+#[test]
+fn plugin_toggles_persist_and_refuse_running_work() {
+    let Some(daemon) = spawn_daemon("plugins", 1, None) else {
+        eprintln!("fake plugin binary is not built; skipping");
+        return;
+    };
+    let root = daemon.root.clone();
+    let socket = daemon.socket.clone();
+
+    let mut client = connect(&socket);
+    let plugins = client.plugins().unwrap();
+    assert_eq!(plugins.len(), 1);
+    assert_eq!(plugins[0].id, "fake");
+    assert!(plugins[0].enabled);
+
+    // A running task blocks the switch-off.
+    let running = client
+        .add_with_settings(
+            "https://example.com/x.bin",
+            None,
+            None,
+            json!({"duration_ms": 5000}),
+        )
+        .unwrap();
+    let running_id = running["task_id"].as_str().unwrap().to_string();
+    wait_started(&mut client, &running_id, 100);
+    let error = client
+        .set_plugin_enabled("fake", false)
+        .expect_err("disable must refuse while tasks run");
+    assert!(error.to_string().contains("running tasks"));
+    client.cancel(&running_id).unwrap();
+    assert_reaches(&mut client, &running_id, "canceled", 100);
+
+    // Idle now: disabling succeeds and the plugin no longer takes work.
+    client.set_plugin_enabled("fake", false).unwrap();
+    assert!(!client.plugins().unwrap()[0].enabled);
+    let error = client
+        .add("https://example.com/x.bin", None, None)
+        .expect_err("disabled plugins must not accept work");
+    assert!(error.to_string().contains("no plugin supports"));
+
+    // The choice survives a restart.
+    client.shutdown().unwrap();
+    drop(client);
+    daemon.stop();
+
+    let restarted =
+        spawn_daemon_at(root, 1, None, 5, 30, None).expect("restart over the existing root");
+    let mut client = connect(&restarted.socket);
+    assert!(!client.plugins().unwrap()[0].enabled);
+
+    // Turning it back on also persists.
+    client.set_plugin_enabled("fake", true).unwrap();
+    assert!(client.plugins().unwrap()[0].enabled);
+
+    client.shutdown().unwrap();
+    restarted.shutdown();
+}
+
+#[test]
+fn stats_counts_completed_work_and_disk() {
+    let Some(daemon) = spawn_daemon("stats", 1, None) else {
+        eprintln!("fake plugin binary is not built; skipping");
+        return;
+    };
+    let mut client = connect(&daemon.socket);
+
+    let stats = client.stats().unwrap();
+    assert_eq!(stats.plugins_total, 1);
+    assert_eq!(stats.plugins_enabled, 1);
+    assert_eq!(stats.completed, 0);
+    assert!(!stats.version.is_empty());
+    assert!(!stats.download_dir.is_empty());
+    assert!(stats.disk_total > 0);
+
+    let added = client
+        .add_with_settings(
+            "https://example.com/f.bin",
+            None,
+            None,
+            json!({"duration_ms": 800}),
+        )
+        .unwrap();
+    let id = added["task_id"].as_str().unwrap().to_string();
+    assert_reaches(&mut client, &id, "completed", 300);
+
+    let stats = client.stats().unwrap();
+    assert_eq!(stats.completed, 1);
+    assert_eq!(stats.today_files, 1);
+    assert!(stats.today_bytes > 0);
+    assert_eq!(stats.week_files, 1);
+    assert_eq!(stats.week_bytes, stats.today_bytes);
+    assert_eq!(stats.active, 0);
+
+    client.shutdown().unwrap();
+    daemon.shutdown();
+}
+
 /// True once the task's plugin execution has started (log line is durable).
 fn started(client: &mut Client, task_id: &str) -> bool {
     client

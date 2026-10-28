@@ -591,6 +591,70 @@ fn remote(args: &[String]) -> Result<(), String> {
                 serde_json::to_string_pretty(&stored).map_err(|error| error.to_string())?
             );
         }
+        "plugins" => {
+            let plugins = client.plugins().map_err(|error| error.to_string())?;
+            if json_output {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&plugins).map_err(|error| error.to_string())?
+                );
+            } else {
+                for plugin in &plugins {
+                    println!(
+                        "{:<12} {:<6} enabled={}  {}  [{}]",
+                        plugin.id,
+                        plugin.version,
+                        plugin.enabled,
+                        plugin.name,
+                        plugin.protocols.join(", ")
+                    );
+                }
+            }
+        }
+        "enable" | "disable" => {
+            let plugin_id = target()?;
+            let enabled = command == "enable";
+            client
+                .set_plugin_enabled(&plugin_id, enabled)
+                .map_err(|error| error.to_string())?;
+            println!(
+                "{plugin_id} {}",
+                if enabled { "enabled" } else { "disabled" }
+            );
+        }
+        "stats" => {
+            let stats = client.stats().map_err(|error| error.to_string())?;
+            if json_output {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&stats).map_err(|error| error.to_string())?
+                );
+            } else {
+                println!("version      {}", stats.version);
+                println!("download-dir {}", stats.download_dir);
+                println!(
+                    "disk         {} used / {} total",
+                    stats.disk_total - stats.disk_free,
+                    stats.disk_total
+                );
+                println!(
+                    "today        {} files, {} B",
+                    stats.today_files, stats.today_bytes
+                );
+                println!(
+                    "week         {} files, {} B",
+                    stats.week_files, stats.week_bytes
+                );
+                println!(
+                    "tasks        completed={} failed={} active={} queued={}",
+                    stats.completed, stats.failed, stats.active, stats.queued
+                );
+                println!(
+                    "plugins      {}/{} enabled",
+                    stats.plugins_enabled, stats.plugins_total
+                );
+            }
+        }
         "resolve-proxy" => {
             let url = args
                 .get(1)
@@ -620,7 +684,7 @@ fn remote(args: &[String]) -> Result<(), String> {
 
 #[cfg(unix)]
 fn remote_usage() -> &'static str {
-    "\n  aether-cli remote <command> [--socket <path>]\n    ping | list [--json]\n    add <url> [--plugin <id>] [--dir <dir>] [--priority <n>] [--settings <json>] [--json]\n    get <task-id> | logs <task-id> [--limit <n>] [--json]\n    pause|resume|cancel|rm <task-id>\n    settings | set-settings <json> | resolve-proxy <url> | watch"
+    "\n  aether-cli remote <command> [--socket <path>] [--json]\n    ping | list [--json] | stats [--json] | plugins [--json]\n    add <url> [--plugin <id>] [--dir <dir>] [--priority <n>] [--settings <json>] [--json]\n    get <task-id> | logs <task-id> [--limit <n>] [--json]\n    pause|resume|cancel|rm <task-id>\n    enable|disable <plugin-id>\n    settings | set-settings <json> | resolve-proxy <url> | watch"
 }
 
 #[cfg(not(unix))]

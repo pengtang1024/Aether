@@ -15,6 +15,7 @@ path = "src/main.rs"
 aether-host = { path = "../aether-host" }
 aether-update = { path = "../aether-update" }
 aether-plugin-sdk = { path = "../aether-plugin-sdk" }
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 fs2 = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

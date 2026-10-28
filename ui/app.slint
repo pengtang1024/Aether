@@ -14,6 +14,9 @@ import { DownloadsPage } from "pages/downloads.slint";
 import { SettingsPage } from "pages/settings.slint";
 import { NewDownloadDialog } from "pages/new-download.slint";
 import { TaskDrawer } from "pages/task-drawer.slint";
+import { PluginCatalog } from "plugins.slint";
+
+export { PluginCatalog }
 
 export component AppWindow inherits Window {
     // ---- data ------------------------------------------------------------
@@ -53,6 +56,32 @@ export component AppWindow inherits Window {
     in-out property <bool> dialog-open: false;
     // Set from Rust: the daemon's download root, used as the dialog default.
     in-out property <string> default-download-dir: "";
+    in-out property <string> plugins-dir: "";
+    in-out property <string> data-dir: "";
+    // Dashboard counters from the daemon's `stats`.
+    in-out property <string> today-bytes: "—";
+    in-out property <string> today-upload: "—";
+    in-out property <string> peak-speed: "—";
+    in-out property <string> week-bytes: "—";
+    in-out property <float> disk-percent: 0;
+    in-out property <string> disk-percent-text: "0%";
+    in-out property <string> disk-label: "—";
+    in-out property <string> disk-free: "";
+    in-out property <string> engine-name: "—";
+    in-out property <string> version-name: "—";
+    in-out property <string> extension-status: "—";
+    in-out property <bool> extension-connected: false;
+    in-out property <string> plugins-text: "—";
+    in-out property <string> protocols-text: "—";
+    in-out property <string> uptime-text: "—";
+    in-out property <[float]> day-bars: [];
+    in-out property <[string]> day-labels: [];
+    in-out property <[float]> cat-fractions: [];
+    in-out property <[string]> cat-values: [];
+    in-out property <[string]> cat-percents: [];
+    in-out property <string> weekly-label: "—";
+    in-out property <string> avg-file: "—";
+    in-out property <string> success-rate: "—";
     // Set from Rust: `env!("CARGO_PKG_VERSION")`.
     in-out property <string> app-version: "";
     in-out property <bool> drawer-open: false;
@@ -73,6 +102,7 @@ export component AppWindow inherits Window {
     in-out property <string> chart-area: "";
     in-out property <float> chart-latest: 0;
     in-out property <int> speed-limit-mode: 0;   // 0=不限, 1=低, 2=中, 3=高
+    callback speed-limit-picked(int);
 
     // ---- theme -----------------------------------------------------------
     public function apply-theme() {
@@ -306,10 +336,34 @@ export component AppWindow inherits Window {
                         count-failed: root.count-failed;
                         count-seed: root.count-seed;
                         speed-limit-mode: root.speed-limit-mode;
+                        limit-picked(idx) => { root.speed-limit-picked(idx); }
                         total-speed: root.total-speed;
                         chart-line: root.chart-line;
                         chart-area: root.chart-area;
                         chart-latest: root.chart-latest;
+                        today-bytes: root.today-bytes;
+                        today-upload: root.today-upload;
+                        peak-speed: root.peak-speed;
+                        week-bytes: root.week-bytes;
+                        disk-percent: root.disk-percent;
+                        disk-percent-text: root.disk-percent-text;
+                        disk-label: root.disk-label;
+                        disk-free: root.disk-free;
+                        engine-name: root.engine-name;
+                        version-name: root.version-name;
+                        extension-status: root.extension-status;
+                        extension-connected: root.extension-connected;
+                        plugins-text: root.plugins-text;
+                        protocols-text: root.protocols-text;
+                        uptime-text: root.uptime-text;
+                        day-bars: root.day-bars;
+                        day-labels: root.day-labels;
+                        cat-fractions: root.cat-fractions;
+                        cat-values: root.cat-values;
+                        cat-percents: root.cat-percents;
+                        weekly-label: root.weekly-label;
+                        avg-file: root.avg-file;
+                        success-rate: root.success-rate;
                         open-downloads(filter) => {
                             root.page = 1;
                             root.active-filter = filter;
@@ -348,6 +402,9 @@ export component AppWindow inherits Window {
                         width: 100%;
                         height: 100%;
                         app-version: root.app-version;
+                        download-dir: root.default-download-dir;
+                        plugins-dir: root.plugins-dir;
+                        data-dir: root.data-dir;
                         tab <=> root.settings-tab;
                         theme-mode <=> root.theme-mode;
                         settings-changed(k, v) => { root.settings-changed(k, v); }

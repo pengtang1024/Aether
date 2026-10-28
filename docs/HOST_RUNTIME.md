@@ -1,7 +1,8 @@
 # Host 运行时与 CLI
 
 > 状态：已实现 Host 侧插件运行时和一个无 UI 的 CLI，用真实插件跑通
-> Probe → Start → Progress → Completed → 最终落盘。Slint UI 经 `src/backend.rs` 接入。
+> Probe → Start → Progress → Completed → 最终落盘。Slint UI 经 `src/backend.rs` 接入
+> （含 `stats` 统计与插件启停）。
 
 ## 1. 代码结构
 
@@ -129,7 +130,7 @@ AppImage 也把 `build/plugins` 放进 `usr/lib/aether/plugins`。
 
 ## 8. 尚未实现
 
-- Slint UI：已接线（任务列表/控制/新建/代理）；统计卡与插件启停待接。
+- Slint UI：已接线（任务列表/控制/新建/代理/统计/插件启停）。
 - PAC 支持、队列持久化策略之外的调度公平性（并发上限 + FIFO 已实现，见
   `DAEMON.md` §5.1）。
 - 插件签名验证、更新/回滚、Linux 沙箱。

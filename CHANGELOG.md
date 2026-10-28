@@ -7,6 +7,15 @@ versioning; 0.x releases may still change structure.
 
 ### Added
 
+- Dashboard and plugin management are real: the daemon serves `stats`
+  (today/week volume, per-day bars, per-type storage split, disk usage, task
+  and plugin counts, real paths) and
+  `plugins` / `set_plugin_enabled` (persistent disable list in SQLite, plugins
+  with running tasks refuse to be disabled, disabled plugins refuse new work).
+  The home dashboard and the settings → plugins page are driven by them; fake
+  paths (`/home/aether/…`) and the simulated plugin catalogue are gone.
+- `aether-cli remote stats|plugins|enable|disable` for the same over a
+  terminal.
 - The desktop window is wired to the daemon: `src/backend.rs` keeps a
   subscription and pushes snapshots to Slint, so tasks, counts, speed/ETA,
   pause/resume, cancel+delete, the new-download dialog (with the daemon's real

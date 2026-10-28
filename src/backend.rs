@@ -7,6 +7,9 @@
 
 use std::collections::VecDeque;
 
+use aether_daemon::client::PluginInfo;
+use aether_daemon::client::Stats;
+
 use crate::model::Task;
 
 /// Immutable view of the daemon state, cloned per UI refresh.
@@ -19,6 +22,10 @@ pub struct Snapshot {
     pub connected: bool,
     /// Default download root, used as the new-download dialog's path.
     pub download_dir: String,
+    /// Dashboard counters, refreshed about once a second.
+    pub stats: Option<Stats>,
+    /// Installed plugins, sorted by id (stable order doubles as row ids).
+    pub plugins: Vec<PluginInfo>,
 }
 
 #[cfg(unix)]
@@ -38,6 +45,8 @@ mod imp {
     use std::time::{Duration, Instant};
 
     use aether_daemon::client::Client;
+    use aether_daemon::client::PluginInfo;
+    use aether_daemon::client::Stats;
     use aether_daemon::client::Subscription;
     use aether_daemon::{DaemonError, StoredTask, TaskState};
     use serde_json::{json, Value};
@@ -58,6 +67,10 @@ mod imp {
         Proxy {
             mode: String,
             url: String,
+        },
+        Plugin {
+            row: i32,
+            enabled: bool,
         },
     }
 
@@ -95,6 +108,8 @@ mod imp {
                 history: guard.snapshot.history.clone(),
                 connected: guard.snapshot.connected,
                 download_dir: guard.snapshot.download_dir.clone(),
+                stats: guard.snapshot.stats.clone(),
+                plugins: guard.snapshot.plugins.clone(),
             }
         }
 
@@ -122,9 +137,23 @@ mod imp {
             });
         }
 
+        /// Enable/disable the plugin displayed at row `row` (index into the
+        /// snapshot's plugin list).
+        pub fn set_plugin_enabled(&self, row: i32, enabled: bool) {
+            let _ = self.commands.send(Command::Plugin { row, enabled });
+        }
+
         /// Pop the most recent error surfaced by the daemon.
         pub fn take_notice(&self) -> Option<String> {
             self.shared.lock().unwrap().notice.take()
+        }
+
+        /// Wall-clock epoch millis, used for the records' relative times.
+        pub fn now_ms(&self) -> i64 {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|since| since.as_millis() as i64)
+                .unwrap_or(0)
         }
     }
 
@@ -146,6 +175,9 @@ mod imp {
         refreshed: Option<Instant>,
         needs_refresh: bool,
         offline_notice: bool,
+        stats: Option<Stats>,
+        stats_sampled: Option<Instant>,
+        plugins: Vec<PluginInfo>,
     }
 
     fn worker(receiver: Receiver<Command>, shared: Arc<Mutex<Shared>>) {
@@ -177,14 +209,17 @@ mod imp {
             }
 
             if let Ok(command) = receiver.recv_timeout(Duration::from_millis(50)) {
-                if worker.handle(command).is_err() {
+                if let Err(error) = worker.handle(command) {
                     // Connection died mid-command: drop it and reconnect.
                     worker.disconnect();
+                    let mut guard = shared.lock().unwrap();
+                    guard.notice = Some(error.to_string());
                 }
             }
             worker.pump_events();
             worker.sample();
             worker.maybe_refresh();
+            worker.maybe_stats();
             worker.publish(&shared);
             thread::sleep(Duration::from_millis(20));
         }
@@ -250,6 +285,8 @@ mod imp {
             self.order.clear();
             self.ids.clear();
             self.reverse.clear();
+            self.stats = None;
+            self.plugins.clear();
             self.needs_refresh = true;
         }
 
@@ -375,6 +412,14 @@ mod imp {
                         json!({"proxy": proxy}),
                     )?;
                 }
+                Command::Plugin { row, enabled } => {
+                    let Some(plugin) = self.plugins.get(row as usize) else {
+                        return Ok(());
+                    };
+                    let plugin_id = plugin.id.clone();
+                    client.set_plugin_enabled(&plugin_id, enabled)?;
+                    self.needs_refresh = true;
+                }
             }
             Ok(())
         }
@@ -403,10 +448,33 @@ mod imp {
                     self.reverse.remove(&id);
                 }
             }
+            let plugins = client.plugins()?;
+            self.plugins = plugins;
             self.needs_refresh = false;
             self.refreshed = Some(Instant::now());
             self.sample_due();
             Ok(())
+        }
+
+        /// Dashboard counters, refreshed about once a second (cheap SQL + one
+        /// filesystem stat).
+        fn maybe_stats(&mut self) {
+            let due = self
+                .stats_sampled
+                .map(|at| at.elapsed() >= Duration::from_secs(1))
+                .unwrap_or(true);
+            if !due {
+                return;
+            }
+            let result = self.client.as_mut().map(Client::stats);
+            match result {
+                Some(Ok(stats)) => {
+                    self.stats = Some(stats);
+                    self.stats_sampled = Some(Instant::now());
+                }
+                Some(Err(_)) => self.disconnect(),
+                None => {}
+            }
         }
 
         fn maybe_refresh(&mut self) {
@@ -583,6 +651,8 @@ mod imp {
                 history: self.global.clone(),
                 connected: self.client.is_some(),
                 download_dir: self.download_dir.clone(),
+                stats: self.stats.clone(),
+                plugins: self.plugins.clone(),
             };
         }
 
@@ -625,6 +695,7 @@ mod imp {
                 },
                 history,
                 order: chunk_order(task_id),
+                time_ms: record.completed_at.unwrap_or(record.updated_at),
             }
         }
     }
@@ -784,8 +855,14 @@ mod stub {
 
         pub fn set_proxy(&self, _mode: &str, _url: &str) {}
 
+        pub fn set_plugin_enabled(&self, _row: i32, _enabled: bool) {}
+
         pub fn take_notice(&self) -> Option<String> {
             None
+        }
+
+        pub fn now_ms(&self) -> i64 {
+            0
         }
     }
 }

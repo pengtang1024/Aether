@@ -62,6 +62,7 @@ dependencies = [
  "aether-host",
  "aether-plugin-sdk",
  "aether-update",
+ "chrono",
  "fs2",
  "serde",
  "serde_json",

@@ -62,6 +62,8 @@ pub struct Task {
     pub history: VecDeque<f64>,
     /// `order[chunk] = rank`: chunks complete in this pseudo-random order.
     pub order: [u8; CHUNK_COUNT],
+    /// Daemon clock: last update, completion time when terminal.
+    pub time_ms: i64,
 }
 
 impl Task {
@@ -94,6 +96,17 @@ impl Task {
 // ---------------------------------------------------------------------------
 // Formatting
 // ---------------------------------------------------------------------------
+
+/// `1200` → "刚刚", `3700` → "1 小时前", using daemon epoch millis.
+pub fn rel_time(ms: i64, now_ms: i64) -> String {
+    let secs = (now_ms - ms).max(0) / 1000;
+    match secs {
+        0..=59 => "刚刚".to_string(),
+        60..=3599 => format!("{} 分钟前", secs / 60),
+        3600..=86_399 => format!("{} 小时前", secs / 3600),
+        _ => format!("{} 天前", secs / 86_400),
+    }
+}
 
 pub fn format_size(bytes: f64) -> String {
     const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];

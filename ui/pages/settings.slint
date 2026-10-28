@@ -187,6 +187,8 @@ component PanelHeader inherits Rectangle {
 // Panels. Each panel is a vertical stack of grouped M3 cards.
 // ---------------------------------------------------------------------------
 component GeneralPanel inherits Rectangle {
+    // Real paths from the daemon (read-only: set at daemon start).
+    in property <string> download-dir: "";
     callback changed(string, string);
 
     VerticalLayout {
@@ -235,25 +237,13 @@ component GeneralPanel inherits Rectangle {
             SettingRow {
                 icon-source: AetherIcons.folder;
                 title: "默认下载目录";
-                description: "新任务默认保存到这里";
-                LineEdit {
-                    text: "/home/aether/Downloads";
-                    min-width: Aether.field-md;
-                    max-width: Aether.field-md;
-                    show-clear-button: false;
-                    edited => { root.changed("default-dir", self.text); }
-                }
-            }
-            SettingRow {
-                icon-source: AetherIcons.edit;
-                title: "临时文件目录";
-                description: "分片与未完成文件存放在这里";
-                LineEdit {
-                    text: "/home/aether/.aether/tmp";
-                    show-clear-button: false;
-                    min-width: Aether.field-md;
-                    max-width: Aether.field-md;
-                    edited => { root.changed("temp-dir", self.text); }
+                description: "daemon 启动参数决定，新任务默认保存到这里";
+                Text {
+                    text: root.download-dir == "" ? "未连接" : root.download-dir;
+                    color: Aether.on-surface-variant;
+                    font-size: Aether.text-caption;
+                    font-family: "JetBrains Mono";
+                    vertical-alignment: center;
                 }
             }
             SettingRow {
@@ -1032,6 +1022,7 @@ component InstalledPlugin inherits Rectangle {
 
 component PluginPanel inherits Rectangle {
     in-out property <int> plugin-filter: 0;
+    in property <string> plugins-dir: "";
     callback changed(string, string);
     callback plugin-toggled(int, bool);
     callback plugin-action(string);
@@ -1101,12 +1092,12 @@ component PluginPanel inherits Rectangle {
                 icon-source: AetherIcons.folder;
                 title: "插件目录";
                 description: "本地插件的安装位置";
-                LineEdit {
-                    text: "/home/aether/.aether/plugins";
-                    show-clear-button: false;
-                    min-width: Aether.field-md;
-                    max-width: Aether.field-md;
-                    edited => { root.changed("plugin-dir", self.text); }
+                Text {
+                    text: root.plugins-dir == "" ? "未连接" : root.plugins-dir;
+                    color: Aether.on-surface-variant;
+                    font-size: Aether.text-caption;
+                    font-family: "JetBrains Mono";
+                    vertical-alignment: center;
                 }
             }
             SettingRow {
@@ -1373,6 +1364,8 @@ component AppearancePanel inherits Rectangle {
 }
 
 component AdvancedPanel inherits Rectangle {
+    in property <string> plugins-dir: "";
+    in property <string> data-dir: "";
     callback changed(string, string);
 
     VerticalLayout {
@@ -1456,12 +1449,12 @@ component AdvancedPanel inherits Rectangle {
                 icon-source: AetherIcons.drive;
                 title: "数据库路径";
                 description: "任务、历史与插件元数据";
-                LineEdit {
-                    text: "/home/aether/.aether/aether.db";
-                    show-clear-button: false;
-                    min-width: Aether.field-md;
-                    max-width: Aether.field-md;
-                    edited => { root.changed("db-path", self.text); }
+                Text {
+                    text: root.data-dir == "" ? "未连接" : root.data-dir;
+                    color: Aether.on-surface-variant;
+                    font-size: Aether.text-caption;
+                    font-family: "JetBrains Mono";
+                    vertical-alignment: center;
                 }
             }
             SettingRow {
@@ -1611,6 +1604,9 @@ component AboutPanel inherits Rectangle {
 export component SettingsPage inherits Rectangle {
     // Set by the window from `env!("CARGO_PKG_VERSION")`.
     in property <string> app-version: "";
+    in property <string> download-dir: "";
+    in property <string> plugins-dir: "";
+    in property <string> data-dir: "";
     in-out property <int> tab: 0;
     in-out property <int> theme-mode: 0;
     callback settings-changed(string, string);
@@ -1677,7 +1673,10 @@ export component SettingsPage inherits Rectangle {
                 padding-bottom: Aether.page-padding;
                 spacing: Aether.section-gap;
 
-                if root.tab == 0: GeneralPanel { changed(k, v) => { root.settings-changed(k, v); } }
+                if root.tab == 0: GeneralPanel {
+                    download-dir: root.download-dir;
+                    changed(k, v) => { root.settings-changed(k, v); }
+                }
                 if root.tab == 1: DownloadPanel { changed(k, v) => { root.settings-changed(k, v); } }
                 if root.tab == 2: NetworkPanel {
                     app-version: root.app-version;
@@ -1686,13 +1685,16 @@ export component SettingsPage inherits Rectangle {
                 if root.tab == 3: BtPanel { changed(k, v) => { root.settings-changed(k, v); } }
                 if root.tab == 4: MediaPanel { changed(k, v) => { root.settings-changed(k, v); } }
                 if root.tab == 5: PluginPanel {
+                    plugins-dir: root.plugins-dir;
                     changed(k, v) => { root.settings-changed(k, v); }
                     plugin-toggled(id, enabled) => { root.plugin-toggled(id, enabled); }
                     plugin-action(action) => { root.plugin-action(action); }
                 }
                 if root.tab == 6: SchedulePanel { changed(k, v) => { root.settings-changed(k, v); } }
                 if root.tab == 7: AppearancePanel { theme-mode <=> root.theme-mode; changed(k, v) => { root.settings-changed(k, v); } }
-                if root.tab == 8: AdvancedPanel { changed(k, v) => { root.settings-changed(k, v); } }
+                if root.tab == 8: AdvancedPanel {
+                    plugins-dir: root.plugins-dir;
+                    data-dir: root.data-dir; changed(k, v) => { root.settings-changed(k, v); } }
                 if root.tab == 9: AboutPanel {
                     app-version: root.app-version;
                     support-action(k) => { root.support-action(k); }
