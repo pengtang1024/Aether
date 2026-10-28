@@ -21,7 +21,7 @@ use std::time::{Duration, Instant};
 
 use slint::{Model, ModelRc, Timer, TimerMode, VecModel};
 
-use aether_daemon::client::PluginInfo;
+use aether_daemon::PluginInfo;
 use backend::Backend;
 use chart::{chart_paths, chart_peak};
 use model::{
@@ -355,7 +355,7 @@ fn refresh_rows(ui: &AppWindow, state: &Rc<RefCell<State>>) {
             stats
                 .daily_labels
                 .iter()
-                .map(|label| label.as_str().into())
+                .map(|label| slint::SharedString::from(label.as_str()))
                 .collect::<Vec<slint::SharedString>>(),
         )));
         // Storage card: share of the four visible categories.
@@ -373,29 +373,30 @@ fn refresh_rows(ui: &AppWindow, state: &Rc<RefCell<State>>) {
         ui.set_cat_values(ModelRc::new(VecModel::from(
             stats.categories[..4]
                 .iter()
-                .map(|bytes| format_size(*bytes as f64).into())
+                .map(|bytes| slint::SharedString::from(format_size(*bytes as f64)))
                 .collect::<Vec<slint::SharedString>>(),
         )));
         ui.set_cat_percents(ModelRc::new(VecModel::from(
             stats.categories[..4]
                 .iter()
                 .map(|bytes| {
-                    format!(
+                    slint::SharedString::from(format!(
                         "{}%",
                         if four > 0 {
                             (*bytes as f32 / four as f32 * 100.0).round() as i32
                         } else {
                             0
                         }
-                    )
-                    .into()
+                    ))
                 })
                 .collect::<Vec<slint::SharedString>>(),
         )));
         let types = stats.categories.iter().filter(|bytes| **bytes > 0).count();
-        ui.set_weekly_label(
-            format!("{} · {} 类", format_size(stats.week_bytes as f64), types).into(),
-        );
+        ui.set_weekly_label(slint::SharedString::from(format!(
+            "{} · {} 类",
+            format_size(stats.week_bytes as f64),
+            types
+        )));
         ui.set_avg_file(
             if stats.today_files > 0 {
                 format_size(stats.today_bytes as f64 / stats.today_files as f64)

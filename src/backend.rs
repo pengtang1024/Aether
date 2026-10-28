@@ -7,8 +7,7 @@
 
 use std::collections::VecDeque;
 
-use aether_daemon::client::PluginInfo;
-use aether_daemon::client::Stats;
+use aether_daemon::{PluginInfo, Stats};
 
 use crate::model::Task;
 
@@ -45,10 +44,8 @@ mod imp {
     use std::time::{Duration, Instant};
 
     use aether_daemon::client::Client;
-    use aether_daemon::client::PluginInfo;
-    use aether_daemon::client::Stats;
     use aether_daemon::client::Subscription;
-    use aether_daemon::{DaemonError, StoredTask, TaskState};
+    use aether_daemon::{DaemonError, PluginInfo, Stats, StoredTask, TaskState};
     use serde_json::{json, Value};
 
     use super::Snapshot;
