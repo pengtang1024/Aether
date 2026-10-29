@@ -29,3 +29,12 @@
   /usr/lib → build/plugins → plugins。unix 非 mac 顺序不变。
 - 验证：本机只能 check（macOS 目标不构建）；package 流水线 release/** 时
   首次实跑——文档如实标注。Info.plist 不变（CFBundleExecutable=aether）。
+
+## 实施结果（2026-10-30）
+
+- 全部按计划落地（`8e69f67`，CI 三平台全绿，cargo-deny 对 AccessKit 新依赖
+  四项全绿）。无障碍 feature 开启后 Xvfb 启动 + 设置页渲染与之前一致（无
+  视觉回归）；AccessKit 依赖（28 处 Cargo.lock 引用）均为 MIT/Apache。
+- 诚实边界保留：无屏幕阅读器环境，未做 NVDA/Orca 真机验证。
+- macOS 包补齐只做到 workflow + 目录解析 + 单测（macOS 目标本机不构建，
+  macOS CI 仅 check）；真实 .app 产物在下一个 release 分支首次生成。

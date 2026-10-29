@@ -440,7 +440,7 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
 
 ### 4.10 无障碍与 macOS 包补齐
 
-- **已落地（2026-10-30，`<hash2>`）**：
+- **已落地（2026-10-30，`8e69f67` CI 三平台全绿）**：
   - **无障碍**：slint 开启 `accessibility`（AccessKit 桥）。语义补齐：
     RailButton/NavRailItem/SettingsNav/FilterPill/RowAction/Toast 动作按钮
     为 button（label + checked + action-default），TaskItem 为 list-item
