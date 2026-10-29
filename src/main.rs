@@ -970,37 +970,109 @@ fn open_path(path: &std::path::Path) {
         .spawn();
 }
 
-/// Best-effort desktop notification. Linux uses `notify-send` (libnotify);
-/// macOS uses a one-line AppleScript; other platforms stay silent (honestly
-/// noted in the README — a real toast API needs an extra dependency).
+/// Best-effort desktop notification. Linux uses `notify-send` (libnotify),
+/// macOS a one-line AppleScript, Windows a WinRT toast through notify-rust
+/// (the one platform whose toast API is not reachable via an external
+/// command). Every path tolerates refusal: at most one log line, no panic.
 fn send_notification(title: &str, body: &str) {
-    #[cfg(target_os = "linux")]
-    let mut command = {
-        let mut command = Command::new("notify-send");
-        command.arg("Aether").arg(title).arg(body);
-        command
-    };
-    #[cfg(target_os = "macos")]
-    let mut command = {
-        // AppleScript string escaping: backslash and double quote.
-        let escape = |text: &str| text.replace('\\', "\\\\").replace('"', "\\\"");
-        let script = format!(
-            "display notification \"{}\" with title \"Aether {}\"",
-            escape(body),
-            escape(title)
-        );
-        let mut command = Command::new("osascript");
-        command.args(["-e", &script]);
-        command
-    };
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-    return;
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
-    let _ = command
+    #[cfg(windows)]
+    {
+        let mut notification = notify_rust::Notification::new();
+        notification.summary(title).body(body);
+        // Toasts are keyed by an AppUserModelID. Register ours under HKCU
+        // on first use and attribute the toast to Aether; if registration
+        // is refused, leave notify-rust's own fallback in place —
+        // misattributed beats missing.
+        if ensure_app_id() {
+            notification.app_id(AUMID);
+        }
+        if let Err(error) = notification.show() {
+            use std::sync::atomic::{AtomicBool, Ordering};
+            static LOGGED: AtomicBool = AtomicBool::new(false);
+            if !LOGGED.swap(true, Ordering::Relaxed) {
+                eprintln!("aether: windows toast failed ({error})");
+            }
+        }
+        return;
+    }
+    #[cfg(not(windows))]
+    {
+        #[cfg(target_os = "linux")]
+        let mut command = {
+            let mut command = Command::new("notify-send");
+            command.arg("Aether").arg(title).arg(body);
+            command
+        };
+        #[cfg(target_os = "macos")]
+        let mut command = {
+            // AppleScript string escaping: backslash and double quote.
+            let escape = |text: &str| text.replace('\\', "\\\\").replace('"', "\\\"");
+            let script = format!(
+                "display notification \"{}\" with title \"Aether {}\"",
+                escape(body),
+                escape(title)
+            );
+            let mut command = Command::new("osascript");
+            command.args(["-e", &script]);
+            command
+        };
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        return;
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        let _ = command
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+    }
+}
+
+/// AppUserModelID Windows toasts are attributed to. Registered under HKCU
+/// on first use (see [`ensure_app_id`]) — no installer step, no admin.
+#[cfg(windows)]
+const AUMID: &str = "com.pengtang1024.Aether";
+
+/// Register [`AUMID`] once per process; `true` = Aether attribution is
+/// available. `reg add` creates the key itself, and HKCU needs no admin —
+/// the same external-command philosophy as notify-send/osascript above.
+/// A refusal is cached too: notifications keep working (notify-rust falls
+/// back to its own registered id) without re-running reg every toast.
+#[cfg(windows)]
+fn ensure_app_id() -> bool {
+    use std::sync::atomic::{AtomicU8, Ordering};
+    /// 0 = untried, 1 = registered, 2 = refused.
+    static STATE: AtomicU8 = AtomicU8::new(0);
+    match STATE.load(Ordering::Relaxed) {
+        1 => return true,
+        2 => return false,
+        _ => {}
+    }
+    let key = format!(r"HKCU\Software\Classes\AppUserModelId\{AUMID}");
+    let registered = reg_add(&key, "DisplayName", "Aether");
+    if registered {
+        // Icon beside the exe when packaged; cosmetic, so a failure (or a
+        // dev tree without logo.ico) changes nothing.
+        if let Ok(icon) = std::env::current_exe().map(|exe| exe.with_file_name("logo.ico")) {
+            if icon.is_file() {
+                let _ = reg_add(&key, "IconUri", &icon.to_string_lossy());
+            }
+        }
+    }
+    STATE.store(if registered { 1 } else { 2 }, Ordering::Relaxed);
+    registered
+}
+
+/// One `reg add` write; `false` when reg.exe is unavailable or refuses.
+#[cfg(windows)]
+fn reg_add(key: &str, value: &str, data: &str) -> bool {
+    std::process::Command::new("reg")
+        .args(["add", key, "/v", value, "/t", "REG_SZ", "/d", data, "/f"])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
-        .spawn();
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
 }
 
 /// Resolve the desktop's light/dark preference without pulling in a
@@ -2021,4 +2093,25 @@ fn main() -> Result<(), slint::PlatformError> {
     }
 
     ui.run()
+}
+
+#[cfg(test)]
+mod notification_tests {
+    /// CI runs this on a headless runner: the HKCU registration must really
+    /// land in the registry (that part needs no desktop), the toast itself
+    /// is best-effort — a session without a shell can refuse it — and the
+    /// whole path must never panic.
+    #[cfg(windows)]
+    #[test]
+    fn toast_registers_the_aumid_and_never_panics() {
+        super::send_notification("Aether test", "hello from CI");
+        let key = format!(r"HKCU\Software\Classes\AppUserModelId\{}", super::AUMID);
+        let status = std::process::Command::new("reg")
+            .args(["query", &key, "/v", "DisplayName"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .expect("reg query must run");
+        assert!(status.success(), "AUMID must be registered under HKCU");
+    }
 }

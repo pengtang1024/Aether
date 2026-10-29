@@ -142,8 +142,15 @@ jobs:
         with:
           key: ${{ matrix.runner }}
 
-      - name: Build release binary
-        run: cargo build --release
+      - name: Build release binaries
+        # Workspace build: the UI, daemon, CLI, native host and every
+        # first-party plugin binary (the installers must ship them all —
+        # the UI spawns aether-daemon.exe from its own directory and the
+        # daemon resolves plugins\ beside itself).
+        run: cargo build --release --workspace
+
+      - name: Stage plugin packages
+        run: py -3 scripts/stage-plugins.py --target-dir target/release --out build/plugins
 
       - name: Create portable ZIP
         shell: pwsh
@@ -151,6 +158,10 @@ jobs:
           New-Item -ItemType Directory -Force dist | Out-Null
           $files = @(
             "target/release/aether.exe",
+            "target/release/aether-daemon.exe",
+            "target/release/aether-cli.exe",
+            "target/release/aether-native-host.exe",
+            "build/plugins",
             "assets/logo.ico",
             "LICENSE",
             "THIRD_PARTY_NOTICES.md",

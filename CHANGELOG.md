@@ -52,6 +52,23 @@ versioning; 0.x releases may still change structure.
   compile it. macOS stays out on purpose: an NSStatusItem needs objc2 and
   this repo's macOS CI is check-only, leaving no way to verify it.
 
+- Desktop notifications reach Windows: a WinRT toast through notify-rust
+  (the platform's only toast path is not reachable via an external
+  command, unlike notify-send and osascript). The toast is attributed to
+  Aether through an AppUserModelID registered under HKCU on first use —
+  no admin, no installer step — and falls back to notify-rust's built-in
+  attribution if the registration is refused; a failed toast logs once
+  and never panics. Linux and macOS keep their existing paths untouched.
+
+- The Windows artifacts now ship the whole application instead of the UI
+  alone: the installer and the portable zip carry aether-daemon,
+  aether-cli, aether-native-host and every first-party plugin binary
+  staged under `plugins\`. The pieces line up: the UI starts the daemon
+  from beside its own exe, and the plugin directory lookup on Windows now
+  leads with the exe-adjacent `plugins\` folder, so both the installed
+  (`{app}\plugins`) and portable layouts resolve. The macOS bundle still
+  carries only the UI — honestly noted, not yet fixed.
+
 - Supply-chain hardening: every GitHub Action is pinned to a full commit
   SHA with a version comment resolved through the API (Dependabot keeps
   them current), `deny.toml` plus a CI cargo-deny job enforce license,

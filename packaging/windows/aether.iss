@@ -42,6 +42,10 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "{#RepoRoot}\target\release\aether.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#RepoRoot}\target\release\aether-daemon.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#RepoRoot}\target\release\aether-cli.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#RepoRoot}\target\release\aether-native-host.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#RepoRoot}\build\plugins\*"; DestDir: "{app}\plugins"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#RepoRoot}\assets\logo.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#RepoRoot}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#RepoRoot}\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion

@@ -123,13 +123,28 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
   无新增依赖）；`server.rs/client.rs` 与 UI `src/backend.rs`、CLI
   remote/import、native-host 的 `#[cfg(unix)]` 门全部移除，Windows 有真实
   后端；`tests/transport.rs` 回环测试在 CI Windows job 实机通过。
-- **剩余**：
-  - Windows 桌面通知：`send_notification`（src/main.rs）在 Windows 静默。
-    优先 `notify-rust`（WinRT toast），依赖可接受就接线，否则保持诚实静默。
-  - 发布产物打包全部插件 exe；`default_plugins_dir`（aether-host）目前只有
-    Linux/相对路径候选，需加 Windows 安装目录候选。
-  - 本机无法交叉验证 Windows 编译（ring/rusqlite 需要 MSVC/mingw 工具链），
-    Windows 代码靠 CI 的 windows job check + transport 测试把关。
+- **剩余两项已落地（2026-10-30）**：
+  - **Windows 桌面通知**：`send_notification` 接 notify-rust（4.x，MIT/Apache；
+    Windows 后端 tauri-winrt-notification 同许可，unix/mac 后端依赖仅进
+    Cargo.lock 不参与 Windows 编译）。toast 按 AUMID 归属：首次通知时
+    `reg add` 注册 `HKCU\Software\Classes\AppUserModelId\com.pengtang1024.Aether`
+    （DisplayName/IconUri，免管理员、进程内只试一次）；注册被拒则不设
+    app_id、回退 notify-rust 内置兜底（可显示、归属降级，诚实优于缺失）。
+    `show()` 失败记一次日志不 panic。Linux/macOS 仍是 notify-send/osascript。
+    测试进 CI Windows job：AUMID 键真实写入（reg query 断言）+ toast
+    best-effort 不 panic。
+  - **发布产物打包插件 exe + 全套二进制**：package.yml Windows job 改
+    `cargo build --release --workspace` + `stage-plugins.py`（manifest 的
+    windows-x86_64/arm64 key 16/16 核过全有）；zip 与 Inno 安装器收录
+    aether-daemon / aether-cli / aether-native-host 与 `plugins\*`
+    （→ `{app}\plugins`）。闭环：UI 自启 daemon 找 exe 旁
+    `aether-daemon.exe` ✓；`default_plugins_dir` 加 **exe 同级 `plugins\`**
+    候选（aether-host `plugin_dir_candidates()`，unix 顺序不变）→ 安装/便携
+    布局都能解析；CI Windows job 加 `cargo test -p aether-host plugin_dir`。
+    macOS 包仍只含 UI 本体（bundle 内无 daemon/插件）——诚实记录，未修。
+  - 交叉编译认知更新：装 `gcc-mingw-w64-x86-64`+`nasm` 后本机即可
+    `cargo check --workspace --all-targets --target x86_64-pc-windows-gnu`
+    （见 §4.5 Windows 托盘条），Windows 编译错不再只能等 CI。
 
 ### 4.2 RPC over TCP（远程控制）★
 

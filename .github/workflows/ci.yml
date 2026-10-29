@@ -62,6 +62,9 @@ jobs:
       # best-effort icon handshake — Some/None both accepted on a headless
       # runner) plus the cross-platform i18n/backend/chart suites.
       - run: cargo test --bin aether
+      # The Windows plugin-dir candidate (exe-adjacent plugins\) is what
+      # the installer layout relies on; name-filtered so only it runs here.
+      - run: cargo test -p aether-host plugin_dir
 
   macos:
     name: macOS check

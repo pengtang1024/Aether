@@ -64,6 +64,12 @@ slint = { version = "1.18", default-features = false, features = [
 [target.'cfg(unix)'.dependencies]
 zbus = "5"
 
+# Desktop notifications: Windows gets WinRT toasts through notify-rust
+# (its unix/macOS backends stay out of Windows builds — see src/main.rs
+# send_notification, which keeps notify-send/osascript on those platforms).
+[target.'cfg(windows)'.dependencies]
+notify-rust = "4"
+
 [build-dependencies]
 slint-build = "1.18"
 

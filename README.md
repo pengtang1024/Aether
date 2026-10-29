@@ -148,7 +148,7 @@ git push -u origin release/0.1.0
 | 平台 | 产物 | 说明 |
 | --- | --- | --- |
 | Linux x86_64 | `.deb` + `.AppImage` | `.deb` 安装到 `/usr`；AppImage 可移动 |
-| Windows x86_64 | `setup.exe` + portable `.zip` | 安装器含开始菜单/桌面快捷方式 |
+| Windows x86_64 | `setup.exe` + portable `.zip` | 安装器含开始菜单/桌面快捷方式；随附 daemon/CLI/native-host 与全部第一方插件 |
 | macOS universal | `.dmg` | Apple Silicon + Intel；未签名，需右键打开 |
 
 所有产物会附加到一个 **draft GitHub Release**（tag `v<version>`），确认后发布即可。构建只在
@@ -340,16 +340,18 @@ Esc 关闭；下载空状态提供“清除筛选条件”，一次恢复全部�
 - 设置 → 计划与通知：计划窗口（HH:MM，支持跨午夜）由 daemon 调度器强制——
   时段外新任务不启动、运行/排队任务被「按计划暂停」，窗口开启时只恢复调度
   器暂停过的任务（用户手动暂停的不受影响）；完成/失败的桌面提醒在 Linux 走
-  notify-send、macOS 走系统通知，可分别开关（本地偏好，取消不提醒）
+  notify-send、macOS 走系统通知、Windows 走 WinRT toast（归属 Aether 的
+  AUMID 在首次通知时注册进 HKCU），可分别开关（本地偏好，取消不提醒）
 - 没有机制支撑的假控件已从界面移除或改为能力说明卡：密度/缩放/紧凑列表、
   HTTP/2 开关、镜像加速、低速断开、连接总数、BT 的加密/PEX/LSD/做种比例
   （librqbit 不支持）、媒体转码与浏览器接管、RPC 区
 - 详情面板按图标设计，标签在悬停提示里；不展示真实分段图与 BT 节点
-- 没有系统托盘、剪贴板监听与多语言；协议关联由安装包注册；Windows 暂无
-  桌面通知（需要额外依赖）
-- Windows/macOS 包只含 Host + daemon：UI 与 daemon 之间已用命名管道
-  （Windows）/Unix socket（Unix）通信，但 Windows 安装包尚未随附插件 exe，
-  通知在 Windows 上保持静默
+- 系统托盘（Linux StatusNotifier、Windows 通知区域）、剪贴板链接检测与
+  四语言界面（简体中文/English/日本語/繁體中文）已落地；协议关联由安装包
+  注册
+- Windows 安装包与便携 zip 已随附 daemon、CLI、native-host 和全部第一方
+  插件 exe（`{app}\plugins`，daemon 按 exe 同级解析）；macOS 包目前只含
+  UI 本体——app bundle 内未随附 daemon/插件，需另行安装或源码运行
 - 窗口默认 900×600，最小 900×560；没有做手机/超窄窗口布局
 
 剩余特性的具体实施方案与开发环境要点（e2e 约定、Xvfb 冒烟配方、已知坑）

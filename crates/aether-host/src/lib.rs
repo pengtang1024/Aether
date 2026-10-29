@@ -26,11 +26,63 @@ pub fn default_plugins_dir() -> std::path::PathBuf {
     if let Ok(value) = std::env::var("AETHER_PLUGINS_DIR") {
         return std::path::PathBuf::from(value);
     }
-    for candidate in ["/usr/lib/aether/plugins", "build/plugins", "plugins"] {
-        let path = std::path::PathBuf::from(candidate);
-        if path.is_dir() {
-            return path;
+    for candidate in plugin_dir_candidates() {
+        if candidate.is_dir() {
+            return candidate;
         }
     }
     std::path::PathBuf::from("plugins")
+}
+
+/// The search order behind [`default_plugins_dir`], per platform. On
+/// Windows the installer and the portable zip both put `plugins\` beside
+/// the exe (`{app}\plugins` — the daemon resolves against its own exe,
+/// which the installer keeps in `{app}`), so the exe's directory leads;
+/// unix keeps the system location first. The dev-tree tail is shared.
+fn plugin_dir_candidates() -> Vec<std::path::PathBuf> {
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+    #[cfg(windows)]
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            candidates.push(dir.join("plugins"));
+        }
+    }
+    #[cfg(unix)]
+    candidates.push(std::path::PathBuf::from("/usr/lib/aether/plugins"));
+    candidates.push(std::path::PathBuf::from("build/plugins"));
+    candidates.push(std::path::PathBuf::from("plugins"));
+    candidates
+}
+
+#[cfg(test)]
+mod tests {
+    use super::plugin_dir_candidates;
+
+    /// Platform system location leads; the dev-tree tail keeps its order on
+    /// both platforms so a source checkout behaves the same everywhere.
+    #[test]
+    fn plugin_dir_candidates_lead_with_the_platform_location() {
+        let candidates = plugin_dir_candidates();
+        #[cfg(unix)]
+        assert_eq!(
+            candidates[0],
+            std::path::PathBuf::from("/usr/lib/aether/plugins")
+        );
+        #[cfg(windows)]
+        {
+            // exe-adjacent plugins\ — absolute, ending in the folder name.
+            let first = &candidates[0];
+            assert!(
+                first.is_absolute(),
+                "exe-derived path must be absolute: {first:?}"
+            );
+            assert_eq!(first.file_name().and_then(|n| n.to_str()), Some("plugins"));
+        }
+        let last = candidates.len() - 1;
+        assert_eq!(
+            candidates[last - 1],
+            std::path::PathBuf::from("build/plugins")
+        );
+        assert_eq!(candidates[last], std::path::PathBuf::from("plugins"));
+    }
 }
