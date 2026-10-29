@@ -47,6 +47,19 @@ impl Client {
         })
     }
 
+    /// Connect over TCP (the daemon's opt-in RPC) and complete the token
+    /// handshake. The first message on every RPC connection must be `auth`.
+    pub fn connect_rpc(addr: &str, token: &str) -> Result<Self, DaemonError> {
+        let conn = Conn::connect_tcp(addr)?;
+        let mut client = Self {
+            reader: BufReader::new(conn.try_clone()?),
+            writer: conn,
+            next_id: 1,
+        };
+        client.call("auth", None, None, None, None, json!({ "token": token }))?;
+        Ok(client)
+    }
+
     pub fn call(
         &mut self,
         method: &str,

@@ -15,6 +15,7 @@
 | `1c1e8dd` | 默认请求头（HTTP 族）、FTP 主动模式、BT 端口/DHT/上传限速/屏蔽列表/Tracker → 插件引擎 |
 | `4710e01` | 计划下载窗口（daemon 调度器，支持跨午夜）+ 完成/失败桌面通知 |
 | `4f9493a` | Windows：named pipe transport（无新依赖），daemon/UI/CLI/native-host 全部跨平台，CI Windows job 跑回环测试 |
+| （4.2） | RPC over TCP：`rpc_listen`/`rpc_secret` settings + `--rpc-listen`，token 鉴权（常数时间，热轮换），CLI `--socket ip:port`，`tests/rpc.rs` 6 用例 |
 
 - **设置页现状**：10 个分类中每个控件要么真实生效、要么是诚实的能力说明卡，
   没有「点了没反应」或显示假值的控件。
@@ -107,18 +108,25 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
   - 本机无法交叉验证 Windows 编译（ring/rusqlite 需要 MSVC/mingw 工具链），
     Windows 代码靠 CI 的 windows job check + transport 测试把关。
 
-### 4.2 RPC over TCP（远程控制）
+### 4.2 RPC over TCP（远程控制）★
 
-- **现状**：仅本地 socket；高级页 RPC 区已移除（当时无机制）。`Request/
-  Response` 协议（proto.rs）与全部 handler 都是现成的。
-- **方案**：
-  - `--rpc-listen <addr:port>` 或 settings `rpc_listen`；默认关闭。
-  - 鉴权：settings `rpc_secret`（写入 settings.json，0600 已有保障）；连接后
-    首条消息 `{"method":"auth","settings":{"token":"…"}}`，常数时间比较；
-    监听非 127.0.0.1 时强制要求 secret，否则拒绝启动。
-  - 复用 4.1 的 transport 抽象（TCP 流）；事件订阅同样走该连接。
-  - 不做 TLS——文档写明「仅限可信网络或 SSH 隧道」。
-- **验收**：TCP 回环集成测试（正确 token 通、错 token 拒、无 token 拒）。
+- **已落地（2026-10-29）**：
+  - transport 抽象加了 TCP 分支（`Listener::bind_tcp` / `Conn::connect_tcp`），
+    行协议与本地 socket 完全一致。
+  - daemon settings 新增 `rpc_listen`（`ip:port`，默认关闭）与 `rpc_secret`；
+    `--rpc-listen` / `AETHER_RPC_LISTEN` 覆盖 `rpc_listen`。非 loopback 地址
+    必须有 `rpc_secret`，否则**拒绝启动**（boot 路径和 `set_settings` 都校验）。
+  - 每个 TCP 连接的首条消息必须是
+    `{"method":"auth","settings":{"token":"…"}}`，常数时间比较；错 token/
+    无 auth 直接拒绝。`set_settings` 轮换 `rpc_secret` 即时生效（新连接用
+    新 token，无需重启监听）。
+  - CLI：`aether-cli remote … --socket ip:port [--token …]`（token 也可用
+    `AETHER_RPC_TOKEN`）走 RPC；`Client::connect_rpc(addr, token)` 是客户端
+    入口。
+  - 验收：`tests/rpc.rs` 6 个用例（正确 token 通/错 token 拒/无 auth 拒/
+    authed 会话含 subscribe+shutdown/非 loopback 无 secret 拒启/token 轮换），
+    CI Windows job 与 transport 回环一起实跑。
+- **明确不做**：TLS——文档写明「仅限可信网络或 SSH 隧道」。
 
 ### 4.3 浏览器扩展接管（依赖 4.2）
 

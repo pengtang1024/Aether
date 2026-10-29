@@ -55,9 +55,9 @@ jobs:
         with:
           key: ci-windows-latest
       - run: cargo check --workspace --all-targets
-      # The pipe loopback is the acceptance test for the Windows transport
-      # (tests/transport.rs covers both platforms).
-      - run: cargo test -p aether-daemon --test transport
+      # The pipe loopback (transport.rs) and the TCP RPC loopback (rpc.rs)
+      # are both cross-platform acceptance tests for the local/remote IPC.
+      - run: cargo test -p aether-daemon --test transport --test rpc
 
   macos:
     name: macOS check

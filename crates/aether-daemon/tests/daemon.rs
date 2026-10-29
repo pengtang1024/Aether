@@ -184,6 +184,7 @@ fn spawn_daemon_at(
         retry_base_secs,
         proxy: proxy.map(ToOwned::to_owned),
         pac_url: None,
+        rpc_listen: None,
     };
     let handle = thread::spawn(move || aether_daemon::run(config));
     Some(Daemon {

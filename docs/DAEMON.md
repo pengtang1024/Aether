@@ -289,8 +289,12 @@ daemon 是常驻入口，但“接管所有下载”还需要：
 
 ## 7. 安全边界
 
-- 不做 localhost TCP，避免网页/局域网访问。
-- socket 权限 0600；Windows 管道走默认 DACL（仅同用户）；请求只能由同用户发起。
+- 默认不做任何 TCP 监听，避免网页/局域网访问。RPC over TCP 是显式 opt-in
+  （`rpc_listen` 或 `--rpc-listen`），每个连接必须先过 token 鉴权；非 loopback
+  地址没有 `rpc_secret` 时 daemon 拒绝启动。RPC 不做 TLS——仅限可信网络或
+  SSH 隧道。
+- socket 权限 0600；Windows 管道走默认 DACL（仅同用户）；本地请求只能由同
+  用户发起。
 - `add` 的 URL/settings 会传给第一方插件；插件仍受 Host 最终落盘路径校验。
 - cdylib 插件在 Host 进程内运行，daemon 默认只加载 `kind: "process"` 的插件；
   启用 cdylib 需显式配置并接受崩溃风险。

@@ -85,6 +85,15 @@ pub struct Settings {
     /// Window end, `"HH:MM"`. `end < start` means the window wraps midnight.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub schedule_end: Option<String>,
+    /// RPC over TCP: `"ip:port"` to listen on, off when unset. Requires
+    /// [`Settings::rpc_secret`] on any non-loopback address.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rpc_listen: Option<String>,
+    /// Token every RPC connection must present as its first message
+    /// (`{"method":"auth","settings":{"token":"…"}}`). Blank input is
+    /// normalised to `None` by `set_settings`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rpc_secret: Option<String>,
 }
 
 /// The upper bound the http plugin honours for [`Settings::connections`]:
@@ -98,7 +107,7 @@ pub const CONNECTIONS_DEFAULT: u32 = 4;
 /// Every key `set_settings` accepts. The file is parsed with
 /// `deny_unknown_fields`, so the RPC rejects the same typos instead of
 /// silently storing nothing.
-pub const KEYS: [&str; 18] = [
+pub const KEYS: [&str; 20] = [
     "proxy",
     "user_agent",
     "ip_mode",
@@ -117,6 +126,8 @@ pub const KEYS: [&str; 18] = [
     "schedule_on",
     "schedule_start",
     "schedule_end",
+    "rpc_listen",
+    "rpc_secret",
 ];
 
 /// The limits in force: `settings.json` wins, the boot configuration
@@ -315,6 +326,35 @@ impl Settings {
             return Err(DaemonError::Protocol(
                 "schedule_on needs schedule_start and schedule_end".into(),
             ));
+        }
+        // RPC over TCP: a listen address must parse, and anything beyond
+        // loopback must carry a token — a wide-open unauthenticated RPC is
+        // never what the user meant.
+        if let Some(text) = self
+            .rpc_listen
+            .as_deref()
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+        {
+            match text.parse::<std::net::SocketAddr>() {
+                Ok(addr) => {
+                    let has_secret = self
+                        .rpc_secret
+                        .as_deref()
+                        .map(|secret| !secret.trim().is_empty())
+                        .unwrap_or(false);
+                    if !addr.ip().is_loopback() && !has_secret {
+                        return Err(DaemonError::Protocol(
+                            "rpc_listen on a non-loopback address requires rpc_secret".into(),
+                        ));
+                    }
+                }
+                Err(_) => {
+                    return Err(DaemonError::Protocol(format!(
+                        "rpc_listen must be ip:port, got {text:?}"
+                    )));
+                }
+            }
         }
         Ok(())
     }
@@ -606,6 +646,8 @@ mod tests {
             schedule_on: Some(true),
             schedule_start: Some("01:00".into()),
             schedule_end: Some("07:00".into()),
+            rpc_listen: Some("127.0.0.1:9090".into()),
+            rpc_secret: Some("token".into()),
         };
         let object = serde_json::to_value(settings).unwrap();
         let object = object.as_object().unwrap();
@@ -715,5 +757,36 @@ mod tests {
             ..Settings::default()
         };
         full.validate().unwrap();
+    }
+
+    #[test]
+    fn validates_the_rpc_listen_address() {
+        // Off by default.
+        Settings::default().validate().unwrap();
+
+        // Loopback needs no token; a typo is still an error.
+        let loopback = Settings {
+            rpc_listen: Some("127.0.0.1:9090".into()),
+            ..Settings::default()
+        };
+        loopback.validate().unwrap();
+        let typo = Settings {
+            rpc_listen: Some("localhost:9090".into()),
+            ..Settings::default()
+        };
+        assert!(typo.validate().is_err());
+
+        // Anything wider than loopback must carry a token.
+        let wide = Settings {
+            rpc_listen: Some("0.0.0.0:9090".into()),
+            ..Settings::default()
+        };
+        assert!(wide.validate().is_err());
+        let wide_with_token = Settings {
+            rpc_listen: Some("0.0.0.0:9090".into()),
+            rpc_secret: Some("s3cret".into()),
+            ..Settings::default()
+        };
+        wide_with_token.validate().unwrap();
     }
 }

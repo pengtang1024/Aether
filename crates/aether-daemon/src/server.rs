@@ -41,6 +41,9 @@ pub struct DaemonConfig {
     pub retry_max: u32,
     /// Base delay in seconds for the exponential retry backoff.
     pub retry_base_secs: u64,
+    /// RPC over TCP listen address (`"ip:port"`), overriding the persisted
+    /// `rpc_listen` setting for this run. Off when both are unset.
+    pub rpc_listen: Option<String>,
     /// Proxy spec from `AETHER_PROXY`; overrides the persisted setting.
     pub proxy: Option<String>,
     /// PAC URL from `AETHER_PAC_URL`; overrides the persisted setting.
@@ -77,6 +80,10 @@ impl Default for DaemonConfig {
                 .and_then(|value| value.parse().ok())
                 .filter(|value| *value > 0)
                 .unwrap_or(30),
+            rpc_listen: std::env::var("AETHER_RPC_LISTEN")
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
             proxy: std::env::var("AETHER_PROXY")
                 .ok()
                 .map(|value| value.trim().to_string())
@@ -131,6 +138,9 @@ struct State {
     system_proxy: SystemProxyCache,
     /// PAC resolver for a desktop-configured PAC URL (GNOME/KDE "auto").
     system_pac: Option<(String, PacResolver)>,
+    /// RPC token shared with the TCP accept loop: `set_settings` updates it
+    /// in place, so a rotation applies to the next connection.
+    rpc_secret: Arc<Mutex<Option<String>>>,
 }
 
 impl Default for SystemProxyCache {
@@ -264,6 +274,14 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
         _ => None,
     };
 
+    // Captured before `settings` moves into `State`; the accept loop shares
+    // this handle so a rotation via set_settings applies live.
+    let rpc_secret = Arc::new(Mutex::new(
+        settings
+            .rpc_secret
+            .clone()
+            .filter(|secret| !secret.trim().is_empty()),
+    ));
     let mut state = State {
         manager,
         store,
@@ -286,12 +304,48 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
         settings_path,
         system_proxy: SystemProxyCache::default(),
         system_pac: None,
+        rpc_secret,
     };
 
     recover_tasks(&mut state);
     restore_retries(&mut state);
 
     let (command_tx, command_rx) = mpsc::channel::<Command>();
+
+    // Opt-in RPC over TCP. The CLI/env override wins over the persisted
+    // setting; anything wider than loopback must carry a token — checked
+    // here as well because the boot path bypasses `set_settings` and its
+    // validation.
+    let rpc_listen = config
+        .rpc_listen
+        .clone()
+        .filter(|addr| !addr.trim().is_empty())
+        .or_else(|| state.settings.rpc_listen.clone());
+    if let Some(addr) = rpc_listen.as_deref() {
+        // The effective pair is checked here too: the CLI/env override is
+        // not part of `set_settings`, so its validation would miss it.
+        let parsed: std::net::SocketAddr = addr.trim().parse().map_err(|error| {
+            DaemonError::Protocol(format!("rpc_listen must be ip:port: {error}"))
+        })?;
+        let has_secret = state
+            .rpc_secret
+            .lock()
+            .unwrap()
+            .as_deref()
+            .is_some_and(|secret| !secret.is_empty());
+        if !parsed.ip().is_loopback() && !has_secret {
+            return Err(DaemonError::Protocol(
+                "rpc_listen on a non-loopback address requires rpc_secret".into(),
+            ));
+        }
+        let listener = Listener::bind_tcp(addr.trim())
+            .map_err(|error| DaemonError::Protocol(format!("cannot listen on {addr}: {error}")))?;
+        eprintln!("aether-daemon: rpc listening on {addr} (token required)");
+        let rpc_tx = command_tx.clone();
+        let rpc_secret = state.rpc_secret.clone();
+        thread::spawn(move || rpc_accept_loop(listener, rpc_tx, rpc_secret));
+    }
+
     let accept_tx = command_tx.clone();
     let accept_thread = thread::spawn(move || accept_loop(listener, accept_tx));
 
@@ -466,7 +520,27 @@ fn accept_loop(mut listener: Listener, commands: Sender<Command>) {
     }
 }
 
-fn client_loop(stream: Conn, commands: Sender<Command>) {
+/// RPC over TCP: every connection must open with an `auth` request carrying
+/// the token before it may use any other method. The secret is read live, so
+/// a `set_settings` rotation applies to new connections immediately.
+fn rpc_accept_loop(
+    mut listener: Listener,
+    commands: Sender<Command>,
+    secret: std::sync::Arc<Mutex<Option<String>>>,
+) {
+    loop {
+        let Ok(conn) = listener.accept() else { break };
+        let commands = commands.clone();
+        let secret = secret.clone();
+        thread::spawn(move || rpc_client_loop(conn, commands, secret));
+    }
+}
+
+fn rpc_client_loop(
+    stream: Conn,
+    commands: Sender<Command>,
+    secret: std::sync::Arc<Mutex<Option<String>>>,
+) {
     let reader_stream = match stream.try_clone() {
         Ok(stream) => stream,
         Err(_) => return,
@@ -474,13 +548,85 @@ fn client_loop(stream: Conn, commands: Sender<Command>) {
     let mut reader = BufReader::new(reader_stream);
     let mut writer = stream;
     let mut line = String::new();
+    if reader.read_line(&mut line).unwrap_or(0) == 0 {
+        writer.shutdown();
+        return;
+    }
+    let request = serde_json::from_str::<Request>(&line);
+    let authed = match request {
+        Ok(request) if request.method == "auth" => {
+            let token = request
+                .settings
+                .get("token")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let expected = secret.lock().unwrap();
+            let ok = constant_time_eq(
+                token.as_bytes(),
+                expected.as_deref().unwrap_or("").as_bytes(),
+            );
+            if write_response(
+                &mut writer,
+                &if ok {
+                    Response::ok(request.id, json!({"ok": true}))
+                } else {
+                    Response::err(request.id, "invalid rpc token")
+                },
+            )
+            .is_err()
+            {
+                writer.shutdown();
+                return;
+            }
+            ok
+        }
+        other => {
+            let id = other.as_ref().map_or(0, |request| request.id);
+            let _ = write_response(
+                &mut writer,
+                &Response::err(id, "rpc needs an auth request first"),
+            );
+            false
+        }
+    };
+    if authed {
+        serve(&mut reader, &mut writer, commands);
+    }
+    writer.shutdown();
+}
+
+/// Constant-time byte comparison for secrets (no early exit on the first
+/// differing byte).
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    a.iter()
+        .zip(b)
+        .fold(0u8, |acc, (left, right)| acc | (left ^ right))
+        == 0
+}
+
+fn client_loop(stream: Conn, commands: Sender<Command>) {
+    let reader_stream = match stream.try_clone() {
+        Ok(stream) => stream,
+        Err(_) => return,
+    };
+    let mut reader = BufReader::new(reader_stream);
+    let mut writer = stream;
+    serve(&mut reader, &mut writer, commands);
+    writer.shutdown();
+}
+
+fn serve(reader: &mut BufReader<Conn>, writer: &mut Conn, commands: Sender<Command>) {
+    let mut line = String::new();
 
     while reader.read_line(&mut line).unwrap_or(0) > 0 {
         let request = match serde_json::from_str::<Request>(&line) {
             Ok(request) => request,
             Err(error) => {
                 let response = Response::err(0, format!("invalid request: {error}"));
-                if write_response(&mut writer, &response).is_err() {
+                if write_response(&mut *writer, &response).is_err() {
                     break;
                 }
                 line.clear();
@@ -505,7 +651,7 @@ fn client_loop(stream: Conn, commands: Sender<Command>) {
             Err(_) => Response::err(0, "daemon request timed out"),
         };
         let accepted = response.ok;
-        if write_response(&mut writer, &response).is_err() {
+        if write_response(&mut *writer, &response).is_err() {
             break;
         }
         if subscribe {
@@ -515,7 +661,7 @@ fn client_loop(stream: Conn, commands: Sender<Command>) {
             loop {
                 match event_rx.recv_timeout(Duration::from_secs(30)) {
                     Ok(event) => {
-                        if serde_json::to_writer(&mut writer, &event).is_err()
+                        if serde_json::to_writer(&mut *writer, &event).is_err()
                             || writer.write_all(b"\n").is_err()
                             || writer.flush().is_err()
                         {
@@ -530,7 +676,6 @@ fn client_loop(stream: Conn, commands: Sender<Command>) {
         }
         line.clear();
     }
-    writer.shutdown();
 }
 
 fn write_response(writer: &mut Conn, response: &Response) -> std::io::Result<()> {
@@ -1057,6 +1202,20 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
                     })?;
                 next.schedule_end = text.filter(|text| !text.trim().is_empty());
             }
+            if let Some(value) = patch.get("rpc_listen") {
+                let text: Option<String> =
+                    serde_json::from_value(value.clone()).map_err(|error| {
+                        DaemonError::Protocol(format!("invalid rpc_listen: {error}"))
+                    })?;
+                next.rpc_listen = text.filter(|text| !text.trim().is_empty());
+            }
+            if let Some(value) = patch.get("rpc_secret") {
+                let text: Option<String> =
+                    serde_json::from_value(value.clone()).map_err(|error| {
+                        DaemonError::Protocol(format!("invalid rpc_secret: {error}"))
+                    })?;
+                next.rpc_secret = text.filter(|text| !text.trim().is_empty());
+            }
             next.validate()?;
 
             let network_before = state.settings.network();
@@ -1082,6 +1241,15 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
             // A raised cap starts waiting tasks immediately; a lowered one
             // lets the running ones finish — nothing is killed.
             promote_queued(state);
+            // The RPC token is read live by the accept loop, so a rotation
+            // is effective for the next connection (no listener restart).
+            if patch.contains_key("rpc_secret") {
+                *state.rpc_secret.lock().unwrap() = state
+                    .settings
+                    .rpc_secret
+                    .clone()
+                    .filter(|secret| !secret.trim().is_empty());
+            }
             // A schedule change takes effect now, not at the next periodic
             // tick: closing the window pauses, opening resumes.
             if patch.keys().any(|key| key.starts_with("schedule_")) {

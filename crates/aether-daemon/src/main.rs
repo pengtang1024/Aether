@@ -48,6 +48,11 @@ fn main() -> std::process::ExitCode {
             config.update_appimage = Some(PathBuf::from(value));
         }
     }
+    if let Some(index) = args.iter().position(|arg| arg == "--rpc-listen") {
+        if let Some(value) = args.get(index + 1) {
+            config.rpc_listen = Some(value.clone());
+        }
+    }
     match run(config) {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {

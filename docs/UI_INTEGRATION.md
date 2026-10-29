@@ -23,6 +23,22 @@ daemon 应由 systemd user unit 启动（`systemctl --user enable --now aether-d
 Windows 上没有 unit：由 UI/CLI 首次连接时自动拉起 `aether-daemon.exe`。
 UI 启动时如果连接失败，可以提示“后台服务未启动”，或执行 `aether-daemon`。
 
+### RPC over TCP（opt-in，远程控制）
+
+daemon 侧默认关闭；`rpc_listen`（settings 或 `--rpc-listen` /`AETHER_RPC_LISTEN`）
+开启后监听 `ip:port`。**非 loopback 地址必须先设置 `rpc_secret`，否则 daemon
+拒绝启动**。每个 TCP 连接的首条消息必须是鉴权：
+
+```json
+{"id":1,"method":"auth","settings":{"token":"<rpc_secret>"}}
+```
+
+token 用常数时间比较；失败即断开。之后的行协议与本地完全一致（含
+`subscribe` 事件流）。`set_settings` 轮换 `rpc_secret` 对新连接立即生效。
+客户端入口：`Client::connect_rpc(addr, token)`；CLI：
+`aether-cli remote ping --socket 192.0.2.1:9090 --token …`。
+**无 TLS——仅限可信网络或 SSH 隧道。**
+
 ## 2. 首屏
 
 ```rust
@@ -178,7 +194,9 @@ let resolved = client.resolve_proxy("https://example.com/file.zip")?;
   提示“对之后开始的任务生效”。
 - “跟随系统”= `system`：环境变量优先，其次是 GNOME/KDE 的代理设置（含桌面里
   配置的 PAC URL）。UI 不需要自己读 gsettings；用 `resolve_proxy` 展示实际生效值。
-- 不要把 socket 暴露到 TCP；不要接受非本用户连接。
+- 本地通道永远不走 TCP：UI 用 socket/管道（同用户权限）。TCP 只为 RPC
+  （`rpc_listen`，token 鉴权，见 `DAEMON.md`）；UI 若做远程模式必须走
+  `Client::connect_rpc` 并让用户显式配置地址与 token，不要默认开启。
 
 ## 6. 迁移步骤
 

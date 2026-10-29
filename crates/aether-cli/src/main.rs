@@ -451,9 +451,25 @@ fn remote(args: &[String]) -> Result<(), String> {
     let Some(command) = args.first().map(String::as_str) else {
         return Err(format!("usage:{}", remote_usage()));
     };
-    let socket = option(args, "--socket")
-        .map(PathBuf::from)
-        .unwrap_or_else(aether_daemon::client::default_socket);
+    // `--socket ip:port` (optionally `tcp://ip:port`) selects RPC over TCP;
+    // anything else is the local socket/pipe path. The token comes from
+    // `--token` or `AETHER_RPC_TOKEN`.
+    let endpoint = option(args, "--socket");
+    let rpc_addr = endpoint
+        .as_deref()
+        .map(|value| value.trim_start_matches("tcp://"))
+        .and_then(|value| {
+            value
+                .parse::<std::net::SocketAddr>()
+                .ok()
+                .map(|_| value.to_string())
+        });
+    let socket = match &rpc_addr {
+        None => endpoint
+            .map(PathBuf::from)
+            .unwrap_or_else(aether_daemon::client::default_socket),
+        Some(addr) => PathBuf::from(addr),
+    };
     let target = || {
         args.get(1)
             .filter(|value| !value.starts_with("--"))
@@ -461,8 +477,17 @@ fn remote(args: &[String]) -> Result<(), String> {
             .ok_or_else(|| format!("remote {command} needs a task id"))
     };
     let json_output = args.iter().any(|arg| arg == "--json");
-    let mut client = Client::connect(&socket)
-        .map_err(|error| format!("cannot reach the daemon at {}: {error}", socket.display()))?;
+    let mut client = match &rpc_addr {
+        Some(addr) => {
+            let token = option(args, "--token")
+                .or_else(|| std::env::var("AETHER_RPC_TOKEN").ok())
+                .unwrap_or_default();
+            Client::connect_rpc(addr, &token)
+                .map_err(|error| format!("cannot reach the daemon at {addr}: {error}"))?
+        }
+        None => Client::connect(&socket)
+            .map_err(|error| format!("cannot reach the daemon at {}: {error}", socket.display()))?,
+    };
 
     match command {
         "ping" => {
@@ -680,7 +705,7 @@ fn remote(args: &[String]) -> Result<(), String> {
 }
 
 fn remote_usage() -> &'static str {
-    "\n  aether-cli remote <command> [--socket <path>] [--json]\n    ping | list [--json] | stats [--json] | plugins [--json]\n    add <url> [--plugin <id>] [--dir <dir>] [--priority <n>] [--settings <json>] [--json]\n    get <task-id> | logs <task-id> [--limit <n>] [--json]\n    pause|resume|cancel|rm <task-id>\n    enable|disable <plugin-id>\n    settings | set-settings <json> | resolve-proxy <url> | watch"
+    "\n  aether-cli remote <command> [--socket <path|ip:port>] [--token <rpc-token>] [--json]\n    ping | list [--json] | stats [--json] | plugins [--json]\n    add <url> [--plugin <id>] [--dir <dir>] [--priority <n>] [--settings <json>] [--json]\n    get <task-id> | logs <task-id> [--limit <n>] [--json]\n    pause|resume|cancel|rm <task-id>\n    enable|disable <plugin-id>\n    settings | set-settings <json> | resolve-proxy <url> | watch\n  ip:port (or tcp://ip:port) selects RPC over TCP; token from --token or AETHER_RPC_TOKEN"
 }
 
 fn import_usage() -> &'static str {

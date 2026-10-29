@@ -1,25 +1,26 @@
 //! Cross-platform transport for the daemon's JSON-lines protocol.
 //!
-//! Unix listens on a socket file (mode 0600), Windows on a per-user named
-//! pipe (`\\.\pipe\aether-<user>`; the default pipe DACL only grants the
-//! creating user). Either way the wire format is one JSON value per line,
-//! so everything above this layer is platform independent.
+//! The local endpoint is a socket file on Unix (mode 0600) and a per-user
+//! named pipe on Windows (`\\.\pipe\aether-<user>`; the default pipe DACL
+//! only grants the creating user). RPC over TCP reuses the same framing
+//! behind token auth. Either way the wire format is one JSON value per
+//! line, so everything above this layer is platform independent.
 //!
 //! The Windows side binds kernel32 directly instead of pulling in a
 //! windows-sys feature tree: the pipe API needs six functions.
 
 use std::io::{self, Read, Write};
+use std::net::Shutdown;
 use std::path::Path;
 
-#[cfg(unix)]
-use std::net::Shutdown;
 #[cfg(unix)]
 use std::os::unix::net::{UnixListener, UnixStream};
 
 #[cfg(not(any(unix, windows)))]
 compile_error!("aether-daemon needs Unix sockets or Windows named pipes");
 
-/// Listening endpoint: a socket file on Unix, a named pipe on Windows.
+/// Listening endpoint: a socket file on Unix, a named pipe on Windows, a
+/// TCP socket for opt-in RPC.
 pub struct Listener {
     inner: ListenerInner,
 }
@@ -29,9 +30,19 @@ enum ListenerInner {
     Unix(UnixListener),
     #[cfg(windows)]
     Pipe(PipeListener),
+    Tcp(std::net::TcpListener),
 }
 
 impl Listener {
+    /// Listen on `addr` (e.g. `127.0.0.1:9090`) for opt-in RPC. Separate
+    /// from [`Listener::bind`] because the endpoint is an address, not a
+    /// path.
+    pub fn bind_tcp(addr: &str) -> io::Result<Self> {
+        std::net::TcpListener::bind(addr).map(|listener| Self {
+            inner: ListenerInner::Tcp(listener),
+        })
+    }
+
     pub fn bind(path: &Path) -> io::Result<Self> {
         #[cfg(unix)]
         {
@@ -58,6 +69,9 @@ impl Listener {
             ListenerInner::Pipe(listener) => listener.accept().map(|conn| Conn {
                 inner: ConnInner::Pipe(conn),
             }),
+            ListenerInner::Tcp(listener) => listener.accept().map(|(stream, _)| Conn {
+                inner: ConnInner::Tcp(stream),
+            }),
         }
     }
 }
@@ -72,6 +86,7 @@ enum ConnInner {
     Unix(UnixStream),
     #[cfg(windows)]
     Pipe(PipeConn),
+    Tcp(std::net::TcpStream),
 }
 
 impl Conn {
@@ -90,6 +105,13 @@ impl Conn {
         }
     }
 
+    /// Client side of [`Listener::bind_tcp`] (opt-in RPC).
+    pub fn connect_tcp(addr: &str) -> io::Result<Self> {
+        std::net::TcpStream::connect(addr).map(|stream| Self {
+            inner: ConnInner::Tcp(stream),
+        })
+    }
+
     /// Independent handle to the same connection (one for reading, one for
     /// writing). Unix duplicates the fd, Windows duplicates the handle.
     pub fn try_clone(&self) -> io::Result<Self> {
@@ -101,6 +123,9 @@ impl Conn {
             #[cfg(windows)]
             ConnInner::Pipe(conn) => conn.duplicate().map(|conn| Self {
                 inner: ConnInner::Pipe(conn),
+            }),
+            ConnInner::Tcp(stream) => stream.try_clone().map(|stream| Self {
+                inner: ConnInner::Tcp(stream),
             }),
         }
     }
@@ -114,6 +139,9 @@ impl Conn {
             }
             #[cfg(windows)]
             ConnInner::Pipe(conn) => conn.disconnect(),
+            ConnInner::Tcp(stream) => {
+                let _ = stream.shutdown(Shutdown::Both);
+            }
         }
     }
 }
@@ -125,6 +153,7 @@ impl Read for Conn {
             ConnInner::Unix(stream) => stream.read(buf),
             #[cfg(windows)]
             ConnInner::Pipe(conn) => conn.read(buf),
+            ConnInner::Tcp(stream) => stream.read(buf),
         }
     }
 }
@@ -136,6 +165,7 @@ impl Write for Conn {
             ConnInner::Unix(stream) => stream.write(buf),
             #[cfg(windows)]
             ConnInner::Pipe(conn) => conn.write(buf),
+            ConnInner::Tcp(stream) => stream.write(buf),
         }
     }
 
@@ -145,6 +175,7 @@ impl Write for Conn {
             ConnInner::Unix(stream) => stream.flush(),
             #[cfg(windows)]
             ConnInner::Pipe(conn) => conn.flush(),
+            ConnInner::Tcp(stream) => stream.flush(),
         }
     }
 }

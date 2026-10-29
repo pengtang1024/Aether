@@ -7,6 +7,20 @@ versioning; 0.x releases may still change structure.
 
 ### Added
 
+- RPC over TCP is available as an opt-in remote-control channel. The daemon
+  gains `rpc_listen` / `rpc_secret` settings (plus `--rpc-listen` /
+  `AETHER_RPC_LISTEN`); every TCP connection must open with an `auth` request
+  whose token is compared in constant time, and a non-loopback listen address
+  without a secret makes the daemon refuse to start. Token rotation via
+  `set_settings` applies to the next connection without a listener restart.
+  `Client::connect_rpc(addr, token)` and
+  `aether-cli remote … --socket ip:port [--token …]` are the client entries.
+  The wire protocol (including event subscriptions) is unchanged from the
+  local socket. No TLS: use a trusted network or an SSH tunnel.
+  Acceptance: `crates/aether-daemon/tests/rpc.rs` (good/wrong/missing token,
+  authed session with subscribe + shutdown, wide-open refusal, rotation) —
+  also runs in the CI Windows job.
+
 - The daemon and UI now run on Windows. `aether-daemon` speaks JSON lines over
   a per-user named pipe (`\\.\pipe\aether-<user>`, default DACL = same user,
   no new dependency — kernel32 is bound directly in
