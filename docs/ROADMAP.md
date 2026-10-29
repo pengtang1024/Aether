@@ -1,12 +1,12 @@
 # 路线图与会话交接
 
 > 面向后续会话/贡献者：现在在哪、下一步做什么、怎么做、别踩哪些坑。
-> 最后更新：2026-10-29（main @ `4f9493a`）。历史盲区清单见 `GAP_AUDIT.md`，
+> 最后更新：2026-10-29（main @ `2d9fa72`）。历史盲区清单见 `GAP_AUDIT.md`，
 > 本文跟踪其中已完成的部分与剩余特性的具体方案。
 
 ## 1. 当前状态
 
-- **0.2.0 已发布**（tag v0.2.0）。main 之上已合入五个波次：
+- **0.2.0 已发布**（tag v0.2.0）。main 之上已合入六个波次：
 
 | 提交 | 内容 |
 | --- | --- |
@@ -15,13 +15,15 @@
 | `1c1e8dd` | 默认请求头（HTTP 族）、FTP 主动模式、BT 端口/DHT/上传限速/屏蔽列表/Tracker → 插件引擎 |
 | `4710e01` | 计划下载窗口（daemon 调度器，支持跨午夜）+ 完成/失败桌面通知 |
 | `4f9493a` | Windows：named pipe transport（无新依赖），daemon/UI/CLI/native-host 全部跨平台，CI Windows job 跑回环测试 |
-| （4.2） | RPC over TCP：`rpc_listen`/`rpc_secret` settings + `--rpc-listen`，token 鉴权（常数时间，热轮换），CLI `--socket ip:port`，`tests/rpc.rs` 6 用例 |
+| `1353da9` | RPC over TCP：`rpc_listen`/`rpc_secret` settings + `--rpc-listen`，token 鉴权（常数时间，热轮换），CLI `--socket ip:port`，`tests/rpc.rs` 6 用例 |
 
 - **设置页现状**：10 个分类中每个控件要么真实生效、要么是诚实的能力说明卡，
   没有「点了没反应」或显示假值的控件。
 - **质量门禁**：`cargo fmt --all --check` + 全仓 86 套件 + CI 三平台
-  （Linux 全量测试，Windows 测试 transport 回环 + 全量 check，macOS check）。
-  macOS runner 偶发 cancel——`gh run rerun <id> --failed` 重跑即可，不是代码问题。
+  （Linux 全量测试，Windows 测 transport + rpc 回环 + 全量 check，macOS
+  check）。macOS runner 偶发 cancel——`gh run rerun <id> --failed` 重跑即可，
+  不是代码问题。Linux 上 `system_proxy` stub 测试族偶发失败（runner 环境），
+  单跑必过，重跑即可。
 
 ## 2. 架构速查（新会话必读）
 
@@ -89,6 +91,9 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
     `last_os_error()` 再 CloseHandle（否则错误码被覆盖）。
   - 本机 Linux 无法交叉验证 Windows 编译（ring/rusqlite 需 MSVC/mingw），
     **Windows 侧只有 CI 是权威判定**，别只看本地 `cargo check`。
+  - **Windows 上集成测试的 daemon 端点必须是 `\\.\pipe\` 名**，不能拿
+    `root/daemon.sock` 当 socket（`Listener::bind` 报错、daemon 起不来、
+    用例全灭——rpc.rs 踩过，见 `2d9fa72`）。
 
 ## 4. 下一批特性（按价值排序）
 
@@ -128,14 +133,16 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
     CI Windows job 与 transport 回环一起实跑。
 - **明确不做**：TLS——文档写明「仅限可信网络或 SSH 隧道」。
 
-### 4.3 浏览器扩展接管（依赖 4.2）
+### 4.3 浏览器扩展接管
 
+- **依赖已就绪**：4.1（named pipe）与 4.2（TCP+token RPC，`connect_rpc`）
+  都已落地。
 - **现状**：`scripts/install-native-messaging.sh` 装 native-host manifest；
-  dashboard 显示是否已安装（`browser_extension_installed()`）；但没有常驻
-  通道，扩展无处投递任务。
+  dashboard 显示是否已安装（`browser_extension_installed()`）；native-host
+  能转发 `add`，但扩展本体与常驻通道都还没有。
 - **方案**：扩展 → native host → daemon。先 Unix socket 版（权限位即可信），
-  4.2 落地后扩展直连 TCP+token。抓取的 `referrer/cookies/headers` 直接进
-  `TaskSpec.settings`（http 插件已支持，无需引擎改动）。细节已有
+  或扩展直连 TCP+token（4.2 通道现成）。抓取的 `referrer/cookies/headers`
+  直接进 `TaskSpec.settings`（http 插件已支持，无需引擎改动）。细节已有
   `docs/BROWSER_INTEGRATION.md`。
 
 ### 4.4 媒体转码（ffmpeg 管线）
