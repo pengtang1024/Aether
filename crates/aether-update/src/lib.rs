@@ -18,6 +18,7 @@ use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use reqwest::blocking::Client;
 use semver::Version;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 use url::Url;
@@ -299,6 +300,77 @@ fn verify_signature(
         .map_err(|error| UpdateError::Protocol(format!("signature: {error}")))?;
     key.verify(manifest, &signature)
         .map_err(|_| UpdateError::Signature)
+}
+
+/// Canonical bytes for a plugin manifest signature: the manifest JSON with
+/// the `signature` key removed. `serde_json::Value` maps are sorted
+/// (this workspace does not enable `preserve_order`), so the bytes are
+/// identical no matter how the file was formatted or ordered.
+pub fn canonical_manifest_bytes(manifest: &Value) -> Vec<u8> {
+    let mut clone = manifest.clone();
+    if let Some(object) = clone.as_object_mut() {
+        object.remove("signature");
+    }
+    // Serializing a Value cannot fail.
+    serde_json::to_vec(&clone).expect("serde_json::Value serialization")
+}
+
+/// Verify a plugin manifest's embedded Ed25519 `signature` (base64) against
+/// the release public key (same trust root as update manifests).
+pub fn verify_manifest_signature(
+    manifest: &Value,
+    public_key_base64: &str,
+) -> Result<(), UpdateError> {
+    let signature = manifest
+        .get("signature")
+        .and_then(Value::as_str)
+        .ok_or_else(|| UpdateError::Protocol("manifest has no signature".into()))?;
+    let key = decode_public_key(public_key_base64)?;
+    verify_signature(
+        &canonical_manifest_bytes(manifest),
+        signature.as_bytes(),
+        &key,
+    )
+}
+
+/// Verify every entry of the manifest's `files` map (relative path → sha256)
+/// against the package on disk. The map is inside the signed bytes, so this
+/// is what makes the *binaries* — not just the manifest — authenticated.
+pub fn verify_package_files(package_root: &Path, manifest: &Value) -> Result<(), UpdateError> {
+    let files = manifest
+        .get("files")
+        .and_then(Value::as_object)
+        .filter(|files| !files.is_empty())
+        .ok_or_else(|| UpdateError::Protocol("manifest has no files map".into()))?;
+    for (relative, expected) in files {
+        let expected = expected
+            .as_str()
+            .ok_or_else(|| UpdateError::Protocol(format!("files.{relative} is not a string")))?;
+        let path = Path::new(relative);
+        let unsafe_path = path.is_absolute()
+            || path.components().any(|component| {
+                matches!(
+                    component,
+                    std::path::Component::ParentDir | std::path::Component::RootDir
+                )
+            });
+        if unsafe_path {
+            return Err(UpdateError::Protocol(format!(
+                "files entry is not a safe relative path: {relative}"
+            )));
+        }
+        let bytes = fs::read(package_root.join(path)).map_err(|error| {
+            UpdateError::Protocol(format!("missing package file {relative}: {error}"))
+        })?;
+        let mut digest = Sha256::new();
+        digest.update(&bytes);
+        if !hex(&digest.finalize()).eq_ignore_ascii_case(expected) {
+            return Err(UpdateError::Protocol(format!(
+                "hash mismatch for package file {relative}"
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn hex(bytes: &[u8]) -> String {

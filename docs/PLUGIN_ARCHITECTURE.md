@@ -91,8 +91,12 @@ aether-plugin-http/
 - `id` 全局唯一，小写；任务里持久化 `plugin_id` + `plugin_version`。
 - `api` 是 IPC/SDK 大版本；Host 只加载 `api` 匹配的插件。
 - `min_host`/`max_host` 做 Host 版本约束；升级 Host 时先检查插件兼容性。
-- 清单和二进制都有 SHA-256；发布包由第一方 release key 签名；Host 默认只加载签名
-  有效的插件。开发模式可显式允许本地未签名插件。
+- `files`（相对路径 → SHA-256，不含 plugin.json）+ `signature` 由同一把
+  第一方 release key（Ed25519，与 update 清单同源）覆盖：签名载荷为移除
+  `signature` 键后的 canonical JSON，`files` 在载荷内 → 二进制被一并认证。
+  `install_plugin` 在配置了公钥时强制验签 + 逐文件核对；无公钥时本地未签名
+  包需要显式 `AETHER_ALLOW_UNSIGNED_PLUGINS=1`。签名工具：
+  `aether-plugin-sign <package-dir>`。
 - 插件目录只读；用户安装的可选插件放用户数据目录，Host 校验签名后加载。
 
 ## 4. IPC 协议

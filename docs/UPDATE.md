@@ -16,7 +16,14 @@
 # 私钥是 32 字节 seed 的 base64，只在本机/离线环境设置
 AETHER_UPDATE_SECRET_KEY=... cargo run -p aether-update --bin aether-update-sign -- update.json
 # 输出 update.json.sig 和 public key
+
+# 插件包签名（manifest 内嵌 signature，同把 release key）：
+# 重算 files 哈希并回填 canonical 签名；文件改动后重跑即可
+AETHER_UPDATE_SECRET_KEY=... cargo run -p aether-update --bin aether-plugin-sign -- <package-dir>
 ```
+
+插件 manifest 的签名载荷是 canonical bytes（去掉 `signature` 键后的
+`serde_json::Value` 序列化），`files` 映射在载荷内 → 包内文件被一并覆盖。
 
 ## 2. 清单
 

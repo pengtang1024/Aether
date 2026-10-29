@@ -44,6 +44,11 @@ pub struct PluginManifest {
     pub settings_schema: Option<serde_json::Value>,
     #[serde(default)]
     pub detail_schema: Option<serde_json::Value>,
+    /// SHA-256 of every file in the package except `plugin.json` itself,
+    /// keyed by package-relative path. Covered by `signature`, so a swapped
+    /// binary fails verification.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub files: BTreeMap<String, String>,
     #[serde(default)]
     pub signature: Option<String>,
 }

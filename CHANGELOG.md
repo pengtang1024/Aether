@@ -7,6 +7,23 @@ versioning; 0.x releases may still change structure.
 
 ### Added
 
+- Plugins can be installed with verification. The manifest gains a `files`
+  map (relative path → SHA-256, excluding `plugin.json` itself); `signature`
+  now carries an Ed25519 signature over the canonical manifest bytes (the
+  JSON value without the `signature` key, so formatting and key order do not
+  matter), which transitively covers every file in the package. The new
+  `aether-plugin-sign <package-dir>` tool recomputes `files` and signs with
+  the existing release key. The daemon's `install_plugin` RPC validates
+  identity/API/host compatibility/executable path safety, then — when
+  `AETHER_UPDATE_PUBKEY` is configured — requires a valid signature and
+  checks every file hash; without a key, unsigned installs need the explicit
+  `AETHER_ALLOW_UNSIGNED_PLUGINS=1` dev opt-in. Installs stage a copy and
+  swap with rollback, refuse to replace a plugin with running tasks, retire
+  idle old processes, and re-apply the persisted disable list on rescan
+  (`rescan_plugins` RPC, wired to the plugin page's reload button). The
+  plugin page's install row now takes a package path, and the three switches
+  with no mechanism behind them became honest capability labels.
+
 - Clipboard link detection: an opt-in toggle (settings → general) starts a
   background poll that watches for a *changed* clipboard value whose first
   token is a download URL (http/https/ftp/ftps/magnet/ed2k/thunder). When it

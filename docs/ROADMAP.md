@@ -1,7 +1,7 @@
 # 路线图与会话交接
 
 > 面向后续会话/贡献者：现在在哪、下一步做什么、怎么做、别踩哪些坑。
-> 最后更新：2026-10-29（main @ `4c84ac2`）。历史盲区清单见 `GAP_AUDIT.md`，
+> 最后更新：2026-10-29（main @ 待提交）。历史盲区清单见 `GAP_AUDIT.md`，
 > 本文跟踪其中已完成的部分与剩余特性的具体方案。
 
 ## 1. 当前状态
@@ -199,12 +199,31 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
 
 ### 4.6 插件安装/更新接 daemon + manifest 签名
 
-- **现状**：插件页「安装」「更新全部」是诚实 toast；插件从 `plugins_dir`
-  扫描注册（SQLite 持久化启用状态）。自动更新通道（`aether_update` +
-  `SIGNING.md` 的签名体系）已存在但只覆盖主程序。
-- **方案**：daemon `install_plugin(path)`（校验 manifest 签名 → 复制进
-  plugins_dir → 注册表刷新）+ `update_check`（复用 update_url 清单，插件条目
-  带独立签名）；UI 插件页两个按钮接线。签名 key 轮换策略见 `SIGNING.md`。
+- **4.6a 已落地（安装 + 签名）**：
+  - **签名契约**：`plugin.json` 新增 `files`（包内相对路径 → sha256，不含
+    plugin.json 自身）；`signature` = base64 Ed25519 over **canonical bytes**
+    = 移除 `signature` 键后的 `serde_json::Value` 序列化（workspace 未启用
+    preserve_order → BTreeMap 有序，与文件格式/键序无关）。签名覆盖 files →
+    篡改任何包内文件都会被抓住。信任根复用 update 的 release key
+    （`AETHER_UPDATE_PUBKEY` / `--update-key`）。
+  - **策略**：配置了公钥 → 签名必填 + 逐条验 files；无公钥 → 拒绝，
+    除非 `AETHER_ALLOW_UNSIGNED_PLUGINS=1`（显式开发逃生门，按次请求检查）。
+  - **工具**：`aether-plugin-sign <package_dir>`（aether-update 新 bin，
+    复用 `AETHER_UPDATE_SECRET_KEY`）——算 files、canonical 签名、回填。
+  - **daemon**：`install_plugin` RPC（validate + api/host 版本 + 可执行路径
+    安全 + 验签 → staging 拷贝 → swap 失败回滚旧版 → 重扫 registry 保留禁用
+    列表；运行中任务占用的插件拒绝覆盖，空闲旧进程退役）+ `rescan_plugins`
+    RPC（重扫 + 重放禁用列表，供「重新加载」按钮）。
+  - **UI**：安装行改为「包目录路径 LineEdit + 安装按钮」（结果经 notice
+    toast 反馈）；「重新加载」接 rescan；三个假开关（自动更新/外部插件/
+    开发者模式）改为诚实能力说明文本。
+  - **验收**：`aether-update/tests/plugin_sign.rs`（签名工具 roundtrip：重排
+    重格式化仍验过、篡改二进制被 files 抓、篡改 manifest 被签名抓、错 key/
+    无 files/缺文件/路径穿越全拒）+ `aether-daemon/tests/install.rs` 3 用例
+    （未签名策略开关、签名/错 key/篡改/覆盖安装、rescan 保留禁用状态）。
+- **4.6b 待做**：`UpdateManifest` 加 `plugins` 条目（version/url/sha256/
+  独立签名）、`update_check` RPC、更新全部的下载安装链、自动更新开关接线；
+  key 轮换策略见 `SIGNING.md`。
 
 ### 4.7 发布与供应链
 

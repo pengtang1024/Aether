@@ -1302,6 +1302,17 @@ fn main() -> Result<(), slint::PlatformError> {
                             .set_setting(serde_json::json!({"ffmpeg_path": value.as_str()}));
                         hint = Some("ffmpeg 路径已保存：对之后开始的任务生效".into());
                     }
+                    "plugin-install" => {
+                        let path = value.as_str().trim();
+                        if path.is_empty() {
+                            hint = Some("请输入插件包目录路径（含 plugin.json）".into());
+                        } else {
+                            // Result (installed / refused: signature, hashes,
+                            // busy) arrives through the notice channel.
+                            st.backend.install_plugin(path);
+                            hint = Some("正在安装插件…".into());
+                        }
+                    }
                     "ftp-passive" => {
                         st.backend.set_setting(serde_json::json!({
                             "ftp_passive": value.as_str() == "true"
@@ -1612,13 +1623,21 @@ fn main() -> Result<(), slint::PlatformError> {
             let Some(ui) = ui_handle.upgrade() else {
                 return;
             };
-            let message = match action.as_str() {
-                "install" => "插件安装器尚未接线",
-                "update-all" => "更新检查尚未接线",
-                "reload" => "daemon 重启时会重新扫描插件目录",
-                _ => "该操作尚未接线",
-            };
-            show_toast(&ui, &state, message);
+            match action.as_str() {
+                // Install goes through the package-path field (the button
+                // emits `plugin-install` with the typed path).
+                "install" => show_toast(&ui, &state, "请在「安装插件」输入包目录路径"),
+                // Update downloads land with the update-manifest channel
+                // (4.6b); until then this honestly says so.
+                "update-all" => {
+                    show_toast(&ui, &state, "自动更新通道尚未上线：更新清单还没有插件条目")
+                }
+                "reload" => {
+                    show_toast(&ui, &state, "正在重新扫描插件目录…");
+                    state.borrow().backend.rescan_plugins();
+                }
+                _ => show_toast(&ui, &state, "该操作尚未接线"),
+            }
         });
     }
 

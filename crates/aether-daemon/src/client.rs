@@ -280,6 +280,25 @@ impl Client {
         Ok(value.get("settings").cloned().unwrap_or(Value::Null))
     }
 
+    /// Install a plugin package (directory containing plugin.json) into the
+    /// daemon's plugins directory. The manifest signature is verified when
+    /// the daemon has a release key configured.
+    pub fn install_plugin(&mut self, path: &str) -> Result<Value, DaemonError> {
+        self.call(
+            "install_plugin",
+            None,
+            None,
+            None,
+            None,
+            json!({ "path": path }),
+        )
+    }
+
+    /// Re-scan the plugins directory and report the installed count.
+    pub fn rescan_plugins(&mut self) -> Result<Value, DaemonError> {
+        self.call("rescan_plugins", None, None, None, None, json!({}))
+    }
+
     pub fn update_status(&mut self) -> Result<Value, DaemonError> {
         self.call("update_status", None, None, None, None, json!({}))
     }

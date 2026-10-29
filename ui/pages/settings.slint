@@ -773,6 +773,9 @@ component InstalledPlugin inherits Rectangle {
 component PluginPanel inherits Rectangle {
     in-out property <int> plugin-filter: 0;
     in property <string> plugins-dir: "";
+    // Draft path of the package to install (UI-local until the button
+    // fires `plugin-install`).
+    in-out property <string> install-path: "";
     callback changed(string, string);
     callback plugin-toggled(int, bool);
     callback plugin-action(string);
@@ -829,14 +832,26 @@ component PluginPanel inherits Rectangle {
             SettingRow {
                 icon-source: AetherIcons.refresh;
                 title: "自动更新插件";
-                description: "启动时检查插件新版本";
-                Switch { checked: true; toggled => { root.changed("plugin-auto-update", self.checked ? "true" : "false"); } }
+                description: "依赖更新清单里的插件条目；清单通道就绪后接线（手动安装已可用）";
+                divider: false;
+                Text {
+                    text: "未上线";
+                    color: Aether.on-surface-muted;
+                    font-size: Aether.text-caption;
+                    vertical-alignment: center;
+                }
             }
             SettingRow {
                 icon-source: AetherIcons.shield;
-                title: "允许外部插件";
-                description: "加载插件目录之外的扩展";
-                Switch { checked: false; toggled => { root.changed("plugin-external", self.checked ? "true" : "false"); } }
+                title: "加载插件目录之外的文件";
+                description: "不做签名校验的直加载没有提供；请用上面的「安装插件」（会复制进插件目录并验签）";
+                divider: false;
+                Text {
+                    text: "不支持";
+                    color: Aether.on-surface-muted;
+                    font-size: Aether.text-caption;
+                    vertical-alignment: center;
+                }
             }
             SettingRow {
                 icon-source: AetherIcons.folder;
@@ -853,11 +868,20 @@ component PluginPanel inherits Rectangle {
             SettingRow {
                 icon-source: AetherIcons.download;
                 title: "安装插件";
-                description: "从文件或 URL 安装";
+                description: "插件包目录的绝对路径（含 plugin.json）；daemon 校验 manifest 签名与文件哈希后复制进插件目录";
                 divider: false;
-                TextButton {
-                    text: "选择插件文件";
-                    clicked => { root.plugin-action("install"); }
+                HorizontalLayout {
+                    spacing: 6px;
+                    LineEdit {
+                        text <=> root.install-path;
+                        placeholder-text: "/path/to/plugin-package";
+                        horizontal-stretch: 1;
+                        accepted => { root.changed("plugin-install", self.text); }
+                    }
+                    TextButton {
+                        text: "安装";
+                        clicked => { root.changed("plugin-install", root.install-path); }
+                    }
                 }
             }
         }
@@ -870,8 +894,14 @@ component PluginPanel inherits Rectangle {
             SettingRow {
                 icon-source: AetherIcons.tune;
                 title: "开发者模式";
-                description: "显示插件日志和调试入口";
-                Switch { checked: false; toggled => { root.changed("plugin-dev", self.checked ? "true" : "false"); } }
+                description: "插件日志查看与调试入口（任务详情里已有每任务日志）";
+                divider: false;
+                Text {
+                    text: "未实现";
+                    color: Aether.on-surface-muted;
+                    font-size: Aether.text-caption;
+                    vertical-alignment: center;
+                }
             }
             SettingRow {
                 icon-source: AetherIcons.refresh;

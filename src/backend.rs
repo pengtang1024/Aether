@@ -84,6 +84,13 @@ mod imp {
             row: i32,
             enabled: bool,
         },
+        /// Install a plugin package directory (daemon verifies its manifest
+        /// signature when a release key is configured).
+        InstallPlugin {
+            path: String,
+        },
+        /// Re-scan the plugins directory without restarting the daemon.
+        RescanPlugins,
     }
 
     struct Shared {
@@ -163,6 +170,20 @@ mod imp {
             let _ = self.commands.send(Command::Plugin { row, enabled });
         }
 
+        /// Install a plugin package (directory containing plugin.json).
+        /// Success and failure both surface through `take_notice`.
+        pub fn install_plugin(&self, path: &str) {
+            let _ = self.commands.send(Command::InstallPlugin {
+                path: path.to_string(),
+            });
+        }
+
+        /// Ask the daemon to re-scan the plugins directory (count in the
+        /// resulting notice).
+        pub fn rescan_plugins(&self) {
+            let _ = self.commands.send(Command::RescanPlugins);
+        }
+
         /// Pop the most recent error surfaced by the daemon.
         pub fn take_notice(&self) -> Option<String> {
             self.shared.lock().unwrap().notice.take()
@@ -188,6 +209,9 @@ mod imp {
     struct Worker {
         client: Option<Client>,
         subscription: Option<Subscription>,
+        /// Success feedback from the last command, drained into `Shared`
+        /// by the worker loop (errors travel through the `handle` result).
+        notice: Option<String>,
         /// Daemon records keyed by ASCII id.
         records: HashMap<String, StoredTask>,
         /// Display order (newest first).
@@ -241,11 +265,18 @@ mod imp {
             }
 
             if let Ok(command) = receiver.recv_timeout(Duration::from_millis(50)) {
-                if let Err(error) = worker.handle(command) {
-                    // Connection died mid-command: drop it and reconnect.
-                    worker.disconnect();
-                    let mut guard = shared.lock().unwrap();
-                    guard.notice = Some(error.to_string());
+                match worker.handle(command) {
+                    Ok(()) => {
+                        if let Some(notice) = worker.notice.take() {
+                            shared.lock().unwrap().notice = Some(notice);
+                        }
+                    }
+                    Err(error) => {
+                        // Connection died mid-command: drop it and reconnect.
+                        worker.disconnect();
+                        let mut guard = shared.lock().unwrap();
+                        guard.notice = Some(error.to_string());
+                    }
                 }
             }
             worker.pump_events();
@@ -466,6 +497,24 @@ mod imp {
                     let plugin_id = plugin.id.clone();
                     client.set_plugin_enabled(&plugin_id, enabled)?;
                     self.needs_refresh = true;
+                }
+                Command::InstallPlugin { path } => {
+                    let value = client.install_plugin(&path)?;
+                    let id = value["plugin_id"].as_str().unwrap_or("plugin").to_string();
+                    let version = value["version"].as_str().unwrap_or_default().to_string();
+                    let replaced = value["replaced"].as_bool().unwrap_or(false);
+                    self.needs_refresh = true;
+                    self.notice = Some(if replaced {
+                        format!("已更新插件 {id} {version}")
+                    } else {
+                        format!("已安装插件 {id} {version}")
+                    });
+                }
+                Command::RescanPlugins => {
+                    let value = client.rescan_plugins()?;
+                    let total = value["plugins"].as_u64().unwrap_or(0);
+                    self.needs_refresh = true;
+                    self.notice = Some(format!("已重新扫描插件目录：{total} 个插件"));
                 }
             }
             Ok(())

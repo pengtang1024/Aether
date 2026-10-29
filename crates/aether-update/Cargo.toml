@@ -22,3 +22,7 @@ url = "2"
 [[bin]]
 name = "aether-update-sign"
 path = "src/bin/sign.rs"
+
+[[bin]]
+name = "aether-plugin-sign"
+path = "src/bin/plugin_sign.rs"
