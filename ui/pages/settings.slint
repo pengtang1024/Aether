@@ -239,7 +239,7 @@ component GeneralPanel inherits Rectangle {
                 description: @tr("daemon 启动参数决定，新任务默认保存到这里");
                 divider: false;
                 Text {
-                    text: root.download-dir == "" ? "未连接" : root.download-dir;
+                    text: root.download-dir == "" ? @tr("未连接") : root.download-dir;
                     color: Aether.on-surface-variant;
                     font-size: Aether.text-caption;
                     font-family: "JetBrains Mono";
@@ -733,7 +733,7 @@ component InstalledPlugin inherits Rectangle {
 
             Text {
                 text: "v" + root.plugin.version + "  ·  " + root.plugin.category
-                    + "  ·  " + (root.plugin.kind == 0 ? "内置" : "社区");
+                    + "  ·  " + (root.plugin.kind == 0 ? @tr("内置") : @tr("社区"));
                 color: Aether.on-surface-muted;
                 font-size: Aether.text-micro;
             }
@@ -789,14 +789,14 @@ component PluginPanel inherits Rectangle {
         PanelHeader {
             icon-source: AetherIcons.layers;
             title: @tr("插件");
-            subtitle: PluginCatalog.total + " 个已安装 · " + PluginCatalog.active + " 个运行中 · " + PluginCatalog.updates + " 个可更新";
+            subtitle: PluginCatalog.total + @tr(" 个已安装 · ") + PluginCatalog.active + @tr(" 个运行中 · ") + PluginCatalog.updates + @tr(" 个可更新");
             tone: Aether.info;
         }
 
         SectionCard {
             icon-source: AetherIcons.list;
             title: @tr("插件库");
-            subtitle: PluginCatalog.builtin + " 个内置 · " + PluginCatalog.community + " 个社区 · 独立进程运行";
+            subtitle: PluginCatalog.builtin + @tr(" 个内置 · ") + PluginCatalog.community + @tr(" 个社区 · 独立进程运行");
 
             HorizontalLayout {
                 height: Aether.control-md;
@@ -857,7 +857,7 @@ component PluginPanel inherits Rectangle {
                 title: @tr("插件目录");
                 description: @tr("本地插件的安装位置");
                 Text {
-                    text: root.plugins-dir == "" ? "未连接" : root.plugins-dir;
+                    text: root.plugins-dir == "" ? @tr("未连接") : root.plugins-dir;
                     color: Aether.on-surface-variant;
                     font-size: Aether.text-caption;
                     font-family: "JetBrains Mono";
@@ -1098,7 +1098,7 @@ component AdvancedPanel inherits Rectangle {
                 description: @tr("任务、历史与插件元数据");
                 divider: false;
                 Text {
-                    text: root.data-dir == "" ? "未连接" : root.data-dir;
+                    text: root.data-dir == "" ? @tr("未连接") : root.data-dir;
                     color: Aether.on-surface-variant;
                     font-size: Aether.text-caption;
                     font-family: "JetBrains Mono";
@@ -1111,7 +1111,7 @@ component AdvancedPanel inherits Rectangle {
                 description: @tr("第一方插件的安装位置");
                 divider: false;
                 Text {
-                    text: root.plugins-dir == "" ? "未连接" : root.plugins-dir;
+                    text: root.plugins-dir == "" ? @tr("未连接") : root.plugins-dir;
                     color: Aether.on-surface-variant;
                     font-size: Aether.text-caption;
                     font-family: "JetBrains Mono";

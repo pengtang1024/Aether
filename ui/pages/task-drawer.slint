@@ -343,21 +343,21 @@ export component TaskDrawer inherits FocusScope {
                     MetricIcon {
                         icon-source: AetherIcons.gauge;
                         tone: Aether.live;
-                        tip: "实时速度  " + root.detail.speed;
+                        tip: @tr("实时速度  ") + root.detail.speed;
                         horizontal-stretch: 1;
                     }
 
                     MetricIcon {
                         icon-source: AetherIcons.clock;
                         tone: Aether.primary-bright;
-                        tip: "剩余时间  " + root.detail.eta;
+                        tip: @tr("剩余时间  ") + root.detail.eta;
                         horizontal-stretch: 1;
                     }
 
                     MetricIcon {
                         icon-source: AetherIcons.drive;
                         tone: Aether.info;
-                        tip: "文件大小  " + root.detail.size;
+                        tip: @tr("文件大小  ") + root.detail.size;
                         horizontal-stretch: 1;
                     }
                 }
@@ -415,17 +415,17 @@ export component TaskDrawer inherits FocusScope {
 
                     InfoIcon {
                         icon-source: AetherIcons.link;
-                        tip: "来源  " + root.detail.source;
+                        tip: @tr("来源  ") + root.detail.source;
                     }
 
                     InfoIcon {
                         icon-source: AetherIcons.folder;
-                        tip: "保存位置  " + root.detail.path;
+                        tip: @tr("保存位置  ") + root.detail.path;
                     }
 
                     InfoIcon {
                         icon-source: AetherIcons.note;
-                        tip: "备注  " + (root.detail.note != "" ? root.detail.note : "—");
+                        tip: @tr("备注  ") + (root.detail.note != "" ? root.detail.note : "—");
                     }
 
                     Rectangle { horizontal-stretch: 1; background: transparent; }

@@ -663,3 +663,93 @@ msgstr "Transfer speed  ·  peak "
 msgid "分片进度  "
 msgstr "Chunk progress  "
 
+msgid "搜索"
+msgstr "Search"
+
+msgid "最近 60 秒"
+msgstr "Last 60 seconds"
+
+msgid "主页"
+msgstr "Home"
+
+msgid "设置"
+msgstr "Settings"
+
+msgid "新建下载"
+msgstr "New download"
+
+msgid "使用文档"
+msgstr "Documentation"
+
+msgid "反馈"
+msgstr "Feedback"
+
+msgid "实时速度  "
+msgstr "Speed  "
+
+msgid "剩余时间  "
+msgstr "Time left  "
+
+msgid "文件大小  "
+msgstr "Size  "
+
+msgid "来源  "
+msgstr "Source  "
+
+msgid "保存位置  "
+msgstr "Saved to  "
+
+msgid "备注  "
+msgstr "Note  "
+
+msgid "未连接"
+msgstr "Not connected"
+
+msgid " 个已安装 · "
+msgstr " installed · "
+
+msgid " 个运行中 · "
+msgstr " running · "
+
+msgid " 个可更新"
+msgstr " updates"
+
+msgid " 个内置 · "
+msgstr " built-in · "
+
+msgid " 个社区 · 独立进程运行"
+msgstr " community · standalone"
+
+msgid "取消"
+msgstr "Cancel"
+
+msgid "开始下载"
+msgstr "Start download"
+
+msgid "不限"
+msgstr "Off"
+
+msgid "低"
+msgstr "Low"
+
+msgid "中"
+msgstr "Medium"
+
+msgid "高"
+msgstr "High"
+
+msgid " · 队列 "
+msgstr " · queued "
+
+msgid " · 连接 24"
+msgstr " · 24 connections"
+
+msgid " · 剩余 "
+msgstr " · left "
+
+msgid " 个任务 · 按最近添加排序"
+msgstr " tasks · most recently added"
+
+msgid "搜索任务名称或地址"
+msgstr "Search by name or URL"
+

@@ -9,6 +9,7 @@
 mod backend;
 mod chart;
 mod clipboard;
+mod i18n;
 mod model;
 mod tray;
 
@@ -167,42 +168,56 @@ fn file_tone(name: &str) -> i32 {
 /// One-line purpose per first-party plugin, shown in the settings catalogue.
 fn plugin_blurb(info: &PluginInfo) -> String {
     match info.id.as_str() {
-        "http" => "HTTP / HTTPS 多线程下载".into(),
-        "bt" => "BT / 磁力链下载与做种".into(),
-        "ftp" => "FTP / FTPS 站点传输".into(),
-        "sftp" => "SFTP / SSH 文件传输".into(),
-        "media" => "网页音视频嗅探（HLS / DASH）".into(),
-        "extractor" => "yt-dlp 视频站点支持".into(),
-        "rtmp" => "RTMP 直播流录制".into(),
-        "webdav" => "WebDAV 远程目录".into(),
-        "s3" => "S3 / 对象存储".into(),
-        "gdrive" => "Google Drive 分享链接".into(),
-        "onedrive" => "OneDrive 分享链接".into(),
-        "dropbox" => "Dropbox 分享链接".into(),
-        "baidupan" => "百度网盘（官方 API）".into(),
-        "aliyunpan" => "阿里云盘（官方 API）".into(),
-        "thunder" => "迅雷链接".into(),
-        "ipfs" => "IPFS / IPNS 内容".into(),
+        "http" => i18n::tr(
+            "HTTP / HTTPS 多线程下载",
+            "Multi-threaded HTTP/HTTPS downloads",
+        ),
+        "bt" => i18n::tr(
+            "BT / 磁力链下载与做种",
+            "BitTorrent / magnet downloads and seeding",
+        ),
+        "ftp" => i18n::tr("FTP / FTPS 站点传输", "FTP / FTPS transfers"),
+        "sftp" => i18n::tr("SFTP / SSH 文件传输", "SFTP / SSH file transfers"),
+        "media" => i18n::tr(
+            "网页音视频嗅探（HLS / DASH）",
+            "Web video streams (HLS / DASH)",
+        ),
+        "extractor" => i18n::tr("yt-dlp 视频站点支持", "Video sites via yt-dlp"),
+        "rtmp" => i18n::tr("RTMP 直播流录制", "RTMP live stream capture"),
+        "webdav" => i18n::tr("WebDAV 远程目录", "Remote WebDAV directories"),
+        "s3" => i18n::tr("S3 / 对象存储", "S3 / object storage"),
+        "gdrive" => i18n::tr("Google Drive 分享链接", "Google Drive share links"),
+        "onedrive" => i18n::tr("OneDrive 分享链接", "OneDrive share links"),
+        "dropbox" => i18n::tr("Dropbox 分享链接", "Dropbox share links"),
+        "baidupan" => i18n::tr("百度网盘（官方 API）", "Baidu Netdisk (official API)"),
+        "aliyunpan" => i18n::tr("阿里云盘（官方 API）", "Aliyun Drive (official API)"),
+        "thunder" => i18n::tr("迅雷链接", "Thunder links"),
+        "ipfs" => i18n::tr("IPFS / IPNS 内容", "IPFS / IPNS content"),
         other => {
             if info.protocols.is_empty() {
-                format!("协议：{other}")
+                i18n::tr(format!("协议：{other}"), format!("Protocol: {other}"))
             } else {
-                format!("协议：{}", info.protocols.join(", "))
+                i18n::tr(
+                    format!("协议：{}", info.protocols.join(", ")),
+                    format!("Protocols: {}", info.protocols.join(", ")),
+                )
             }
         }
     }
 }
 
 /// Catalogue grouping; mirrors the filter tabs (全部/内置/已启用).
-fn plugin_category(id: &str) -> &'static str {
+fn plugin_category(id: &str) -> String {
     match id {
-        "http" => "HTTP",
-        "bt" => "BT",
-        "ftp" | "sftp" => "传输",
-        "media" | "extractor" | "rtmp" => "媒体",
-        "webdav" | "s3" | "ipfs" => "存储",
-        "gdrive" | "onedrive" | "dropbox" | "baidupan" | "aliyunpan" | "thunder" => "网盘",
-        _ => "其他",
+        "http" => "HTTP".into(),
+        "bt" => "BT".into(),
+        "ftp" | "sftp" => i18n::tr("传输", "Transfer"),
+        "media" | "extractor" | "rtmp" => i18n::tr("媒体", "Media"),
+        "webdav" | "s3" | "ipfs" => i18n::tr("存储", "Storage"),
+        "gdrive" | "onedrive" | "dropbox" | "baidupan" | "aliyunpan" | "thunder" => {
+            i18n::tr("网盘", "Cloud drive")
+        }
+        _ => i18n::tr("其他", "Other"),
     }
 }
 
@@ -288,9 +303,9 @@ fn to_row(task: &model::Task, detail_id: i32) -> TaskRow {
     let status = task.status;
     let eta = match status {
         Status::Downloading => format_eta(task.remaining_seconds()),
-        Status::Failed => "校验失败".to_string(),
-        Status::Paused => "已暂停".to_string(),
-        Status::Queued => "等待开始".to_string(),
+        Status::Failed => i18n::tr("校验失败", "Checksum failed"),
+        Status::Paused => i18n::tr("已暂停", "Paused"),
+        Status::Queued => i18n::tr("等待开始", "Waiting to start"),
         _ => String::new(),
     };
     let kind_tone = file_tone(&task.name);
@@ -546,10 +561,10 @@ fn refresh_rows(ui: &AppWindow, state: &Rc<RefCell<State>>) {
                 .collect::<Vec<slint::SharedString>>(),
         )));
         let types = stats.categories.iter().filter(|bytes| **bytes > 0).count();
-        ui.set_weekly_label(slint::SharedString::from(format!(
-            "{} · {} 类",
-            format_size(stats.week_bytes as f64),
-            types
+        let week = format_size(stats.week_bytes as f64);
+        ui.set_weekly_label(slint::SharedString::from(i18n::tr(
+            format!("{week} · {types} 类"),
+            format!("{week} · {types} types"),
         )));
         ui.set_avg_file(
             if stats.today_files > 0 {
@@ -571,17 +586,24 @@ fn refresh_rows(ui: &AppWindow, state: &Rc<RefCell<State>>) {
             }
             .into(),
         );
-        ui.set_engine_name("内置插件宿主".into());
-        ui.set_plugins_text(format!("{}/{} 个", stats.plugins_enabled, stats.plugins_total).into());
+        ui.set_engine_name(i18n::tr("内置插件宿主", "Built-in plugin host").into());
+        ui.set_plugins_text(
+            i18n::tr(
+                format!("{}/{} 个", stats.plugins_enabled, stats.plugins_total),
+                format!("{}/{} plugins", stats.plugins_enabled, stats.plugins_total),
+            )
+            .into(),
+        );
+        let protocol_count = snapshot
+            .plugins
+            .iter()
+            .flat_map(|plugin| plugin.protocols.iter())
+            .collect::<std::collections::BTreeSet<_>>()
+            .len();
         ui.set_protocols_text(
-            format!(
-                "{} 种",
-                snapshot
-                    .plugins
-                    .iter()
-                    .flat_map(|plugin| plugin.protocols.iter())
-                    .collect::<std::collections::BTreeSet<_>>()
-                    .len()
+            i18n::tr(
+                format!("{} 种", protocol_count),
+                format!("{} protocols", protocol_count),
             )
             .into(),
         );
@@ -598,7 +620,13 @@ fn refresh_rows(ui: &AppWindow, state: &Rc<RefCell<State>>) {
                 )
                 .into(),
             );
-            ui.set_disk_free(format!("剩余 {}", format_size(stats.disk_free as f64)).into());
+            ui.set_disk_free(
+                i18n::tr(
+                    format!("剩余 {}", format_size(stats.disk_free as f64)),
+                    format!("{} free", format_size(stats.disk_free as f64)),
+                )
+                .into(),
+            );
         }
     }
     let peak_now = snapshot.history.iter().copied().fold(0.0_f64, f64::max);
@@ -609,18 +637,25 @@ fn refresh_rows(ui: &AppWindow, state: &Rc<RefCell<State>>) {
     });
     let minutes = st.started.elapsed().as_secs() / 60;
     ui.set_uptime_text(
-        if minutes < 60 {
-            format!("{minutes} 分钟")
-        } else {
-            format!("{}h {}m", minutes / 60, minutes % 60)
-        }
+        i18n::tr(
+            if minutes < 60 {
+                format!("{minutes} 分钟")
+            } else {
+                format!("{}h {}m", minutes / 60, minutes % 60)
+            },
+            if minutes < 60 {
+                format!("{minutes} min")
+            } else {
+                format!("{}h {}m", minutes / 60, minutes % 60)
+            },
+        )
         .into(),
     );
     ui.set_extension_status(
         if st.extension_installed {
-            "已安装"
+            i18n::tr("已安装", "Installed")
         } else {
-            "未安装"
+            i18n::tr("未安装", "Not installed")
         }
         .into(),
     );
@@ -743,7 +778,11 @@ fn refresh_detail(ui: &AppWindow, state: &Rc<RefCell<State>>) {
         area_path: area.into(),
         peak: format_speed(chart_peak(&task.history)).into(),
         sample: latest,
-        chunks_text: format!("{done_chunks} / {CHUNK_COUNT} 个分片已完成").into(),
+        chunks_text: i18n::tr(
+            format!("{done_chunks} / {CHUNK_COUNT} 个分片已完成"),
+            format!("{done_chunks} / {CHUNK_COUNT} chunks done"),
+        )
+        .into(),
     });
 
     if st.detail_data_for != st.detail_id {
@@ -1055,6 +1094,10 @@ fn main() -> Result<(), slint::PlatformError> {
     if let Some(mode) = env_theme.or_else(read_theme_mode) {
         ui.set_theme_mode(mode);
     }
+    // Rust-side strings follow UiPrefs.lang; must precede any translated
+    // push (extension status, refresh labels) below.
+    i18n::set_language(state.borrow().prefs.lang == "en");
+
     // UI-local preferences: push into the window (which applies accent /
     // motion / flow through apply-appearance) and pick the start page.
     {
@@ -1144,9 +1187,16 @@ fn main() -> Result<(), slint::PlatformError> {
                     st.detail_id = -1;
                 }
                 match action {
-                    1 if was_failed => Some("失败任务已重新开始下载"),
-                    2 if existed => Some("任务已从列表中移除"),
-                    3 if existed => Some("已在文件管理器中定位到文件"),
+                    1 if was_failed => {
+                        Some(i18n::tr("失败任务已重新开始下载", "Failed task restarted"))
+                    }
+                    2 if existed => {
+                        Some(i18n::tr("任务已从列表中移除", "Task removed from the list"))
+                    }
+                    3 if existed => Some(i18n::tr(
+                        "已在文件管理器中定位到文件",
+                        "Revealed in the file manager",
+                    )),
                     _ => None,
                 }
             };
@@ -1156,7 +1206,7 @@ fn main() -> Result<(), slint::PlatformError> {
             }
             refresh_rows(&ui, &state);
             if let Some(message) = message {
-                show_toast(&ui, &state, message);
+                show_toast(&ui, &state, &message);
             }
         });
     }
@@ -1247,9 +1297,12 @@ fn main() -> Result<(), slint::PlatformError> {
             // tasks were queued (per-URL failures arrive as daemon notices
             // afterwards).
             let message = if count > 1 {
-                format!("已添加 {count} 个下载任务")
+                i18n::tr(
+                    format!("已添加 {count} 个下载任务"),
+                    format!("{count} downloads queued"),
+                )
             } else {
-                "已添加下载任务".to_string()
+                i18n::tr("已添加下载任务", "Download queued")
             };
             show_toast(&ui, &state, &message);
         });
@@ -1286,12 +1339,12 @@ fn main() -> Result<(), slint::PlatformError> {
                             // daemon's start configuration, not in settings.
                             "PAC" => {
                                 hint = Some(
-                                    "PAC 由启动配置（AETHER_PAC_URL）决定，暂不支持在界面切换"
+                                    i18n::tr("PAC 由启动配置（AETHER_PAC_URL）决定，暂不支持在界面切换", "PAC comes from the launch configuration (AETHER_PAC_URL); switching it here is not supported")
                                         .into(),
                                 )
                             }
                             "手动" if st.proxy_url.trim().is_empty() => {
-                                hint = Some("请先填写代理地址，再切换到手动模式".into())
+                                hint = Some(i18n::tr("请先填写代理地址，再切换到手动模式", "Enter the proxy address before switching to manual mode").into())
                             }
                             _ => {
                                 let url = st.proxy_url.clone();
@@ -1304,12 +1357,12 @@ fn main() -> Result<(), slint::PlatformError> {
                     "dns" => {
                         st.backend
                             .set_setting(serde_json::json!({"dns": value.as_str()}));
-                        hint = Some("DNS 已保存：空闲插件重启后生效".into());
+                        hint = Some(i18n::tr("DNS 已保存：空闲插件重启后生效", "DNS saved; idle plugins pick it up after a restart").into());
                     }
                     "user-agent" => {
                         st.backend
                             .set_setting(serde_json::json!({"user_agent": value.as_str()}));
-                        hint = Some("User-Agent 已保存：空闲插件重启后生效".into());
+                        hint = Some(i18n::tr("User-Agent 已保存：空闲插件重启后生效", "User-Agent saved; idle plugins pick it up after a restart").into());
                     }
                     "ip-mode" => {
                         let patch = match value.as_str() {
@@ -1318,59 +1371,59 @@ fn main() -> Result<(), slint::PlatformError> {
                             _ => serde_json::json!({"ip_mode": null}),
                         };
                         st.backend.set_setting(patch);
-                        hint = Some("IP 协议已保存：空闲插件重启后生效".into());
+                        hint = Some(i18n::tr("IP 协议已保存：空闲插件重启后生效", "IP protocol saved; idle plugins pick it up after a restart").into());
                     }
                     // Network extras and BT knobs: same set_settings channel.
                     "headers" => {
                         st.backend
                             .set_setting(serde_json::json!({"default_headers": value.as_str()}));
-                        hint = Some("请求头已保存：空闲插件重启后生效".into());
+                        hint = Some(i18n::tr("请求头已保存：空闲插件重启后生效", "Custom headers saved; idle plugins pick it up after a restart").into());
                     }
                     "ffmpeg-path" => {
                         st.backend
                             .set_setting(serde_json::json!({"ffmpeg_path": value.as_str()}));
-                        hint = Some("ffmpeg 路径已保存：对之后开始的任务生效".into());
+                        hint = Some(i18n::tr("ffmpeg 路径已保存：对之后开始的任务生效", "ffmpeg path saved; applies to tasks started afterwards").into());
                     }
                     "plugin-auto-update" => {
                         let enabled = value.as_str() == "true";
                         st.backend
                             .set_setting(serde_json::json!({"plugin_auto_update": enabled}));
                         hint = Some(if enabled {
-                            "已开启：daemon 每 6 小时检查并安装插件更新".into()
+                            i18n::tr("已开启：daemon 每 6 小时检查并安装插件更新", "On; the daemon checks and installs plugin updates every 6 hours").into()
                         } else {
-                            "已关闭自动更新插件".into()
+                            i18n::tr("已关闭自动更新插件", "Automatic plugin updates are off").into()
                         });
                     }
                     "plugin-install" => {
                         let path = value.as_str().trim();
                         if path.is_empty() {
-                            hint = Some("请输入插件包目录路径（含 plugin.json）".into());
+                            hint = Some(i18n::tr("请输入插件包目录路径（含 plugin.json）", "Enter the plugin package directory (containing plugin.json)").into());
                         } else {
                             // Result (installed / refused: signature, hashes,
                             // busy) arrives through the notice channel.
                             st.backend.install_plugin(path);
-                            hint = Some("正在安装插件…".into());
+                            hint = Some(i18n::tr("正在安装插件…", "Installing the plugin…").into());
                         }
                     }
                     "ftp-passive" => {
                         st.backend.set_setting(serde_json::json!({
                             "ftp_passive": value.as_str() == "true"
                         }));
-                        hint = Some("FTP 模式已保存：空闲插件重启后生效".into());
+                        hint = Some(i18n::tr("FTP 模式已保存：空闲插件重启后生效", "FTP mode saved; idle plugins pick it up after a restart").into());
                     }
                     "bt-port" => match value.trim().parse::<u16>() {
-                        Ok(0) | Err(_) => hint = Some("监听端口需要 1-65535 的数字".into()),
+                        Ok(0) | Err(_) => hint = Some(i18n::tr("监听端口需要 1-65535 的数字", "The listen port must be between 1 and 65535").into()),
                         Ok(port) => {
                             st.backend
                                 .set_setting(serde_json::json!({"bt_listen_port": port}));
-                            hint = Some("BT 端口已保存：空闲时重启生效".into());
+                            hint = Some(i18n::tr("BT 端口已保存：空闲时重启生效", "BT port saved; applies when idle / after a restart").into());
                         }
                     },
                     "bt-dht" => {
                         st.backend.set_setting(serde_json::json!({
                             "bt_dht": value.as_str() == "true"
                         }));
-                        hint = Some("DHT 已保存：空闲时重启生效".into());
+                        hint = Some(i18n::tr("DHT 已保存：空闲时重启生效", "DHT saved; applies when idle / after a restart").into());
                     }
                     "bt-upload-limit" => {
                         // Slider reports KB/s; 0 is the stored form of "no cap".
@@ -1378,17 +1431,17 @@ fn main() -> Result<(), slint::PlatformError> {
                         let bps = (kbps * 1024.0) as u64;
                         st.backend
                             .set_setting(serde_json::json!({"bt_upload_bps": bps}));
-                        hint = Some("上传限速已保存：对新任务与重启后的做种生效".into());
+                        hint = Some(i18n::tr("上传限速已保存：对新任务与重启后的做种生效", "Upload limit saved; applies to new tasks and to seeding after a restart").into());
                     }
                     "bt-blocklist" => {
                         st.backend
                             .set_setting(serde_json::json!({"bt_blocklist": value.as_str()}));
-                        hint = Some("屏蔽列表已保存：空闲时重启生效".into());
+                        hint = Some(i18n::tr("屏蔽列表已保存：空闲时重启生效", "Blocklist saved; applies when idle / after a restart").into());
                     }
                     "bt-trackers" => {
                         st.backend
                             .set_setting(serde_json::json!({"bt_trackers": value.as_str()}));
-                        hint = Some("Tracker 已保存：附加到之后的任务".into());
+                        hint = Some(i18n::tr("Tracker 已保存：附加到之后的任务", "Tracker saved; attached to tasks added afterwards").into());
                     }
                     "schedule-on" => {
                         let enabled = value.as_str() == "true";
@@ -1410,14 +1463,14 @@ fn main() -> Result<(), slint::PlatformError> {
                             if let Some(ui) = ui_handle.upgrade() {
                                 ui.set_settings_schedule_on(false);
                             }
-                            hint = Some("请先填写开始与结束时间".into());
+                            hint = Some(i18n::tr("请先填写开始与结束时间", "Enter the start and end times first").into());
                         } else {
                             st.backend
                                 .set_setting(serde_json::json!({"schedule_on": enabled}));
                             hint = Some(if enabled {
-                                "计划已开启：时段外自动暂停队列".into()
+                                i18n::tr("计划已开启：时段外自动暂停队列", "Schedule on; the queue pauses outside the window").into()
                             } else {
-                                "计划已关闭：队列不再按时间暂停".into()
+                                i18n::tr("计划已关闭：队列不再按时间暂停", "Schedule off; the queue no longer pauses by time").into()
                             });
                         }
                     }
@@ -1429,7 +1482,7 @@ fn main() -> Result<(), slint::PlatformError> {
                         };
                         st.backend
                             .set_setting(serde_json::json!({key: value.as_str()}));
-                        hint = Some("时间已保存（HH:MM）".into());
+                        hint = Some(i18n::tr("时间已保存（HH:MM）", "Times saved (HH:MM)").into());
                     }
                     // Scheduler limits go through the same set_settings RPC;
                     // the daemon validates them and applies them to the
@@ -1439,17 +1492,17 @@ fn main() -> Result<(), slint::PlatformError> {
                         Ok(number) => {
                             st.backend
                                 .set_setting(serde_json::json!({"max_concurrent": number}));
-                            hint = Some("并发上限已保存：排队任务按新上限启动".into());
+                            hint = Some(i18n::tr("并发上限已保存：排队任务按新上限启动", "Concurrency cap saved; queued tasks start under the new cap").into());
                         }
-                        Err(_) => hint = Some(format!("并发上限「{value}」无效")),
+                        Err(_) => hint = Some(i18n::tr(format!("并发上限「{value}」无效"), format!("Invalid concurrency cap: {value}"))),
                     },
                     "max-connections" => match value.trim().parse::<u64>() {
                         Ok(number) => {
                             st.backend
                                 .set_setting(serde_json::json!({"connections": number}));
-                            hint = Some("每任务连接数已保存：新任务生效（HTTP 上限 16）".into());
+                            hint = Some(i18n::tr("每任务连接数已保存：新任务生效（HTTP 上限 16）", "Connections per task saved; applies to new tasks (HTTP capped at 16)").into());
                         }
-                        Err(_) => hint = Some(format!("每任务连接数「{value}」无效")),
+                        Err(_) => hint = Some(i18n::tr(format!("每任务连接数「{value}」无效"), format!("Invalid connection count: {value}"))),
                     },
                     "retry-count" => {
                         let retries = match value.as_str() {
@@ -1461,12 +1514,12 @@ fn main() -> Result<(), slint::PlatformError> {
                                 st.backend
                                     .set_setting(serde_json::json!({"retry_max": number}));
                                 hint = Some(if number == 0 {
-                                    "已关闭自动重试".into()
+                                    i18n::tr("已关闭自动重试", "Automatic retries are off").into()
                                 } else {
-                                    "重试上限已保存：下次失败时生效".into()
+                                    i18n::tr("重试上限已保存：下次失败时生效", "Retry cap saved; applies from the next failure").into()
                                 });
                             }
-                            None => hint = Some(format!("重试次数「{value}」无效")),
+                            None => hint = Some(i18n::tr(format!("重试次数「{value}」无效"), format!("Invalid retry count: {value}"))),
                         }
                     }
                     // One knob, two controls: the switch sends "no limit"
@@ -1481,9 +1534,12 @@ fn main() -> Result<(), slint::PlatformError> {
                         st.backend
                             .set_setting(serde_json::json!({"max_speed_bps": bps}));
                         hint = Some(if st.global_limit {
-                            format!("全局限速已保存：{} KB/s，新任务生效", st.download_limit_kb)
+                            i18n::tr(
+                                format!("全局限速已保存：{} KB/s，新任务生效", st.download_limit_kb),
+                                format!("Global cap saved: {} KB/s, applies to new tasks", st.download_limit_kb),
+                            )
                         } else {
-                            "已关闭全局限速".into()
+                            i18n::tr("已关闭全局限速", "The global speed cap is off")
                         });
                     }
                     "download-limit" => match value.trim().parse::<f64>() {
@@ -1493,12 +1549,12 @@ fn main() -> Result<(), slint::PlatformError> {
                                 st.backend.set_setting(
                                     serde_json::json!({"max_speed_bps": (kb * 1024.0) as u64}),
                                 );
-                                hint = Some(format!("下载限速已保存：{kb} KB/s，新任务生效"));
+                                hint = Some(i18n::tr(format!("下载限速已保存：{kb} KB/s，新任务生效"), format!("Download cap saved: {kb} KB/s, applies to new tasks")));
                             } else {
-                                hint = Some("已记录限速，启用全局限速后生效".into());
+                                hint = Some(i18n::tr("已记录限速，启用全局限速后生效", "Rate recorded; applies once the global speed cap is on").into());
                             }
                         }
-                        _ => hint = Some(format!("限速值「{value}」无效")),
+                        _ => hint = Some(i18n::tr(format!("限速值「{value}」无效"), format!("Invalid speed limit: {value}"))),
                     },
                     // Persisted locally, no daemon round-trip.
                     "language" => {
@@ -1512,13 +1568,14 @@ fn main() -> Result<(), slint::PlatformError> {
                         {
                             eprintln!("aether: language selection failed: {error:?}");
                         }
+                        i18n::set_language(english);
                         if let Some(ui) = ui_handle.upgrade() {
                             ui.set_settings_language(if english { 1 } else { 0 });
                         }
                         hint = Some(if english {
                             "Language switched to English".into()
                         } else {
-                            "界面语言已切回简体中文".into()
+                            i18n::tr("界面语言已切回简体中文", "Switched back to Chinese").into()
                         });
                     }
                     "theme" => {}
@@ -1598,7 +1655,7 @@ fn main() -> Result<(), slint::PlatformError> {
                             if let Some(ui) = ui_handle.upgrade() {
                                 ui.set_settings_clipboard(false);
                             }
-                            hint = Some("当前会话没有可用的剪贴板后端".into());
+                            hint = Some(i18n::tr("当前会话没有可用的剪贴板后端", "No clipboard backend in this session").into());
                         } else {
                             st.prefs.clipboard_watch = enabled;
                             if let Some(control) = st.clipboard_control.as_ref() {
@@ -1609,9 +1666,9 @@ fn main() -> Result<(), slint::PlatformError> {
                             }
                             st.prefs.save();
                             hint = Some(if enabled {
-                                "剪贴板检测已开启：复制下载链接后会弹出提示".into()
+                                i18n::tr("剪贴板检测已开启：复制下载链接后会弹出提示", "Clipboard detection on; copying a download link offers it").into()
                             } else {
-                                "剪贴板检测已关闭".into()
+                                i18n::tr("剪贴板检测已关闭", "Clipboard detection is off").into()
                             });
                         }
                     }
@@ -1633,11 +1690,11 @@ fn main() -> Result<(), slint::PlatformError> {
                             ui.set_settings_notify_done(true);
                             ui.set_settings_notify_fail(true);
                         }
-                        hint = Some("界面偏好已恢复默认".into());
+                        hint = Some(i18n::tr("界面偏好已恢复默认", "UI preferences restored to defaults").into());
                     }
                     // The settings page still shows controls that do nothing;
                     // saying so beats a silent no-op (honest UI).
-                    other => hint = Some(format!("设置项「{other}」尚未接线")),
+                    other => hint = Some(i18n::tr(format!("设置项「{other}」尚未接线"), format!("Setting {other} is not wired up yet"))),
                 }
             }
             if let (Some(hint), Some(ui)) = (hint, ui_handle.upgrade()) {
@@ -1665,12 +1722,18 @@ fn main() -> Result<(), slint::PlatformError> {
             show_toast(
                 &ui,
                 &state,
-                if enabled {
-                    format!("已请求启用 {name}，有运行任务时会拒绝")
-                } else {
-                    format!("已请求停用 {name}")
-                }
-                .as_str(),
+                &i18n::tr(
+                    if enabled {
+                        format!("已请求启用 {name}，有运行任务时会拒绝")
+                    } else {
+                        format!("已请求停用 {name}")
+                    },
+                    if enabled {
+                        format!("Requested enabling {name}; refused while tasks are running")
+                    } else {
+                        format!("Requested disabling {name}")
+                    },
+                ),
             );
         });
     }
@@ -1685,18 +1748,37 @@ fn main() -> Result<(), slint::PlatformError> {
             match action.as_str() {
                 // Install goes through the package-path field (the button
                 // emits `plugin-install` with the typed path).
-                "install" => show_toast(&ui, &state, "请在「安装插件」输入包目录路径"),
+                "install" => show_toast(
+                    &ui,
+                    &state,
+                    &i18n::tr(
+                        "请在「安装插件」输入包目录路径",
+                        "Enter the package directory under Install plugin",
+                    ),
+                ),
                 // Check the update manifest and install every outdated
                 // plugin; the summary arrives through the notice channel.
                 "update-all" => {
-                    show_toast(&ui, &state, "正在检查插件更新…");
+                    show_toast(
+                        &ui,
+                        &state,
+                        &i18n::tr("正在检查插件更新…", "Checking for plugin updates…"),
+                    );
                     state.borrow().backend.plugin_update_all();
                 }
                 "reload" => {
-                    show_toast(&ui, &state, "正在重新扫描插件目录…");
+                    show_toast(
+                        &ui,
+                        &state,
+                        &i18n::tr("正在重新扫描插件目录…", "Re-scanning the plugin directory…"),
+                    );
                     state.borrow().backend.rescan_plugins();
                 }
-                _ => show_toast(&ui, &state, "该操作尚未接线"),
+                _ => show_toast(
+                    &ui,
+                    &state,
+                    &i18n::tr("该操作尚未接线", "This action is not wired up yet"),
+                ),
             }
         });
     }
@@ -1715,7 +1797,14 @@ fn main() -> Result<(), slint::PlatformError> {
                 3 => "高",
                 _ => "不限",
             };
-            show_toast(&ui, &state, &format!("全局限速「{name}」尚未接线"));
+            show_toast(
+                &ui,
+                &state,
+                &i18n::tr(
+                    format!("全局限速「{name}」尚未接线"),
+                    format!("The global speed cap {name} is not wired up yet"),
+                ),
+            );
         });
     }
 
@@ -1728,17 +1817,32 @@ fn main() -> Result<(), slint::PlatformError> {
                 return;
             };
             let message = match key.as_str() {
-                "docs" => "文档 · docs.aether.dev（原型）",
-                "community" => "社区 · forum.aether.dev（原型）",
-                "feedback" => "反馈 · github.com/pengtang1024/aether/issues（原型）",
-                "update" => "已检查更新：当前已是最新版本 0.1.0",
-                "channel" => "更新通道已更新",
-                "auto-update" => "自动更新设置已保存",
-                "changelog" => "版本说明 · 0.1.0（原型）",
-                "license" => "MIT License · Slint Royalty-free 2.0",
-                _ => "操作已记录",
+                "docs" => i18n::tr(
+                    "文档 · docs.aether.dev（原型）",
+                    "Docs · docs.aether.dev (prototype)",
+                ),
+                "community" => i18n::tr(
+                    "社区 · forum.aether.dev（原型）",
+                    "Community · forum.aether.dev (prototype)",
+                ),
+                "feedback" => i18n::tr(
+                    "反馈 · github.com/pengtang1024/Aether/issues（原型）",
+                    "Feedback · github.com/pengtang1024/Aether/issues (prototype)",
+                ),
+                "update" => i18n::tr(
+                    "已检查更新：当前已是最新版本 0.1.0",
+                    "Update check done; 0.1.0 is the latest version",
+                ),
+                "channel" => i18n::tr("更新通道已更新", "Update channel changed"),
+                "auto-update" => i18n::tr("自动更新设置已保存", "Auto-update settings saved"),
+                "changelog" => i18n::tr(
+                    "版本说明 · 0.1.0（原型）",
+                    "Release notes · 0.1.0 (prototype)",
+                ),
+                "license" => "MIT License · Slint Royalty-free 2.0".to_string(),
+                _ => i18n::tr("操作已记录", "Done"),
             };
-            show_toast(&ui, &state, message);
+            show_toast(&ui, &state, &message);
         });
     }
 
@@ -1812,7 +1916,12 @@ fn main() -> Result<(), slint::PlatformError> {
                     // Stage first, then drop the borrow: show_action_toast
                     // borrows the state itself.
                     state.borrow_mut().clipboard_url = Some(link.url);
-                    show_action_toast(&ui, &state, "检测到下载链接", "新建任务");
+                    show_action_toast(
+                        &ui,
+                        &state,
+                        &i18n::tr("检测到下载链接", "Download link detected"),
+                        &i18n::tr("新建任务", "New task"),
+                    );
                 }
             }
             refresh_rows(&ui, &state);
@@ -1838,7 +1947,13 @@ fn main() -> Result<(), slint::PlatformError> {
                 for item in done {
                     if item.done {
                         if notify_done {
-                            send_notification("下载完成", &format!("「{}」已下载完成", item.name));
+                            send_notification(
+                                &i18n::tr("下载完成", "Download completed"),
+                                &i18n::tr(
+                                    format!("「{}」已下载完成", item.name),
+                                    format!("“{}” has finished downloading", item.name),
+                                ),
+                            );
                         }
                         match after {
                             1 => {
@@ -1856,11 +1971,17 @@ fn main() -> Result<(), slint::PlatformError> {
                     } else if notify_fail {
                         let detail = item.error.as_deref().unwrap_or_default();
                         let body = if detail.is_empty() {
-                            format!("「{}」下载失败", item.name)
+                            i18n::tr(
+                                format!("「{}」下载失败", item.name),
+                                format!("“{}” failed to download", item.name),
+                            )
                         } else {
-                            format!("「{}」下载失败：{detail}", item.name)
+                            i18n::tr(
+                                format!("「{}」下载失败：{detail}", item.name),
+                                format!("“{}” failed to download: {detail}", item.name),
+                            )
                         };
-                        send_notification("下载失败", &body);
+                        send_notification(&i18n::tr("下载失败", "Download failed"), &body);
                     }
                 }
             }

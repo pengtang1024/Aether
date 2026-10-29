@@ -324,21 +324,21 @@ export component AppWindow inherits Window {
                         active: root.page == 0;
                         cross-axis-self-alignment: center;
                         clicked => { root.page = 0; }
-                        hover-changed(hovered) => { root.rail-hint = hovered ? "主页" : ""; }
+                        hover-changed(hovered) => { root.rail-hint = hovered ? @tr("主页") : ""; }
                     }
                     RailButton {
                         icon-source: AetherIcons.download;
                         active: root.page == 1;
                         cross-axis-self-alignment: center;
                         clicked => { root.page = 1; }
-                        hover-changed(hovered) => { root.rail-hint = hovered ? "下载" : ""; }
+                        hover-changed(hovered) => { root.rail-hint = hovered ? @tr("下载") : ""; }
                     }
                     RailButton {
                         icon-source: AetherIcons.tune;
                         active: root.page == 2;
                         cross-axis-self-alignment: center;
                         clicked => { root.page = 2; }
-                        hover-changed(hovered) => { root.rail-hint = hovered ? "设置" : ""; }
+                        hover-changed(hovered) => { root.rail-hint = hovered ? @tr("设置") : ""; }
                     }
 
                     RailButton {
@@ -348,7 +348,7 @@ export component AppWindow inherits Window {
                         icon-source: AetherIcons.add;
                         cross-axis-self-alignment: center;
                         clicked => { root.dialog-open = true; }
-                        hover-changed(hovered) => { root.rail-hint = hovered ? "新建下载" : ""; }
+                        hover-changed(hovered) => { root.rail-hint = hovered ? @tr("新建下载") : ""; }
                     }
 
                     Text {
@@ -383,7 +383,7 @@ export component AppWindow inherits Window {
                         icon-source: AetherIcons.note;
                         cross-axis-self-alignment: center;
                         clicked => { root.support-action("docs"); }
-                        hover-changed(hovered) => { root.support-hint = hovered ? "使用文档" : ""; }
+                        hover-changed(hovered) => { root.support-hint = hovered ? @tr("使用文档") : ""; }
                     }
                     RailButton {
                         size: Aether.control-sm;
@@ -391,7 +391,7 @@ export component AppWindow inherits Window {
                         icon-source: AetherIcons.signal;
                         cross-axis-self-alignment: center;
                         clicked => { root.support-action("community"); }
-                        hover-changed(hovered) => { root.support-hint = hovered ? "社区" : ""; }
+                        hover-changed(hovered) => { root.support-hint = hovered ? @tr("社区") : ""; }
                     }
                     RailButton {
                         size: Aether.control-sm;
@@ -399,7 +399,7 @@ export component AppWindow inherits Window {
                         icon-source: AetherIcons.alert;
                         cross-axis-self-alignment: center;
                         clicked => { root.support-action("feedback"); }
-                        hover-changed(hovered) => { root.support-hint = hovered ? "反馈" : ""; }
+                        hover-changed(hovered) => { root.support-hint = hovered ? @tr("反馈") : ""; }
                     }
                     RailButton {
                         size: Aether.control-sm;
@@ -407,7 +407,7 @@ export component AppWindow inherits Window {
                         icon-source: AetherIcons.refresh;
                         cross-axis-self-alignment: center;
                         clicked => { root.support-action("update"); }
-                        hover-changed(hovered) => { root.support-hint = hovered ? "更新" : ""; }
+                        hover-changed(hovered) => { root.support-hint = hovered ? @tr("更新") : ""; }
                     }
                 }
             }

@@ -33,14 +33,14 @@ impl Status {
         }
     }
 
-    pub fn label(self) -> &'static str {
+    pub fn label(self) -> String {
         match self {
-            Status::Downloading => "下载中",
-            Status::Completed => "已完成",
-            Status::Paused => "已暂停",
-            Status::Failed => "失败",
-            Status::Queued => "等待中",
-            Status::Seeding => "做种中",
+            Status::Downloading => crate::i18n::tr("下载中", "Downloading"),
+            Status::Completed => crate::i18n::tr("已完成", "Completed"),
+            Status::Paused => crate::i18n::tr("已暂停", "Paused"),
+            Status::Failed => crate::i18n::tr("失败", "Failed"),
+            Status::Queued => crate::i18n::tr("等待中", "Queued"),
+            Status::Seeding => crate::i18n::tr("做种中", "Seeding"),
         }
     }
 }
@@ -101,10 +101,19 @@ impl Task {
 pub fn rel_time(ms: i64, now_ms: i64) -> String {
     let secs = (now_ms - ms).max(0) / 1000;
     match secs {
-        0..=59 => "刚刚".to_string(),
-        60..=3599 => format!("{} 分钟前", secs / 60),
-        3600..=86_399 => format!("{} 小时前", secs / 3600),
-        _ => format!("{} 天前", secs / 86_400),
+        0..=59 => crate::i18n::tr("刚刚", "just now"),
+        60..=3599 => crate::i18n::tr(
+            format!("{} 分钟前", secs / 60),
+            format!("{} min ago", secs / 60),
+        ),
+        3600..=86_399 => crate::i18n::tr(
+            format!("{} 小时前", secs / 3600),
+            format!("{} h ago", secs / 3600),
+        ),
+        _ => crate::i18n::tr(
+            format!("{} 天前", secs / 86_400),
+            format!("{} d ago", secs / 86_400),
+        ),
     }
 }
 
@@ -138,11 +147,17 @@ pub fn format_eta(seconds: Option<f64>) -> String {
     };
     let total = seconds.max(0.0).round() as u64;
     if total >= 3600 {
-        format!("{} 小时 {:02} 分", total / 3600, (total % 3600) / 60)
+        crate::i18n::tr(
+            format!("{} 小时 {:02} 分", total / 3600, (total % 3600) / 60),
+            format!("{}h {:02}m", total / 3600, (total % 3600) / 60),
+        )
     } else if total >= 60 {
-        format!("{} 分 {:02} 秒", total / 60, total % 60)
+        crate::i18n::tr(
+            format!("{} 分 {:02} 秒", total / 60, total % 60),
+            format!("{}m {:02}s", total / 60, total % 60),
+        )
     } else {
-        format!("{total} 秒")
+        crate::i18n::tr(format!("{total} 秒"), format!("{total}s"))
     }
 }
 

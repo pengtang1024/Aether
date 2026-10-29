@@ -271,8 +271,9 @@ mod imp {
                             start_daemon();
                             let mut guard = shared.lock().unwrap();
                             guard.snapshot.connected = false;
-                            guard.notice = Some(format!(
-                                "后台服务未就绪：{error}。已尝试自动启动 aether-daemon。"
+                            guard.notice = Some(crate::i18n::tr(
+                                format!("后台服务未就绪：{error}。已尝试自动启动 aether-daemon。"),
+                                format!("Daemon not ready: {error}. Tried starting aether-daemon automatically."),
                             ));
                         }
                         thread::sleep(Duration::from_millis(500));
@@ -522,16 +523,25 @@ mod imp {
                     let replaced = value["replaced"].as_bool().unwrap_or(false);
                     self.needs_refresh = true;
                     self.notice = Some(if replaced {
-                        format!("已更新插件 {id} {version}")
+                        crate::i18n::tr(
+                            format!("已更新插件 {id} {version}"),
+                            format!("Updated plugin {id} {version}"),
+                        )
                     } else {
-                        format!("已安装插件 {id} {version}")
+                        crate::i18n::tr(
+                            format!("已安装插件 {id} {version}"),
+                            format!("Installed plugin {id} {version}"),
+                        )
                     });
                 }
                 Command::RescanPlugins => {
                     let value = client.rescan_plugins()?;
                     let total = value["plugins"].as_u64().unwrap_or(0);
                     self.needs_refresh = true;
-                    self.notice = Some(format!("已重新扫描插件目录：{total} 个插件"));
+                    self.notice = Some(crate::i18n::tr(
+                        format!("已重新扫描插件目录：{total} 个插件"),
+                        format!("Re-scanned the plugin directory: {total} plugins"),
+                    ));
                 }
                 Command::PluginUpdateAll => {
                     let value = client.plugin_update_all()?;
@@ -539,7 +549,7 @@ mod imp {
                     let failed = value["failed"].as_array().cloned().unwrap_or_default();
                     self.needs_refresh = true;
                     self.notice = Some(if updated.is_empty() && failed.is_empty() {
-                        "插件已是最新".to_string()
+                        crate::i18n::tr("插件已是最新", "Plugins are up to date")
                     } else {
                         let names = updated
                             .iter()
@@ -549,9 +559,15 @@ mod imp {
                         let failures = if failed.is_empty() {
                             String::new()
                         } else {
-                            format!("；{} 个失败", failed.len())
+                            crate::i18n::tr(
+                                format!("；{} 个失败", failed.len()),
+                                format!("; {} failed", failed.len()),
+                            )
                         };
-                        format!("已更新 {} 个插件：{names}{failures}", updated.len())
+                        crate::i18n::tr(
+                            format!("已更新 {} 个插件：{names}{failures}", updated.len()),
+                            format!("Updated {} plugins: {names}{failures}", updated.len()),
+                        )
                     });
                 }
             }
@@ -719,7 +735,7 @@ mod imp {
                             .as_str()
                             .filter(|message| !message.is_empty())
                             .map(ToOwned::to_owned)
-                            .or_else(|| Some("下载失败".into()));
+                            .or_else(|| Some(crate::i18n::tr("下载失败", "Download failed")));
                         // Cancellations are the user's own doing; only real
                         // failures earn a desktop notification.
                         if !canceled && self.completed.len() < 32 {
@@ -740,7 +756,10 @@ mod imp {
                 "retry_scheduled" => {
                     if let Some(record) = self.records.get_mut(&task_id) {
                         let delay = event["delay_secs"].as_u64().unwrap_or(0);
-                        record.error_message = Some(format!("{delay} 秒后自动重试"));
+                        record.error_message = Some(crate::i18n::tr(
+                            format!("{delay} 秒后自动重试"),
+                            format!("Retry in {delay}s"),
+                        ));
                     }
                 }
                 "task_deleted" => self.forget(&task_id),

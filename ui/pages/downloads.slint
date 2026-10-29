@@ -143,7 +143,7 @@ component TaskItem inherits Rectangle {
 
             Text {
                 text: root.task.status == 0 && root.task.eta != ""
-                    ? root.task.source + " · 剩余 " + root.task.eta
+                    ? root.task.source + @tr(" · 剩余 ") + root.task.eta
                     : root.task.source;
                 color: Aether.on-surface-muted;
                 font-size: Aether.text-micro;
@@ -301,7 +301,7 @@ export component DownloadsPage inherits Rectangle {
                 }
 
                 Text {
-                    text: @tr("共 ") + root.tasks.length + " 个任务 · 按最近添加排序";
+                    text: @tr("共 ") + root.tasks.length + @tr(" 个任务 · 按最近添加排序");
                     color: Aether.on-surface-muted;
                     font-size: Aether.text-caption;
                 }
@@ -311,7 +311,7 @@ export component DownloadsPage inherits Rectangle {
                 width: 280px;
                 cross-axis-self-alignment: center;
                 text <=> root.search-text;
-                placeholder: "搜索任务名称或地址";
+                placeholder: @tr("搜索任务名称或地址");
                 edited(t) => { root.filter-changed(root.active-filter, t); }
             }
         }

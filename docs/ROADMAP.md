@@ -24,6 +24,7 @@
 | `6fad6ef`+`bfd5ae1` | 供应链：Actions pin SHA、cargo-deny+CI job、SBOM 进 release、AppStream 更新、优先级老化、UI 多 URL 导入 |
 | `3cc8d1c` | 托盘（Linux）：zbus StatusNotifierItem + dbusmenu 菜单（显示/退出），私有 bus 全链路实测含退出；无 bus/host 优雅降级 |
 | `79c2cdb` | i18n（中文优先）：全量 202 条 UI 串 @tr + en.po、select_bundled_translation 即时切换、设置→外观语言项；ComboBox 功能值不译 |
+| （i18n-Rust） | Rust 侧字符串表化：i18n::tr(zh,en) 内联对 + 全局语言位，toast/hint/notice/时间格式/插件描述/通知全迁；功能值保留 |
 
 - **设置页现状**：10 个分类中每个控件要么真实生效、要么是诚实的能力说明卡，
   没有「点了没反应」或显示假值的控件。
@@ -235,9 +236,16 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
     （`changed(key, self.current-value)`），翻译会破坏匹配——要译需先改成
     index 语义（记为未来重构项）。
   - Xvfb 双语言截图核验：中文默认 ✓ / en 全英文（含导航、条件描述两分支）✓。
-  - **剩余**：Rust 侧 toast/notice/设置提示仍是中文（需字符串表 + lang
-    查询，下一波）；主页面 home.slint 的动态拼接串已裹 @tr，但 home 页
-    的图例/统计标签部分来自 Rust model（同属 Rust 侧清单）。
+  - **Rust 侧也已落地（同波）**：`src/i18n.rs` 的 `tr(zh, en)` 内联双语对
+    （不做 key 表——表会与译文漂移）+ 进程级语言位（启动按 UiPrefs.lang
+    设、切换时更新；后台 worker 的 notice 走同一语言位）。清扫范围：toast、
+    设置 hint、backend notice、相对时间/ETA（rel_time/format_eta）、插件
+    描述与分类、仪表盘统计串、桌面通知、support 提示；**功能值不译**
+    （ComboBox 值同时是 Rust 匹配的 wire value，如 跟随系统/直连/浅色）。
+    @tr 残留扫描脚本验收：Slint 与 Rust 的用户可见中文串均已被 tr 覆盖
+    （多行 tr 参数需逐行复核，扫描器会误报）。Xvfb 双语言截图核验
+    英文主页 + 中文默认设置页。
+  - 已知小瑕疵：英文 "Medium" 被限速药丸宽度裁切（en 比 zh 宽）。
 
 ### 4.6 插件安装/更新接 daemon + manifest 签名
 

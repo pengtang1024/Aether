@@ -154,7 +154,7 @@ export component RailButton inherits Rectangle {
 export component SearchField inherits Rectangle {
     in-out property <string> text: "";
     out property <bool> focused: input.has-focus;
-    in property <string> placeholder: "搜索";
+    in property <string> placeholder: @tr("搜索");
     callback edited(string);
 
     height: Aether.control-md;
@@ -594,7 +594,7 @@ export component SpeedChart inherits Rectangle {
     in property <float> peak: 1;
     /// Latest sample normalized to the chart peak, 0..1.
     in property <float> latest: 0;
-    in property <string> caption: "最近 60 秒";
+    in property <string> caption: @tr("最近 60 秒");
 
     private property <length> dot-y: root.height * (0.94 - clamp(root.latest, 0, 1) * 0.88);
 

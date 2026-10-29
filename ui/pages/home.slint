@@ -28,7 +28,7 @@ component SpeedLimitPill inherits Rectangle {
     background: is-selected ? Aether.on-surface.with-alpha(0.08) : transparent;
 
     Text {
-        text: index == 0 ? "不限" : index == 1 ? "低" : index == 2 ? "中" : "高";
+        text: index == 0 ? @tr("不限") : index == 1 ? @tr("低") : index == 2 ? @tr("中") : @tr("高");
         color: parent.is-selected ? Aether.on-surface : Aether.on-surface-muted;
         font-size: Aether.text-caption;
         font-weight: parent.is-selected ? Aether.weight-medium : Aether.weight-regular;
@@ -478,7 +478,7 @@ export component HomePage inherits Rectangle {
                         }
 
                         Text {
-                            text: @tr("活跃 ") + root.count-active + " · 队列 " + root.count-paused + " · 连接 24";
+                            text: @tr("活跃 ") + root.count-active + @tr(" · 队列 ") + root.count-paused + @tr(" · 连接 24");
                             color: Aether.on-surface-muted;
                             font-size: Aether.text-micro;
                         }
@@ -582,7 +582,7 @@ export component HomePage inherits Rectangle {
             title: @tr("任务");
             icon-source: AetherIcons.list;
             tone: Aether.primary-bright;
-            action: "全部";
+            action: @tr("全部");
             action-clicked => { root.open-downloads(0); }
 
             HorizontalLayout {
@@ -887,7 +887,7 @@ export component HomePage inherits Rectangle {
             title: @tr("系统与会话");
             icon-source: AetherIcons.info;
             tone: Aether.warning;
-            action: "插件";
+            action: @tr("插件");
             action-clicked => { root.open-plugins(); }
 
             VerticalLayout {

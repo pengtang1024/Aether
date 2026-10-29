@@ -323,7 +323,7 @@ export component NewDownloadDialog inherits FocusScope {
                                 }
 
                                 Text {
-                                    text: root.speed-limit <= 0 ? "不限" : root.speed-limit + " KB/s";
+                                    text: root.speed-limit <= 0 ? @tr("不限") : root.speed-limit + " KB/s";
                                     color: root.speed-limit <= 0 ? Aether.on-surface-muted : Aether.on-surface;
                                     font-size: Aether.text-caption;
                                     font-weight: Aether.weight-medium;
@@ -368,13 +368,13 @@ export component NewDownloadDialog inherits FocusScope {
 
                 DialogIcon {
                     icon-source: AetherIcons.close;
-                    tip: "取消";
+                    tip: @tr("取消");
                     clicked => { root.dismissed(); }
                 }
 
                 DialogIcon {
                     icon-source: AetherIcons.download;
-                    tip: "开始下载";
+                    tip: @tr("开始下载");
                     accent: true;
                     enabled: root.url != "";
                     clicked => { root.submit(); }
