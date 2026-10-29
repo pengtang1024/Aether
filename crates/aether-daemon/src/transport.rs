@@ -156,7 +156,11 @@ impl Write for Conn {
 #[cfg(windows)]
 mod win {
     use std::ffi::c_void;
-    use std::os::windows::raw::{BOOL, HANDLE};
+
+    // std::os::windows::raw no longer exports these on stable; both are the
+    // documented Win32 shapes (HANDLE = pointer-sized, BOOL = 32-bit int).
+    pub type HANDLE = *mut c_void;
+    pub type BOOL = i32;
 
     #[link(name = "kernel32")]
     extern "system" {
@@ -307,7 +311,7 @@ impl PipeConn {
                     std::ptr::null_mut(),
                     win::OPEN_EXISTING,
                     0,
-                    std::ptr::null(),
+                    std::ptr::null_mut(),
                 )
             };
             if handle != win::INVALID_HANDLE_VALUE {
@@ -359,6 +363,12 @@ impl PipeConn {
         }
     }
 }
+
+// The accept loop moves PipeConn (raw HANDLE) into per-client threads. Each
+// handle is used by exactly one session thread afterwards, matching the
+// ownership UnixStream::try_clone hands out.
+#[cfg(windows)]
+unsafe impl Send for PipeConn {}
 
 #[cfg(windows)]
 impl Drop for PipeConn {
