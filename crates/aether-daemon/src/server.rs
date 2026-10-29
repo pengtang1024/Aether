@@ -458,7 +458,7 @@ fn broadcast(state: &mut State, event: Value) {
         .retain(|subscriber| subscriber.send(event.clone()).is_ok());
 }
 
-fn accept_loop(listener: Listener, commands: Sender<Command>) {
+fn accept_loop(mut listener: Listener, commands: Sender<Command>) {
     loop {
         let Ok(conn) = listener.accept() else { break };
         let commands = commands.clone();

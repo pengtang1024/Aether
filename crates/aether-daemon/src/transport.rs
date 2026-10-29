@@ -48,8 +48,8 @@ impl Listener {
     }
 
     /// Block until a client connects.
-    pub fn accept(&self) -> io::Result<Conn> {
-        match &self.inner {
+    pub fn accept(&mut self) -> io::Result<Conn> {
+        match &mut self.inner {
             #[cfg(unix)]
             ListenerInner::Unix(listener) => listener.accept().map(|(stream, _)| Conn {
                 inner: ConnInner::Unix(stream),
@@ -243,6 +243,11 @@ mod win {
 #[cfg(windows)]
 struct PipeListener {
     name: Vec<u16>,
+    /// The next instance, created eagerly at bind time. A named pipe only
+    /// exists while an instance does, so clients calling connect between
+    /// bind and the first accept must still find it (Unix sockets exist as
+    /// a file from bind onward).
+    pending: Option<PipeConn>,
 }
 
 #[cfg(windows)]
@@ -254,43 +259,57 @@ impl PipeListener {
                 "a Windows pipe path must start with \\\\.\\pipe\\",
             ));
         }
+        let name = win::wide(path);
+        let pending = create_instance(&name)?;
         Ok(Self {
-            name: win::wide(path),
+            name,
+            pending: Some(pending),
         })
     }
 
-    /// Create the next pipe instance and block until a client opens it.
-    fn accept(&self) -> io::Result<PipeConn> {
-        let handle = unsafe {
-            win::CreateNamedPipeW(
-                self.name.as_ptr(),
-                win::PIPE_ACCESS_DUPLEX,
-                win::PIPE_TYPE_BYTE | win::PIPE_READMODE_BYTE | win::PIPE_WAIT,
-                win::PIPE_UNLIMITED_INSTANCES,
-                win::PIPE_BUFFER_SIZE,
-                win::PIPE_BUFFER_SIZE,
-                0,
-                std::ptr::null_mut(),
-            )
+    /// Hand over the pre-created instance (blocking until a client opens
+    /// it), then eagerly create the next one.
+    fn accept(&mut self) -> io::Result<PipeConn> {
+        let conn = match self.pending.take() {
+            Some(conn) => conn,
+            None => create_instance(&self.name)?,
         };
-        if handle == win::INVALID_HANDLE_VALUE {
-            return Err(io::Error::last_os_error());
-        }
-        let connected = unsafe { win::ConnectNamedPipe(handle, std::ptr::null_mut()) } != 0;
+        let connected = unsafe { win::ConnectNamedPipe(conn.handle, std::ptr::null_mut()) } != 0;
         if !connected {
             // ERROR_PIPE_CONNECTED: a client slipped in between Create and
             // Connect. Anything else is a real failure (capture before the
-            // CloseHandle below clobbers the thread error).
+            // CloseHandle in Drop clobbers the thread error).
             let error = io::Error::last_os_error();
             if error.raw_os_error() != Some(win::ERROR_PIPE_CONNECTED as i32) {
-                unsafe {
-                    win::CloseHandle(handle);
-                }
                 return Err(error);
             }
         }
-        Ok(PipeConn { handle })
+        // Best effort: if the next instance cannot be created, the following
+        // accept retries.
+        self.pending = create_instance(&self.name).ok();
+        Ok(conn)
     }
+}
+
+/// One listening pipe instance (server side).
+#[cfg(windows)]
+fn create_instance(name: &[u16]) -> io::Result<PipeConn> {
+    let handle = unsafe {
+        win::CreateNamedPipeW(
+            name.as_ptr(),
+            win::PIPE_ACCESS_DUPLEX,
+            win::PIPE_TYPE_BYTE | win::PIPE_READMODE_BYTE | win::PIPE_WAIT,
+            win::PIPE_UNLIMITED_INSTANCES,
+            win::PIPE_BUFFER_SIZE,
+            win::PIPE_BUFFER_SIZE,
+            0,
+            std::ptr::null_mut(),
+        )
+    };
+    if handle == win::INVALID_HANDLE_VALUE {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(PipeConn { handle })
 }
 
 #[cfg(windows)]

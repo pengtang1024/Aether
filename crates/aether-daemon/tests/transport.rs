@@ -35,7 +35,7 @@ fn endpoint(label: &str) -> PathBuf {
 #[test]
 fn roundtrips_lines() {
     let endpoint = endpoint("roundtrip");
-    let listener = Listener::bind(&endpoint).unwrap();
+    let mut listener = Listener::bind(&endpoint).unwrap();
 
     let server = thread::spawn(move || {
         let conn = listener.accept().unwrap();
@@ -63,7 +63,7 @@ fn roundtrips_lines() {
 #[test]
 fn second_listener_on_a_live_endpoint_fails() {
     let endpoint = endpoint("exclusive");
-    let _listener = Listener::bind(&endpoint).unwrap();
+    let mut _listener = Listener::bind(&endpoint).unwrap();
     // Unix: the socket file exists, bind errors. Windows: every accept
     // creates a fresh pipe instance, so both binds succeed — exclusivity
     // there comes from the daemon's FILE-flag-free probe plus the lock
