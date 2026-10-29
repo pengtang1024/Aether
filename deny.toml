@@ -1,0 +1,68 @@
+# Supply-chain policy for Aether (ROADMAP 4.7). Run with `cargo deny check`.
+#
+# Philosophy: permissive licenses only for anything that ships in our
+# binaries; the Slint runtime is the one deliberate exception — we exercise
+# its Royalty-free 2.0 option (see THIRD_PARTY_NOTICES.md), and the same
+# dependency also offers GPL-3.0-only, which is what cargo-deny can
+# syntactically recognize in its tri-license expression.
+
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+ignore = [
+    # Unmaintained announcements for crates Slint pins (zbus 5.x family,
+    # ttf-parser via femtovg). The advisories state no safe upgrade exists;
+    # only Slint can move, and we do not fork its dependency tree. Revisit
+    # on every Slint bump.
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser: transitive via Slint's femtovg renderer; no action available until Slint bumps" },
+    { id = "RUSTSEC-2026-0370", reason = "zvariant: transitive via Slint's winit backend; upstream merged into zbus 6, Slint pins 5.x" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names: transitive via Slint's winit backend; upstream merged into zbus 6, Slint pins 5.x" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive: transitive via Slint's winit backend; upstream merged into zbus 6, Slint pins 5.x" },
+]
+
+[licenses]
+version = 2
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "CDLA-Permissive-2.0",
+    "Zlib",
+    "BSL-1.0",
+]
+exceptions = [
+    # Slint: tri-licensed GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0
+    # OR LicenseRef-Slint-Software-3.0. We choose Royalty-free 2.0 (badge +
+    # notices obligations honored, see THIRD_PARTY_NOTICES.md); cargo-deny
+    # can only check the SPDX-parseable arm, GPL-3.0-only.
+    { allow = ["GPL-3.0-only"], crate = "slint" },
+    { allow = ["GPL-3.0-only"], crate = "slint-build" },
+    { allow = ["GPL-3.0-only"], crate = "slint-macros" },
+    { allow = ["GPL-3.0-only"], crate = "i-slint-backend-selector" },
+    { allow = ["GPL-3.0-only"], crate = "i-slint-common" },
+    { allow = ["GPL-3.0-only"], crate = "i-slint-renderer-femtovg" },
+    { allow = ["GPL-3.0-only"], crate = "i-slint-renderer-skia" },
+    { allow = ["GPL-3.0-only"], crate = "i-slint-renderer-software" },
+    { allow = ["GPL-3.0-only"], crate = "i-slint-backend-winit" },
+    { allow = ["GPL-3.0-only"], crate = "i-slint-compiler" },
+    { allow = ["GPL-3.0-only"], crate = "i-slint-core" },
+    { allow = ["GPL-3.0-only"], crate = "i-slint-core-macros" },
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+workspace-default-features = "allow"
+external-default-features = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

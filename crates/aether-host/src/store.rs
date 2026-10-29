@@ -491,7 +491,11 @@ impl TaskStore {
         Ok(())
     }
 
-    /// The queued task that should run next: highest priority, then oldest.
+    /// The queued task that should run next. Priority is aged: every five
+    /// minutes in the queue earns one point, capped at 100, so a starved
+    /// low-priority task eventually overtakes a freshly queued high-priority
+    /// one (a +100 head start lasts ~8.3 hours) while ties fall to the
+    /// oldest task.
     pub fn next_queued(&self) -> Result<Option<StoredTask>, StoreError> {
         let mut task = self
             .connection
@@ -501,7 +505,8 @@ impl TaskStore {
                         created_at, updated_at, completed_at, target_dir,
                         retry_attempts, retry_at, priority
                  FROM tasks WHERE state = 'queued'
-                 ORDER BY priority DESC, created_at ASC, rowid ASC LIMIT 1",
+                 ORDER BY (priority + MIN(100, (strftime('%s','now') - created_at / 1000) / 300)) DESC,
+                          created_at ASC, rowid ASC LIMIT 1",
                 [],
                 row_to_task,
             )
@@ -735,6 +740,43 @@ mod tests {
             priority: 0,
             target_dir: None,
         }
+    }
+
+    #[test]
+    fn queue_priority_ages_so_low_priority_tasks_are_not_starved() {
+        let mut store = TaskStore::open_in_memory().unwrap();
+        let mut high = new_task("high");
+        high.priority = 100;
+        store.create_task(&high).unwrap();
+        let mut low = new_task("low");
+        low.priority = 0;
+        store.create_task(&low).unwrap();
+
+        // Fresh: the high-priority task runs first.
+        let next = store.next_queued().unwrap().unwrap();
+        assert_eq!(next.id, "high");
+
+        // Backdate low to ~10h of waiting: its boost is capped at 100, so
+        // the effective priorities tie at 100 and the oldest task wins.
+        store
+            .connection
+            .execute(
+                "UPDATE tasks SET created_at = ?1 WHERE id = 'low'",
+                params![now_ms() - 10 * 3600 * 1000],
+            )
+            .unwrap();
+        let next = store.next_queued().unwrap().unwrap();
+        assert_eq!(
+            next.id, "low",
+            "aged low-priority task must overtake the fresh high one"
+        );
+
+        // A brand-new high-priority task cannot cut ahead of the aged one.
+        let mut high2 = new_task("high2");
+        high2.priority = 100;
+        store.create_task(&high2).unwrap();
+        let next = store.next_queued().unwrap().unwrap();
+        assert_eq!(next.id, "low");
     }
 
     #[test]
