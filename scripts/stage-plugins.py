@@ -15,6 +15,7 @@ import argparse
 import json
 import platform
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -56,6 +57,8 @@ def main() -> int:
     parser.add_argument("--target-dir", default="target/release")
     parser.add_argument("--out", default="build/plugins")
     parser.add_argument("--platform-key")
+    # Universal macOS builds: lipo each plugin from this second arch dir.
+    parser.add_argument("--merge-target-dir")
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parent.parent
@@ -80,7 +83,16 @@ def main() -> int:
         package = out / manifest["id"]
         destination = package / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, destination)
+        if args.merge_target_dir and key == "macos-universal":
+            second = (root / args.merge_target_dir).resolve() / f"{binary_name}{suffix}"
+            if not second.is_file():
+                raise SystemExit(f"missing second-arch plugin binary: {second}")
+            subprocess.run(
+                ["lipo", "-create", str(source), str(second), "-output", str(destination)],
+                check=True,
+            )
+        else:
+            shutil.copy2(source, destination)
         destination.chmod(0o755)
         shutil.copy2(manifest_path, package / "plugin.json")
         shutil.copy2(root / "LICENSE", package / "LICENSE")

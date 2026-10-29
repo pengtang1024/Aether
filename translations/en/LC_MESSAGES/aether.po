@@ -765,3 +765,12 @@ msgstr "Closing the window"
 
 msgid "有系统托盘时收进托盘继续下载，从托盘菜单退出；没有托盘时直接退出"
 msgstr "With a system tray the window hides and downloads continue — quit from the tray menu; without a tray, closing quits"
+
+msgid "重试"
+msgstr "Retry"
+
+msgid "继续"
+msgstr "Resume"
+
+msgid "删除"
+msgstr "Delete"

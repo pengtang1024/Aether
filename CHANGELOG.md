@@ -52,6 +52,23 @@ versioning; 0.x releases may still change structure.
   compile it. macOS stays out on purpose: an NSStatusItem needs objc2 and
   this repo's macOS CI is check-only, leaving no way to verify it.
 
+- Accessibility groundwork: the UI now builds with Slint's AccessKit
+  bridge. Custom controls carry real semantics instead of being invisible
+  to assistive tech — navigation and settings items are buttons with
+  labels and checked state, filter pills are checkable buttons, task rows
+  are list items with the task name and status as label/description,
+  icon-only row actions have spoken names, the toast action is a button,
+  and progress tracks expose a percentage. Verified to compile and render
+  unchanged on Xvfb; real screen-reader runs (NVDA/Orca) are noted as an
+  external step because this repo has no such environment.
+
+- The macOS app bundle now ships the whole application: universal
+  aether-daemon, aether-cli and aether-native-host live in Contents/MacOS
+  next to the UI, and every first-party plugin is lipo'd to universal and
+  placed under Contents/Resources/plugins, which the plugin directory
+  lookup now understands. The release pipeline is the first real run (no
+  macOS runtime here) — documented as such.
+
 - Staged rollouts and migration exports. Update manifests can carry a
   `rollout` percentage (default 100); each machine hashes its hostname with
   the target version into a stable bucket, so a 25% rollout reaches roughly

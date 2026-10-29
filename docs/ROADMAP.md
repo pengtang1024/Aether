@@ -26,7 +26,7 @@
 | `79c2cdb` | i18n（中文优先）：全量 202 条 UI 串 @tr + en.po、select_bundled_translation 即时切换、设置→外观语言项；ComboBox 功能值不译 |
 | `f6ef273` | Rust 侧字符串表化：i18n::tr(zh,en) 内联对 + 全局语言位，toast/hint/notice/时间格式/插件描述/通知全迁；功能值保留 |
 | `c1d1bcd` | ja + zh-TW 全量（po 250 条 + Rust 单表多语言行）、语言下拉 4 项、扩展商店打包脚本+文案 |
-| （更新灰度+迁移） | 清单 `rollout` 稳定分桶灰度（签名覆盖，需重签调档）、make-update-manifest.py 自动生成清单（AppImage 优先/版本校验/未签名即丢弃）、`aether-cli export/import` 设置+任务迁移（不导出凭据，`--settings` 显式应用） |
+| `6481b84` | 清单 `rollout` 稳定分桶灰度（签名覆盖，需重签调档）、make-update-manifest.py 自动生成清单（AppImage 优先/版本校验/未签名即丢弃）、`aether-cli export/import` 设置+任务迁移（不导出凭据，`--settings` 显式应用） |
 | `ee2ab81` | 单实例锁（fs2/配置目录锁文件，第二实例通知后退出）、关闭到托盘（仅托盘真实可用时；Linux 托盘无 watcher 改为诚实返回 None）、开机自启（Linux XDG / Windows HKCU Run / macOS LaunchAgent，状态以 OS 为准） |
 | `1d75cd5` | Windows 桌面通知（notify-rust toast + HKCU AUMID 一次注册，失败回退内置归属）+ Windows 发布产物补齐（daemon/CLI/native-host + 16 插件 exe 进 zip/安装器 `{app}\plugins`）+ default_plugins_dir exe 同级候选 |
 | `716896e` | 托盘平台分发（tray.rs → tray_sni.rs + tray_windows.rs 零依赖 Shell_NotifyIconW FFI）、zbus 移 unix-only、CI Windows 跑 bin 测试 |
@@ -144,7 +144,10 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
     `aether-daemon.exe` ✓；`default_plugins_dir` 加 **exe 同级 `plugins\`**
     候选（aether-host `plugin_dir_candidates()`，unix 顺序不变）→ 安装/便携
     布局都能解析；CI Windows job 加 `cargo test -p aether-host plugin_dir`。
-    macOS 包仍只含 UI 本体（bundle 内无 daemon/插件）——诚实记录，未修。
+    macOS 包已补齐（2026-10-30，第二波）：`cargo build --workspace` 双 arch +
+    lipo 四个二进制进 Contents/MacOS + 插件双 arch lipo 进
+    Contents/Resources/plugins；`default_plugins_dir` 的 macOS 候选按 bundle
+    布局解析（见 §4.10）。
   - 交叉编译认知更新：装 `gcc-mingw-w64-x86-64`+`nasm` 后本机即可
     `cargo check --workspace --all-targets --target x86_64-pc-windows-gnu`
     （见 §4.5 Windows 托盘条），Windows 编译错不再只能等 CI。
@@ -414,7 +417,7 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
 
 ### 4.9 更新灰度与迁移导出
 
-- **已落地（2026-10-30，`<hash>`）**：
+- **已落地（2026-10-30，`6481b84`）**：
   - **灰度发布（无服务器）**：`UpdateManifest.rollout: u8`（serde default 100，
     >100 报协议错）。`UpdateClient::check()` 版本比较后过闸门：
     bucket = `sha256(hostname\nversion)[0] % 100`（hostname 取
@@ -434,6 +437,26 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
     集成测试：daemon e2e 导出→改 URL→导入（含 --settings）→ 任务数断言。
   - 剩余（需外部条件）：真实灰度调档要离线私钥重签；更新服务器/CDN 用
     GitHub Releases 固定地址即可（`releases/latest/download/update.json`）。
+
+### 4.10 无障碍与 macOS 包补齐
+
+- **已落地（2026-10-30，`<hash2>`）**：
+  - **无障碍**：slint 开启 `accessibility`（AccessKit 桥）。语义补齐：
+    RailButton/NavRailItem/SettingsNav/FilterPill/RowAction/Toast 动作按钮
+    为 button（label + checked + action-default），TaskItem 为 list-item
+    （label=任务名、description=状态、item-selected），ProgressTrack 为
+    progress-indicator（accessible-value 百分比）。新增 Slint 串
+    「重试/继续/删除」进三语 po。**诚实边界**：仓库无屏幕阅读器运行环境，
+    验证到 feature 编译 + Xvfb 启动渲染无回归 + 语义静态审查；真机
+    NVDA/Orca 验证记为外部步骤。
+  - **macOS 包补齐**：package.yml macOS job 改 `cargo build --release
+    --workspace`（双 arch），aether/aether-daemon/aether-cli/
+    aether-native-host 逐个 lipo 进 Contents/MacOS；插件经
+    `stage-plugins.py --merge-target-dir` 双 arch lipo 后进
+    Contents/Resources/plugins。`default_plugins_dir` 加 macOS 候选：
+    `../Resources/plugins`（bundle）→ `plugins`（便携）→ /usr/lib →
+    build/plugins → plugins；unix 非 mac 顺序不变。release 流水线首次
+    实跑在下一个 release 分支（macOS 无本地运行环境，如实标注）。
 
 ## 5. 发布流程摘要
 

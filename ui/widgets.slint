@@ -114,8 +114,15 @@ export component RailButton inherits Rectangle {
     in property <bool> accent: false;
     in property <length> size: Aether.control-xl;
     in property <length> icon-size: 18px;
+    // Screen readers need a name: the icon alone is not announceable.
+    in property <string> label: "";
     callback clicked;
     callback hover-changed(bool);
+
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-checked: root.active;
+    accessible-action-default => { root.clicked(); }
 
     width: root.size;
     height: root.size;
@@ -246,6 +253,9 @@ export component ProgressTrack inherits Rectangle {
     in property <bool> live: false;
     /// Slow oscillation in -1..1, driven from Rust at 5 Hz.
     in property <float> pulse: 0;
+
+    accessible-role: progress-indicator;
+    accessible-value: "" + round(clamp(root.value, 0, 1) * 100) + "%";
 
     height: root.bar-height;
     border-radius: root.bar-height / 2;
@@ -442,6 +452,11 @@ export component NavRailItem inherits Rectangle {
     in property <string> label: "";
     in property <bool> active: false;
     callback clicked;
+
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-checked: root.active;
+    accessible-action-default => { root.clicked(); }
 
     width: 64px;
     height: 58px;

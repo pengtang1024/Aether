@@ -47,7 +47,16 @@ fn plugin_dir_candidates() -> Vec<std::path::PathBuf> {
             candidates.push(dir.join("plugins"));
         }
     }
-    #[cfg(unix)]
+    #[cfg(target_os = "macos")]
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            // The .app bundle keeps executables in Contents/MacOS and
+            // resources in Contents/Resources — plugins ship with resources.
+            candidates.push(dir.join("../Resources/plugins"));
+            candidates.push(dir.join("plugins"));
+        }
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
     candidates.push(std::path::PathBuf::from("/usr/lib/aether/plugins"));
     candidates.push(std::path::PathBuf::from("build/plugins"));
     candidates.push(std::path::PathBuf::from("plugins"));
@@ -63,11 +72,24 @@ mod tests {
     #[test]
     fn plugin_dir_candidates_lead_with_the_platform_location() {
         let candidates = plugin_dir_candidates();
-        #[cfg(unix)]
+        #[cfg(all(unix, not(target_os = "macos")))]
         assert_eq!(
             candidates[0],
             std::path::PathBuf::from("/usr/lib/aether/plugins")
         );
+        #[cfg(target_os = "macos")]
+        {
+            // Contents/MacOS/aether-daemon -> Contents/Resources/plugins.
+            let first = &candidates[0];
+            assert!(
+                first.is_absolute(),
+                "bundle path must be absolute: {first:?}"
+            );
+            assert!(
+                first.ends_with("Resources/plugins"),
+                "plugins ship with the bundle resources: {first:?}"
+            );
+        }
         #[cfg(windows)]
         {
             // exe-adjacent plugins\ — absolute, ending in the folder name.

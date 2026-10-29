@@ -59,6 +59,8 @@ slint = { version = "1.18", default-features = false, features = [
     "renderer-femtovg",
     "renderer-software",
     "compat-1-2",
+    # AccessKit bridge: screen readers can see roles, labels and values.
+    "accessibility",
 ] }
 
 # The StatusNotifierItem tray speaks D-Bus — unix only. Windows gets a

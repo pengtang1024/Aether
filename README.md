@@ -354,8 +354,12 @@ Esc 关闭；下载空状态提供“清除筛选条件”，一次恢复全部�
   autostart / Windows HKCU Run / macOS LaunchAgent）均为真实系统集成；
   开机自启开关显示操作系统里的真实状态，写失败会回弹并说明原因
 - Windows 安装包与便携 zip 已随附 daemon、CLI、native-host 和全部第一方
-  插件 exe（`{app}\plugins`，daemon 按 exe 同级解析）；macOS 包目前只含
-  UI 本体——app bundle 内未随附 daemon/插件，需另行安装或源码运行
+  插件 exe（`{app}\plugins`，daemon 按 exe 同级解析）；macOS `.app` 同样
+  随附四个二进制（universal）与 `Contents/Resources/plugins`，daemon 按
+  bundle 布局解析插件目录
+- 无障碍：Slint 开启 AccessKit 桥，导航/筛选/任务行/图标按钮/进度条带
+  role、label、checked/value 语义；屏幕阅读器真机验证（NVDA/Orca）尚未做，
+  仓库没有对应运行环境
 - 窗口默认 900×600，最小 900×560；没有做手机/超窄窗口布局
 
 剩余特性的具体实施方案与开发环境要点（e2e 约定、Xvfb 冒烟配方、已知坑）

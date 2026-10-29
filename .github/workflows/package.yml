@@ -225,16 +225,29 @@ jobs:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
-          cargo build --release --target aarch64-apple-darwin
-          cargo build --release --target x86_64-apple-darwin
+          # Whole workspace: the bundle ships the daemon, CLI and native host
+          # alongside the UI, plus every first-party plugin.
+          cargo build --release --workspace --target aarch64-apple-darwin
+          cargo build --release --workspace --target x86_64-apple-darwin
 
           rm -rf Aether.app Aether.iconset dist
           mkdir -p Aether.app/Contents/MacOS Aether.app/Contents/Resources Aether.iconset dist
-          lipo -create \
-            target/aarch64-apple-darwin/release/aether \
-            target/x86_64-apple-darwin/release/aether \
-            -output Aether.app/Contents/MacOS/aether
-          chmod +x Aether.app/Contents/MacOS/aether
+          for bin in aether aether-daemon aether-cli aether-native-host; do
+            lipo -create \
+              "target/aarch64-apple-darwin/release/$bin" \
+              "target/x86_64-apple-darwin/release/$bin" \
+              -output "Aether.app/Contents/MacOS/$bin"
+            chmod +x "Aether.app/Contents/MacOS/$bin"
+          done
+          # Plugins live with the bundle resources; the daemon resolves them
+          # as ../Resources/plugins relative to Contents/MacOS.
+          python3 scripts/stage-plugins.py \
+            --target-dir target/aarch64-apple-darwin/release \
+            --merge-target-dir target/x86_64-apple-darwin/release \
+            --platform-key macos-universal \
+            --out build/plugins
+          mkdir -p Aether.app/Contents/Resources/plugins
+          cp -a build/plugins/. Aether.app/Contents/Resources/plugins/
           sed "s/@VERSION@/${VERSION}/g" packaging/macos/Info.plist \
             > Aether.app/Contents/Info.plist
 

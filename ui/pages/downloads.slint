@@ -15,6 +15,12 @@ component FilterPill inherits Rectangle {
     in property <bool> selected: false;
     callback clicked;
 
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-checkable: true;
+    accessible-checked: root.selected;
+    accessible-action-default => { root.clicked(); }
+
     height: Aether.row-compact;
     border-radius: Aether.radius-full;
     border-width: 1px;
@@ -57,7 +63,13 @@ component FilterPill inherits Rectangle {
 component RowAction inherits Rectangle {
     in property <image> icon-source;
     in property <color> tone: Aether.on-surface-variant;
+    // Icon-only actions need a spoken name (set by the call sites).
+    in property <string> label: "";
     callback clicked;
+
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
 
     width: Aether.control-xs;
     height: Aether.control-xs;
@@ -85,6 +97,13 @@ component TaskItem inherits Rectangle {
     in property <float> drift: 0;
     callback task-action(int, int);
     callback open-detail(int);
+
+    accessible-role: list-item;
+    accessible-label: root.task.name;
+    accessible-description: root.task.status-text;
+    accessible-item-selectable: true;
+    accessible-item-selected: root.task.selected;
+    accessible-action-default => { root.open-detail(root.task.id); }
 
     height: Aether.row-task;
 
@@ -242,6 +261,10 @@ component TaskItem inherits Rectangle {
                     : root.task.failed ? AetherIcons.refresh
                     : root.task.paused || root.task.status == 4 ? AetherIcons.play
                     : AetherIcons.pause;
+                label: root.task.completed ? @tr("打开")
+                    : root.task.failed ? @tr("重试")
+                    : root.task.paused || root.task.status == 4 ? @tr("继续")
+                    : @tr("暂停");
                 tone: root.task.failed ? Aether.error
                     : root.task.paused || root.task.status == 4 ? Aether.primary-bright
                     : Aether.on-surface-variant;
@@ -256,6 +279,7 @@ component TaskItem inherits Rectangle {
             RowAction {
                 icon-source: root.task.completed ? AetherIcons.trash : AetherIcons.close;
                 tone: Aether.on-surface-muted;
+                label: root.task.completed ? @tr("删除") : @tr("取消");
                 clicked => { root.task-action(root.task.id, 2); }
             }
         }
