@@ -48,3 +48,15 @@
 - Xvfb 冒烟：双开第二实例快速退出且第一实例存活；设置页新行渲染截图。
 - 门禁：fmt → workspace test → windows-gnu 交叉 check → cargo-deny（无新依赖，
   fs2 已在树内）→ push → CI → pin → 记忆。
+
+## 实施结果（2026-10-30）
+
+- 全部按计划落地（`ee2ab81`，CI 三平台全绿，Windows job 实跑单实例
+  LockFileEx 冲突测试与 HKCU Run 往返测试）。
+- 发现并修复一处冒烟乌龙：`cargo check` 不产出新二进制，首次 Xvfb 冒烟
+  跑的是旧 build（锁文件根本没建、双开都成了主实例）；`cargo build` 后
+  复测：第二实例 0 退出、第一实例存活、instance.lock 真实存在。
+- 开机自启点击 e2e：设置页开关点击 → `XDG_CONFIG_HOME/autostart/aether.desktop`
+  写入（Exec 指向当前二进制）→ 再点 → 文件删除；开关与 toast 同步。
+- 顺带修复：i18n 表里 `阿里云盘（官方 API）` 的日语行残留生成脚本垃圾
+  （"アリyun ドライブ"）→ "Alibaba Cloud Drive（公式 API）"。

@@ -26,7 +26,7 @@
 | `79c2cdb` | i18n（中文优先）：全量 202 条 UI 串 @tr + en.po、select_bundled_translation 即时切换、设置→外观语言项；ComboBox 功能值不译 |
 | `f6ef273` | Rust 侧字符串表化：i18n::tr(zh,en) 内联对 + 全局语言位，toast/hint/notice/时间格式/插件描述/通知全迁；功能值保留 |
 | `c1d1bcd` | ja + zh-TW 全量（po 250 条 + Rust 单表多语言行）、语言下拉 4 项、扩展商店打包脚本+文案 |
-| （后台形态） | 单实例锁（fs2/配置目录锁文件，第二实例通知后退出）、关闭到托盘（仅托盘真实可用时；Linux 托盘无 watcher 改为诚实返回 None）、开机自启（Linux XDG / Windows HKCU Run / macOS LaunchAgent，状态以 OS 为准） |
+| `ee2ab81` | 单实例锁（fs2/配置目录锁文件，第二实例通知后退出）、关闭到托盘（仅托盘真实可用时；Linux 托盘无 watcher 改为诚实返回 None）、开机自启（Linux XDG / Windows HKCU Run / macOS LaunchAgent，状态以 OS 为准） |
 | `1d75cd5` | Windows 桌面通知（notify-rust toast + HKCU AUMID 一次注册，失败回退内置归属）+ Windows 发布产物补齐（daemon/CLI/native-host + 16 插件 exe 进 zip/安装器 `{app}\plugins`）+ default_plugins_dir exe 同级候选 |
 | `716896e` | 托盘平台分发（tray.rs → tray_sni.rs + tray_windows.rs 零依赖 Shell_NotifyIconW FFI）、zbus 移 unix-only、CI Windows 跑 bin 测试 |
 
@@ -385,7 +385,7 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
 
 ### 4.8 后台形态（单实例 / 关闭到托盘 / 开机自启）
 
-- **已落地（2026-10-30，`<hash>`）**：来自 GAP_AUDIT #3。
+- **已落地（2026-10-30，`ee2ab81` CI 三平台全绿）**：来自 GAP_AUDIT #3。
   - **单实例**：`src/instance.rs` 用 fs2 的 `try_lock_exclusive`（flock /
     LockFileEx）锁配置目录 `aether/instance.lock`；进程退出/崩溃由 OS 释放，
     无 stale lock。三态 Primary(Guard) / AlreadyRunning / Unlocked（配置目录
