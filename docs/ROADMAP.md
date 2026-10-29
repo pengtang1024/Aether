@@ -26,6 +26,7 @@
 | `79c2cdb` | i18n（中文优先）：全量 202 条 UI 串 @tr + en.po、select_bundled_translation 即时切换、设置→外观语言项；ComboBox 功能值不译 |
 | `f6ef273` | Rust 侧字符串表化：i18n::tr(zh,en) 内联对 + 全局语言位，toast/hint/notice/时间格式/插件描述/通知全迁；功能值保留 |
 | `c1d1bcd` | ja + zh-TW 全量（po 250 条 + Rust 单表多语言行）、语言下拉 4 项、扩展商店打包脚本+文案 |
+| `1d75cd5` | Windows 桌面通知（notify-rust toast + HKCU AUMID 一次注册，失败回退内置归属）+ Windows 发布产物补齐（daemon/CLI/native-host + 16 插件 exe 进 zip/安装器 `{app}\plugins`）+ default_plugins_dir exe 同级候选 |
 | `716896e` | 托盘平台分发（tray.rs → tray_sni.rs + tray_windows.rs 零依赖 Shell_NotifyIconW FFI）、zbus 移 unix-only、CI Windows 跑 bin 测试 |
 
 - **设置页现状**：10 个分类中每个控件要么真实生效、要么是诚实的能力说明卡，
@@ -123,7 +124,7 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
   无新增依赖）；`server.rs/client.rs` 与 UI `src/backend.rs`、CLI
   remote/import、native-host 的 `#[cfg(unix)]` 门全部移除，Windows 有真实
   后端；`tests/transport.rs` 回环测试在 CI Windows job 实机通过。
-- **剩余两项已落地（2026-10-30）**：
+- **剩余两项已落地（2026-10-30，`1d75cd5` CI 三平台全绿）**：
   - **Windows 桌面通知**：`send_notification` 接 notify-rust（4.x，MIT/Apache；
     Windows 后端 tauri-winrt-notification 同许可，unix/mac 后端依赖仅进
     Cargo.lock 不参与 Windows 编译）。toast 按 AUMID 归属：首次通知时
