@@ -34,6 +34,23 @@ pub struct UpdateManifest {
     pub notes_url: Option<String>,
     #[serde(default)]
     pub assets: BTreeMap<String, UpdateAsset>,
+    /// Optional plugin releases keyed by plugin id; absent in older
+    /// manifests (serde default keeps them parsing).
+    #[serde(default)]
+    pub plugins: BTreeMap<String, PluginUpdateEntry>,
+}
+
+/// One plugin entry in the update manifest: the release a plugin should be
+/// updated to. Covered by the manifest's own detached signature, so the
+/// URL and SHA-256 are authenticated; the package's inner manifest
+/// signature (4.6a) is verified again at install time.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PluginUpdateEntry {
+    pub version: String,
+    pub url: String,
+    pub sha256: String,
+    #[serde(default)]
+    pub size: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -104,12 +121,18 @@ impl UpdateClient {
     }
 
     /// Fetch + verify + compare. Returns `Ok(None)` when up to date.
-    pub fn check(&self) -> Result<Option<UpdateManifest>, UpdateError> {
+    /// Fetch and verify the manifest, without comparing it to the running
+    /// version. The plugin update channel uses this: plugin entries matter
+    /// even when the app itself is up to date.
+    pub fn check_manifest(&self) -> Result<UpdateManifest, UpdateError> {
         let bytes = self.fetch(self.manifest_url.as_str())?;
         let signature_bytes = self.fetch(&format!("{}.sig", self.manifest_url))?;
         verify_signature(&bytes, &signature_bytes, &self.public_key)?;
+        Ok(serde_json::from_slice(&bytes)?)
+    }
 
-        let manifest: UpdateManifest = serde_json::from_slice(&bytes)?;
+    pub fn check(&self) -> Result<Option<UpdateManifest>, UpdateError> {
+        let manifest = self.check_manifest()?;
         let version = Version::parse(&manifest.version)
             .map_err(|error| UpdateError::Protocol(format!("manifest version: {error}")))?;
         if version <= self.current_version {
@@ -143,17 +166,45 @@ impl UpdateClient {
             .unwrap_or(Path::new("."))
             .join("artifacts")
             .join(&manifest.version);
-        fs::create_dir_all(&directory)?;
-        let filename = asset
-            .url
+        let target = self.download_artifact(
+            &asset.url,
+            &asset.sha256,
+            asset.size,
+            &directory,
+            "aether-update",
+        )?;
+        self.save_state(&UpdateState {
+            last_check: now_ms(),
+            latest_version: Some(manifest.version.clone()),
+            status: "downloaded".into(),
+            artifact: Some(target.clone()),
+            error: None,
+        })?;
+        Ok(target)
+    }
+
+    /// Download one artifact into `directory`, verifying size (when known)
+    /// and SHA-256 before it is moved into place. Shared by app and plugin
+    /// updates: nothing is trusted until the bytes match the signed
+    /// manifest entry.
+    pub fn download_artifact(
+        &self,
+        url: &str,
+        sha256: &str,
+        size: Option<u64>,
+        directory: &Path,
+        filename_hint: &str,
+    ) -> Result<PathBuf, UpdateError> {
+        fs::create_dir_all(directory)?;
+        let filename = url
             .rsplit('/')
             .next()
             .filter(|name| !name.is_empty())
-            .unwrap_or("aether-update");
+            .unwrap_or(filename_hint);
         let target = directory.join(filename);
         let temp = directory.join(format!("{filename}.part"));
 
-        let mut response = self.http.get(&asset.url).send()?.error_for_status()?;
+        let mut response = self.http.get(url).send()?.error_for_status()?;
         let mut file = fs::File::create(&temp)?;
         let mut digest = Sha256::new();
         let mut written = 0_u64;
@@ -169,7 +220,7 @@ impl UpdateClient {
         }
         file.sync_all()?;
 
-        if let Some(size) = asset.size {
+        if let Some(size) = size {
             if written != size {
                 let _ = fs::remove_file(&temp);
                 return Err(UpdateError::SizeMismatch {
@@ -179,18 +230,11 @@ impl UpdateClient {
             }
         }
         let actual = hex(&digest.finalize());
-        if !actual.eq_ignore_ascii_case(&asset.sha256) {
+        if !actual.eq_ignore_ascii_case(sha256) {
             let _ = fs::remove_file(&temp);
             return Err(UpdateError::ChecksumMismatch);
         }
         fs::rename(&temp, &target)?;
-        self.save_state(&UpdateState {
-            last_check: now_ms(),
-            latest_version: Some(manifest.version.clone()),
-            status: "downloaded".into(),
-            artifact: Some(target.clone()),
-            error: None,
-        })?;
         Ok(target)
     }
 
@@ -386,6 +430,67 @@ fn now_ms() -> i64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64
+}
+
+/// Unpack a plugin `.tar.gz` into `destination` (created fresh).
+///
+/// Guards: only plain files and directories, relative paths only (no `..`,
+/// no absolute paths, no symlinks/hardlinks), and a total unpacked size cap
+/// so a hostile archive cannot fill the disk.
+pub fn unpack_plugin_archive(
+    archive: &Path,
+    destination: &Path,
+    max_bytes: u64,
+) -> Result<(), UpdateError> {
+    let file = fs::File::open(archive)?;
+    let decoder = flate2::read::GzDecoder::new(file);
+    let mut tar = tar::Archive::new(decoder);
+    fs::create_dir_all(destination)?;
+    let mut total = 0_u64;
+    for entry in tar
+        .entries()
+        .map_err(|error| UpdateError::Protocol(format!("plugin archive: {error}")))?
+    {
+        let mut entry = entry
+            .map_err(|error| UpdateError::Protocol(format!("plugin archive entry: {error}")))?;
+        let entry_type = entry.header().entry_type();
+        if !entry_type.is_file() && !entry_type.is_dir() {
+            return Err(UpdateError::Protocol(format!(
+                "plugin archive contains a non-regular entry ({entry_type:?})"
+            )));
+        }
+        let path = entry
+            .path()
+            .map_err(|error| UpdateError::Protocol(format!("plugin archive entry path: {error}")))?
+            .into_owned();
+        let unsafe_path = path.is_absolute()
+            || path.components().any(|component| {
+                matches!(
+                    component,
+                    std::path::Component::ParentDir
+                        | std::path::Component::RootDir
+                        | std::path::Component::Prefix(_)
+                )
+            });
+        if unsafe_path {
+            return Err(UpdateError::Protocol(format!(
+                "plugin archive entry escapes the package: {}",
+                path.display()
+            )));
+        }
+        if entry_type.is_file() {
+            total = total.saturating_add(entry.header().size().unwrap_or(0));
+            if total > max_bytes {
+                return Err(UpdateError::Protocol(format!(
+                    "plugin archive unpacks larger than {max_bytes} bytes"
+                )));
+            }
+        }
+        entry.unpack_in(destination).map_err(|error| {
+            UpdateError::Protocol(format!("unpacking {}: {error}", path.display()))
+        })?;
+    }
+    Ok(())
 }
 
 #[derive(Debug, Error)]

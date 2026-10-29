@@ -148,6 +148,9 @@ struct State {
     /// root for `install_plugin`. `None` = unsigned installs need the
     /// explicit `AETHER_ALLOW_UNSIGNED_PLUGINS=1` escape hatch.
     plugin_public_key: Option<String>,
+    /// Update manifest URL; when set together with the key, the plugin
+    /// update channel (`plugin_updates` / `plugin_update_all`) is live.
+    update_url: Option<String>,
 }
 
 impl Default for SystemProxyCache {
@@ -275,6 +278,7 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
                 config.update_appimage.clone(),
                 data_dir.clone(),
                 status.clone(),
+                config.socket.clone(),
             );
             Some(status)
         }
@@ -314,6 +318,7 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
         rpc_secret,
         host_version: config.host_version.clone(),
         plugin_public_key: config.update_public_key.clone(),
+        update_url: config.update_url.clone(),
     };
 
     recover_tasks(&mut state);
@@ -430,17 +435,45 @@ fn file_category(relative_path: &str) -> usize {
     }
 }
 
+/// The periodic plugin-update pass, run as a *client* of the daemon (the
+/// update loop owns no `State`). Skips silently unless the daemon setting
+/// `plugin_auto_update` is on; returns what the daemon reported.
+pub fn plugin_auto_update_pass(
+    socket: &std::path::Path,
+) -> Result<Option<serde_json::Value>, DaemonError> {
+    let mut client = crate::client::Client::connect(socket)?;
+    let settings = client.settings()?;
+    if settings["plugin_auto_update"].as_bool() != Some(true) {
+        return Ok(None);
+    }
+    let result = client.call("plugin_update_all", None, None, None, None, json!({}))?;
+    Ok(Some(result))
+}
+
 fn spawn_update_loop(
     manifest_url: String,
     public_key: String,
     appimage: Option<PathBuf>,
     data_dir: PathBuf,
     status: Arc<Mutex<serde_json::Value>>,
+    socket: std::path::PathBuf,
 ) {
     thread::spawn(move || {
         // Do not delay daemon startup for a network check.
         thread::sleep(Duration::from_secs(30));
         loop {
+            // Plugin updates ride the same cadence; failures are logged, not
+            // surfaced through the app-update status.
+            match plugin_auto_update_pass(&socket) {
+                Ok(Some(result)) => {
+                    let updated = result["updated"].as_array().map_or(0, Vec::len);
+                    if updated > 0 {
+                        eprintln!("aether-daemon: auto-updated {updated} plugin(s)");
+                    }
+                }
+                Ok(None) => {}
+                Err(error) => eprintln!("aether-daemon: plugin auto-update: {error}"),
+            }
             let client = match UpdateClient::new(
                 &manifest_url,
                 &public_key,
@@ -1232,6 +1265,12 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
                     })?;
                 next.ffmpeg_path = text.filter(|text| !text.trim().is_empty());
             }
+            if let Some(value) = patch.get("plugin_auto_update") {
+                next.plugin_auto_update =
+                    serde_json::from_value(value.clone()).map_err(|error| {
+                        DaemonError::Protocol(format!("invalid plugin_auto_update: {error}"))
+                    })?;
+            }
             next.validate()?;
 
             let network_before = state.settings.network();
@@ -1292,6 +1331,8 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
             let total = rescan_registry(state)?;
             Ok(json!({ "plugins": total }))
         }
+        "plugin_updates" => plugin_updates(state),
+        "plugin_update_all" => plugin_update_all(state),
         "update_status" => Ok(state.update.as_ref().map_or_else(
             || json!({"status": "disabled"}),
             |status| status.lock().unwrap().clone(),
@@ -1326,7 +1367,132 @@ fn install_plugin(state: &mut State, request: Request) -> Result<Value, DaemonEr
         .get("path")
         .and_then(serde_json::Value::as_str)
         .ok_or_else(|| DaemonError::Protocol("install_plugin needs settings.path".into()))?;
-    let package = Path::new(path);
+    install_package(state, Path::new(path))
+}
+
+/// An update client for the plugin channel, or `None` when the daemon was
+/// not configured with both the manifest URL and the release key (the same
+/// trust root the app-update loop uses).
+fn plugin_update_client(state: &State) -> Option<aether_update::UpdateClient> {
+    let url = state.update_url.as_deref()?;
+    let key = state.plugin_public_key.as_deref()?;
+    aether_update::UpdateClient::new(
+        url,
+        key,
+        &state.host_version,
+        aether_plugin_sdk::current_platform_key(),
+        &state.data_dir.join("plugin-updates"),
+    )
+    .ok()
+}
+
+/// Compare installed plugin versions against the update manifest.
+fn plugin_updates(state: &State) -> Result<Value, DaemonError> {
+    let Some(client) = plugin_update_client(state) else {
+        // Honest about the precondition instead of reporting "no updates":
+        // nothing was checked.
+        return Ok(json!({ "configured": false, "updates": [] }));
+    };
+    let manifest = client
+        .check_manifest()
+        .map_err(|error| DaemonError::Protocol(format!("update manifest: {error}")))?;
+    let installed: std::collections::HashMap<String, String> = state
+        .manager
+        .registry()
+        .iter()
+        .map(|entry| (entry.manifest.id.clone(), entry.manifest.version.clone()))
+        .collect();
+    let updates = manifest
+        .plugins
+        .iter()
+        .filter(|(id, entry)| {
+            installed.get(*id).map(String::as_str) != Some(entry.version.as_str())
+        })
+        .map(|(id, entry)| {
+            json!({
+                "plugin_id": id,
+                "installed": installed.get(id),
+                "latest": entry.version,
+            })
+        })
+        .collect::<Vec<_>>();
+    Ok(json!({ "configured": true, "updates": updates }))
+}
+
+/// Download, verify and install every outdated plugin from the update
+/// manifest. Each plugin is independent: one failure (busy, bad archive,
+/// signature) is reported and the rest continue.
+fn plugin_update_all(state: &mut State) -> Result<Value, DaemonError> {
+    let Some(client) = plugin_update_client(state) else {
+        return Err(DaemonError::Protocol(
+            "plugin updates need update_url and the release key configured".into(),
+        ));
+    };
+    let manifest = client
+        .check_manifest()
+        .map_err(|error| DaemonError::Protocol(format!("update manifest: {error}")))?;
+    let installed: std::collections::HashMap<String, String> = state
+        .manager
+        .registry()
+        .iter()
+        .map(|entry| (entry.manifest.id.clone(), entry.manifest.version.clone()))
+        .collect();
+
+    let mut updated = Vec::new();
+    let mut failed = Vec::new();
+    for (id, entry) in &manifest.plugins {
+        if installed.get(id).map(String::as_str) == Some(entry.version.as_str()) {
+            continue;
+        }
+        match update_one_plugin(state, &client, id, entry) {
+            Ok(()) => updated.push(id.clone()),
+            Err(error) => failed.push(json!({ "plugin_id": id, "error": error.to_string() })),
+        }
+    }
+    Ok(json!({
+        "updated": updated,
+        "failed": failed,
+        "up_to_date": updated.is_empty() && failed.is_empty(),
+    }))
+}
+
+fn update_one_plugin(
+    state: &mut State,
+    client: &aether_update::UpdateClient,
+    id: &str,
+    entry: &aether_update::PluginUpdateEntry,
+) -> Result<(), DaemonError> {
+    let staging_root = state
+        .data_dir
+        .join("plugin-updates")
+        .join(format!("staging-{id}"));
+    if staging_root.exists() {
+        fs::remove_dir_all(&staging_root)?;
+    }
+    let archive = client
+        .download_artifact(
+            &entry.url,
+            &entry.sha256,
+            entry.size,
+            &state.data_dir.join("plugin-updates"),
+            &format!("{id}.tar.gz"),
+        )
+        .map_err(|error| DaemonError::Protocol(format!("download {id}: {error}")))?;
+    let unpacked = staging_root.join("pkg");
+    let unpack = aether_update::unpack_plugin_archive(&archive, &unpacked, 256 * 1024 * 1024);
+    if let Err(error) = unpack {
+        let _ = fs::remove_dir_all(&staging_root);
+        return Err(DaemonError::Protocol(error.to_string()));
+    }
+    let result = install_package(state, &unpacked);
+    let _ = fs::remove_dir_all(&staging_root);
+    result.map(|_| ())
+}
+
+/// Install one verified package directory into `plugins_dir` (shared by the
+/// `install_plugin` RPC and the update channel's unpacked downloads).
+fn install_package(state: &mut State, package: &Path) -> Result<Value, DaemonError> {
+    let package = package;
     let manifest_path = package.join("plugin.json");
     let raw = fs::read_to_string(&manifest_path).map_err(|error| {
         DaemonError::Protocol(format!("cannot read {}: {error}", manifest_path.display()))

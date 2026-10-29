@@ -412,6 +412,9 @@ fn refresh_rows(ui: &AppWindow, state: &Rc<RefCell<State>>) {
             ui.set_settings_bt_blocklist(settings["bt_blocklist"].as_str().unwrap_or("").into());
             ui.set_settings_bt_trackers(settings["bt_trackers"].as_str().unwrap_or("").into());
             ui.set_settings_media_ffmpeg(settings["ffmpeg_path"].as_str().unwrap_or("").into());
+            ui.set_settings_plugin_auto_update(
+                settings["plugin_auto_update"].as_bool().unwrap_or(false),
+            );
             // Scheduled window (daemon-side; HH:MM strings, blank = unset).
             ui.set_settings_schedule_on(settings["schedule_on"].as_bool().unwrap_or(false));
             ui.set_settings_schedule_start(
@@ -1302,6 +1305,16 @@ fn main() -> Result<(), slint::PlatformError> {
                             .set_setting(serde_json::json!({"ffmpeg_path": value.as_str()}));
                         hint = Some("ffmpeg 路径已保存：对之后开始的任务生效".into());
                     }
+                    "plugin-auto-update" => {
+                        let enabled = value.as_str() == "true";
+                        st.backend
+                            .set_setting(serde_json::json!({"plugin_auto_update": enabled}));
+                        hint = Some(if enabled {
+                            "已开启：daemon 每 6 小时检查并安装插件更新".into()
+                        } else {
+                            "已关闭自动更新插件".into()
+                        });
+                    }
                     "plugin-install" => {
                         let path = value.as_str().trim();
                         if path.is_empty() {
@@ -1627,10 +1640,11 @@ fn main() -> Result<(), slint::PlatformError> {
                 // Install goes through the package-path field (the button
                 // emits `plugin-install` with the typed path).
                 "install" => show_toast(&ui, &state, "请在「安装插件」输入包目录路径"),
-                // Update downloads land with the update-manifest channel
-                // (4.6b); until then this honestly says so.
+                // Check the update manifest and install every outdated
+                // plugin; the summary arrives through the notice channel.
                 "update-all" => {
-                    show_toast(&ui, &state, "自动更新通道尚未上线：更新清单还没有插件条目")
+                    show_toast(&ui, &state, "正在检查插件更新…");
+                    state.borrow().backend.plugin_update_all();
                 }
                 "reload" => {
                     show_toast(&ui, &state, "正在重新扫描插件目录…");

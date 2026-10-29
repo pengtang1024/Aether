@@ -91,6 +91,8 @@ mod imp {
         },
         /// Re-scan the plugins directory without restarting the daemon.
         RescanPlugins,
+        /// Check the update manifest and install every outdated plugin.
+        PluginUpdateAll,
     }
 
     struct Shared {
@@ -182,6 +184,12 @@ mod imp {
         /// resulting notice).
         pub fn rescan_plugins(&self) {
             let _ = self.commands.send(Command::RescanPlugins);
+        }
+
+        /// Check the update manifest and install every outdated plugin;
+        /// the summary arrives through `take_notice`.
+        pub fn plugin_update_all(&self) {
+            let _ = self.commands.send(Command::PluginUpdateAll);
         }
 
         /// Pop the most recent error surfaced by the daemon.
@@ -515,6 +523,27 @@ mod imp {
                     let total = value["plugins"].as_u64().unwrap_or(0);
                     self.needs_refresh = true;
                     self.notice = Some(format!("已重新扫描插件目录：{total} 个插件"));
+                }
+                Command::PluginUpdateAll => {
+                    let value = client.plugin_update_all()?;
+                    let updated = value["updated"].as_array().cloned().unwrap_or_default();
+                    let failed = value["failed"].as_array().cloned().unwrap_or_default();
+                    self.needs_refresh = true;
+                    self.notice = Some(if updated.is_empty() && failed.is_empty() {
+                        "插件已是最新".to_string()
+                    } else {
+                        let names = updated
+                            .iter()
+                            .filter_map(|item| item.as_str())
+                            .collect::<Vec<_>>()
+                            .join("、");
+                        let failures = if failed.is_empty() {
+                            String::new()
+                        } else {
+                            format!("；{} 个失败", failed.len())
+                        };
+                        format!("已更新 {} 个插件：{names}{failures}", updated.len())
+                    });
                 }
             }
             Ok(())

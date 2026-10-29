@@ -27,6 +27,10 @@ AETHER_UPDATE_SECRET_KEY=... cargo run -p aether-update --bin aether-plugin-sign
 
 ## 2. 清单
 
+> 插件条目（4.6b）：清单可含 `plugins` 映射（插件 id → `{version, url,
+> sha256, size?}`），与主程序资产同处一签——下载按 sha256 校验，解包后再
+> 验包内 manifest 签名（`aether-plugin-sign` 生成）。
+
 ```json
 {
   "version": "0.2.0",

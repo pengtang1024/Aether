@@ -67,9 +67,11 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "ed25519-dalek",
+ "flate2",
  "fs2",
  "serde",
  "serde_json",
+ "tar",
  "thiserror 2.0.21",
 ]
 
@@ -312,11 +314,13 @@ dependencies = [
  "aether-plugin-sdk",
  "base64 0.22.1",
  "ed25519-dalek",
+ "flate2",
  "reqwest",
  "semver",
  "serde",
  "serde_json",
  "sha2",
+ "tar",
  "thiserror 2.0.21",
  "url",
 ]

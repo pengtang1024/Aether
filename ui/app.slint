@@ -73,6 +73,8 @@ export component AppWindow inherits Window {
     in-out property <bool> settings-notify-fail: true;
     // Clipboard link watch (UI-local, default off).
     in-out property <bool> settings-clipboard: false;
+    // Daemon-backed: auto-install outdated plugins on the update cycle.
+    in-out property <bool> settings-plugin-auto-update: false;
     // True when no clipboard backend exists (headless): the switch stays
     // off and the row explains why instead of pretending to work.
     in-out property <bool> settings-clipboard-available: true;
@@ -513,6 +515,7 @@ export component AppWindow inherits Window {
                         bt-blocklist <=> root.settings-bt-blocklist;
                         bt-trackers <=> root.settings-bt-trackers;
                         media-ffmpeg <=> root.settings-media-ffmpeg;
+                        plugin-auto-update <=> root.settings-plugin-auto-update;
                         start-page <=> root.settings-start-page;
                         after-done <=> root.settings-after-done;
                         accent-index <=> root.settings-accent;

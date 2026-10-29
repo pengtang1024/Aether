@@ -10,6 +10,8 @@ publish = false
 [dependencies]
 aether-plugin-sdk = { path = "../aether-plugin-sdk" }
 base64 = "0.22"
+flate2 = "1"
+tar = "0.4"
 ed25519-dalek = "2"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "json"] }
 semver = "1"

@@ -299,6 +299,17 @@ impl Client {
         self.call("rescan_plugins", None, None, None, None, json!({}))
     }
 
+    /// Outdated plugins per the update manifest; `{configured: false}`
+    /// when the daemon has no update channel configured.
+    pub fn plugin_updates(&mut self) -> Result<Value, DaemonError> {
+        self.call("plugin_updates", None, None, None, None, json!({}))
+    }
+
+    /// Download, verify and install every outdated plugin.
+    pub fn plugin_update_all(&mut self) -> Result<Value, DaemonError> {
+        self.call("plugin_update_all", None, None, None, None, json!({}))
+    }
+
     pub fn update_status(&mut self) -> Result<Value, DaemonError> {
         self.call("update_status", None, None, None, None, json!({}))
     }

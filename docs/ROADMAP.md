@@ -1,12 +1,12 @@
 # 路线图与会话交接
 
 > 面向后续会话/贡献者：现在在哪、下一步做什么、怎么做、别踩哪些坑。
-> 最后更新：2026-10-29（main @ `238f8b4`）。历史盲区清单见 `GAP_AUDIT.md`，
+> 最后更新：2026-10-29（main @ 待提交）。历史盲区清单见 `GAP_AUDIT.md`，
 > 本文跟踪其中已完成的部分与剩余特性的具体方案。
 
 ## 1. 当前状态
 
-- **0.2.0 已发布**（tag v0.2.0）。main 之上已合入十个波次：
+- **0.2.0 已发布**（tag v0.2.0）。main 之上已合入十一个波次：
 
 | 提交 | 内容 |
 | --- | --- |
@@ -19,7 +19,8 @@
 | `cb3ef23` | 浏览器接管：Cookie 显式授权（optional permission）、站点过滤、Windows manifest 安装（注册表）、native-host 透传测试 |
 | `f8aefa0` | 媒体转码：`transcode_to` 任务级容器转封装（ffmpeg `-c copy`，失败保留原件）、全局 `ffmpeg_path` 注入、媒体页路径行、假 ffmpeg e2e |
 | `4c84ac2` | 剪贴板链接检测：arboard 轮询（默认关、变化触发、scheme 白名单）、toast 动作按钮 → 新建对话框预填、设置页开关；托盘/i18n 仍待做 |
-| `3ed8af5` | 插件安装+签名：`files` 哈希映射 + canonical Ed25519 签名、`aether-plugin-sign`、install/rescan RPC（staging swap 回滚、禁用状态保留）、UI 路径安装行、假开关改说明文本；4.6b 更新下载链待做 |
+| `3ed8af5` | 插件安装+签名：`files` 哈希映射 + canonical Ed25519 签名、`aether-plugin-sign`、install/rescan RPC（staging swap 回滚、禁用状态保留）、UI 路径安装行、假开关改说明文本 |
+| （4.6b） | 插件更新下载链：清单 `plugins` 条目、plugin_updates/update_all RPC（tar.gz 解包防护）、`plugin_auto_update` 键+6h pass、UI 更新全部/自动更新开关接真 |
 
 - **设置页现状**：10 个分类中每个控件要么真实生效、要么是诚实的能力说明卡，
   没有「点了没反应」或显示假值的控件。
@@ -229,9 +230,28 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
     重格式化仍验过、篡改二进制被 files 抓、篡改 manifest 被签名抓、错 key/
     无 files/缺文件/路径穿越全拒）+ `aether-daemon/tests/install.rs` 3 用例
     （未签名策略开关、签名/错 key/篡改/覆盖安装、rescan 保留禁用状态）。
-- **4.6b 待做**：`UpdateManifest` 加 `plugins` 条目（version/url/sha256/
-  独立签名）、`update_check` RPC、更新全部的下载安装链、自动更新开关接线；
-  key 轮换策略见 `SIGNING.md`。
+- **4.6b 已落地（更新下载链）**：
+  - `UpdateManifest.plugins`：`{version, url, sha256, size?}` 按插件 id 索引，
+    serde default → 旧清单照常解析。信任链：清单整体 detached 签名（已有）
+    覆盖条目 → 下载按 sha256 校验 → 包内 4.6a manifest 签名在 install
+    时再验一道（纵深）。
+  - 包格式 `.tar.gz`（plugin.json 在归档根）；`unpack_plugin_archive` 防护：
+    仅普通文件/目录、相对路径（拒 `..`/绝对路径/符号链接）、总量上限
+    256 MiB。
+  - daemon：`plugin_updates`（未配置 update_url+公钥时诚实返回
+    configured:false）对比已装版本；`plugin_update_all` 逐条下载→验哈希→
+    解包→复用 install_package（验签+staging swap）；单条失败（忙碌/坏包/
+    签名）不中断其余。`check_manifest()` 从 `check()` 拆出（插件条目不
+    受主程序版本比较影响）。
+  - 自动更新：settings 第 22 键 `plugin_auto_update`；update loop 每 6h
+    以 daemon client 身份执行 `plugin_auto_update_pass`（开关关=静默跳过）。
+  - UI：「更新全部」接真调用（toast 结果摘要）；「自动更新插件」恢复为
+    真开关（镜像 settings，提示 6h 周期与前置条件）。
+  - 验收：`aether-update/tests/update_schema.rs`（旧清单兼容、解包防护
+    5 例：穿越/绝对路径/符号链接/炸弹/非 gzip，恶意条目手工构造 ustar 头
+    ——tar Builder 本身拒绝 `..`）+ `plugin_update.rs` 4 用例（未配置诚实
+    返回+设置往返、check 报差异、update_all 装新+跳过已最新+坏包/哈希错
+    各自独立失败且不落盘、auto pass 开关门控）。
 
 ### 4.7 发布与供应链
 

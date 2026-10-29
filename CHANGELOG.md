@@ -7,6 +7,21 @@ versioning; 0.x releases may still change structure.
 
 ### Added
 
+- The plugin update channel is live. The update manifest gains an optional
+  `plugins` map (id → version/url/sha256, parsed compatibly with older
+  manifests); the daemon's `plugin_updates` RPC compares installed versions
+  against it (reporting `configured: false` when no update URL/key is set
+  instead of pretending), and `plugin_update_all` downloads each outdated
+  plugin as a `.tar.gz`, verifies the SHA-256 from the signed manifest,
+  unpacks it through a hardened extractor (relative paths only, no links,
+  256 MiB cap) and feeds it through the same signature-verified install
+  path — one bad package (busy plugin, hostile archive, hash mismatch) is
+  reported without blocking the others. The periodic update loop now runs a
+  plugin pass every cycle when the new `plugin_auto_update` setting is on,
+  and the plugin page's "update all" button and auto-update switch are real
+  controls. Verified by schema-compat and unpack-guard unit tests plus four
+  daemon e2e cases served from a local signed-manifest HTTP fixture.
+
 - Plugins can be installed with verification. The manifest gains a `files`
   map (relative path → SHA-256, excluding `plugin.json` itself); `signature`
   now carries an Ed25519 signature over the canonical manifest bytes (the

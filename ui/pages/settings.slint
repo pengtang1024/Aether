@@ -773,6 +773,8 @@ component InstalledPlugin inherits Rectangle {
 component PluginPanel inherits Rectangle {
     in-out property <int> plugin-filter: 0;
     in property <string> plugins-dir: "";
+    // Daemon-backed: auto-install outdated plugins on the update cycle.
+    in-out property <bool> auto-update-on: false;
     // Draft path of the package to install (UI-local until the button
     // fires `plugin-install`).
     in-out property <string> install-path: "";
@@ -832,13 +834,10 @@ component PluginPanel inherits Rectangle {
             SettingRow {
                 icon-source: AetherIcons.refresh;
                 title: "自动更新插件";
-                description: "依赖更新清单里的插件条目；清单通道就绪后接线（手动安装已可用）";
-                divider: false;
-                Text {
-                    text: "未上线";
-                    color: Aether.on-surface-muted;
-                    font-size: Aether.text-caption;
-                    vertical-alignment: center;
+                description: "daemon 每 6 小时按更新清单安装插件新版；需配置更新清单与签名公钥";
+                Switch {
+                    checked <=> root.auto-update-on;
+                    toggled => { root.changed("plugin-auto-update", self.checked ? "true" : "false"); }
                 }
             }
             SettingRow {
@@ -1272,6 +1271,8 @@ export component SettingsPage inherits Rectangle {
     // Clipboard link watch (GeneralPanel), mirrored from the window.
     in-out property <bool> clipboard-on: false;
     in-out property <bool> clipboard-available: true;
+    // Daemon-backed: install outdated plugins on the periodic update cycle.
+    in-out property <bool> plugin-auto-update: false;
     in-out property <int> after-done: 0;
     in-out property <int> accent-index: 0;
     in-out property <bool> motion-on: true;
@@ -1392,6 +1393,7 @@ export component SettingsPage inherits Rectangle {
                 }
                 if root.tab == 5: PluginPanel {
                     plugins-dir: root.plugins-dir;
+                    auto-update-on <=> root.plugin-auto-update;
                     changed(k, v) => { root.settings-changed(k, v); }
                     plugin-toggled(id, enabled) => { root.plugin-toggled(id, enabled); }
                     plugin-action(action) => { root.plugin-action(action); }
