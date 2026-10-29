@@ -1,12 +1,12 @@
 # 路线图与会话交接
 
 > 面向后续会话/贡献者：现在在哪、下一步做什么、怎么做、别踩哪些坑。
-> 最后更新：2026-10-29（main @ `4710e01`）。历史盲区清单见 `GAP_AUDIT.md`，
+> 最后更新：2026-10-29（main @ `4f9493a`）。历史盲区清单见 `GAP_AUDIT.md`，
 > 本文跟踪其中已完成的部分与剩余特性的具体方案。
 
 ## 1. 当前状态
 
-- **0.2.0 已发布**（tag v0.2.0）。main 之上已合入四个「把占位控件做成真功能」的波次：
+- **0.2.0 已发布**（tag v0.2.0）。main 之上已合入五个波次：
 
 | 提交 | 内容 |
 | --- | --- |
@@ -14,12 +14,13 @@
 | `84424ab` | 同时下载数、每任务连接数、重试次数、全局限速 → daemon 调度旋钮（settings.json 覆盖 AETHER_MAX_*） |
 | `1c1e8dd` | 默认请求头（HTTP 族）、FTP 主动模式、BT 端口/DHT/上传限速/屏蔽列表/Tracker → 插件引擎 |
 | `4710e01` | 计划下载窗口（daemon 调度器，支持跨午夜）+ 完成/失败桌面通知 |
+| `4f9493a` | Windows：named pipe transport（无新依赖），daemon/UI/CLI/native-host 全部跨平台，CI Windows job 跑回环测试 |
 
 - **设置页现状**：10 个分类中每个控件要么真实生效、要么是诚实的能力说明卡，
   没有「点了没反应」或显示假值的控件。
 - **质量门禁**：`cargo fmt --all --check` + 全仓 86 套件 + CI 三平台
-  （Linux 全量测试，Windows/macOS check）。macOS runner 偶发 cancel——
-  `gh run rerun <id> --failed` 重跑即可，不是代码问题。
+  （Linux 全量测试，Windows 测试 transport 回环 + 全量 check，macOS check）。
+  macOS runner 偶发 cancel——`gh run rerun <id> --failed` 重跑即可，不是代码问题。
 
 ## 2. 架构速查（新会话必读）
 
@@ -77,18 +78,27 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
 - **Slint**：`SettingRow` 描述文字 `wrap: word-wrap`；Material 组件强调色走
   `MaterialPalette.brand-primary ← Aether.accent-base`；动效 token 可被
   Rust 置零。提交前留意 `slint_build` 报错里的文件:行号。
+- **Windows named pipe**（transport.rs）：
+  - **bind 只存名不算绑定**——实例存在管道才存在，必须在 bind 时预创建
+    第一个实例，否则 bind~accept 之间 connect 报 `ERROR_FILE_NOT_FOUND`
+    （CI 回环测试抓到过）。
+  - `std::os::windows::raw` 在 stable 不导出 `HANDLE`（私有）/`BOOL`（无），
+    本地声明 `type HANDLE = *mut c_void; type BOOL = i32`；raw handle 跨
+    线程要 `unsafe impl Send`；`ConnectNamedPipe` 失败后先取
+    `last_os_error()` 再 CloseHandle（否则错误码被覆盖）。
+  - 本机 Linux 无法交叉验证 Windows 编译（ring/rusqlite 需 MSVC/mingw），
+    **Windows 侧只有 CI 是权威判定**，别只看本地 `cargo check`。
 
 ## 4. 下一批特性（按价值排序）
 
 ### 4.1 Windows 完整支持（named pipe + 通知 + 插件打包）★
 
-- **已落地（2026-10-29）**：`crates/aether-daemon/src/transport.rs` 抽象了
-  「JSON lines 双向流」——Unix 走 socket 文件（0600），Windows 直接 FFI
+- **已落地（2026-10-29，main CI 全绿）**：`crates/aether-daemon/src/transport.rs`
+  抽象了「JSON lines 双向流」——Unix 走 socket 文件（0600），Windows 直接 FFI
   kernel32 实现 named pipe（`\\.\pipe\aether-<user>`，默认 DACL 限同用户，
   无新增依赖）；`server.rs/client.rs` 与 UI `src/backend.rs`、CLI
   remote/import、native-host 的 `#[cfg(unix)]` 门全部移除，Windows 有真实
-  后端；`tests/transport.rs` 回环测试两平台都跑，CI Windows job 已加
-  `cargo test -p aether-daemon --test transport`。
+  后端；`tests/transport.rs` 回环测试在 CI Windows job 实机通过。
 - **剩余**：
   - Windows 桌面通知：`send_notification`（src/main.rs）在 Windows 静默。
     优先 `notify-rust`（WinRT toast），依赖可接受就接线，否则保持诚实静默。
