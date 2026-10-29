@@ -52,6 +52,21 @@ versioning; 0.x releases may still change structure.
   compile it. macOS stays out on purpose: an NSStatusItem needs objc2 and
   this repo's macOS CI is check-only, leaving no way to verify it.
 
+- Staged rollouts and migration exports. Update manifests can carry a
+  `rollout` percentage (default 100); each machine hashes its hostname with
+  the target version into a stable bucket, so a 25% rollout reaches roughly
+  a quarter of installs and the same machine always agrees. The signature
+  covers the percentage, so raising it means re-signing — documented. The
+  release pipeline now generates update.json from the built artifacts
+  (AppImage preferred over .deb for the same platform, version mismatches
+  fail the build) and only attaches it when the offline signing key is
+  configured — an unsigned manifest is dropped with a warning. On the
+  migration side `aether-cli export` writes settings plus a task list as
+  `aether-export/1` (task-level settings are deliberately excluded — they
+  can hold cookies and tokens), and `import` recognises both that document
+  and the plain URL list, applying exported daemon settings only when
+  `--settings` is passed.
+
 - Background behaviour: Aether is now single-instance (an advisory lock in
   the config directory; a second launch notifies "already running" and exits
   instead of racing for the daemon and tray), closes to the tray when one is

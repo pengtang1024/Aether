@@ -38,6 +38,17 @@ pub struct UpdateManifest {
     /// manifests (serde default keeps them parsing).
     #[serde(default)]
     pub plugins: BTreeMap<String, PluginUpdateEntry>,
+    /// Staged rollout percentage (0-100, default 100). Each machine maps to
+    /// a stable bucket from its hostname and the target version, so a
+    /// manifest at 25% reaches roughly a quarter of installs and the same
+    /// machine always gets the same answer. Raising the percentage requires
+    /// re-signing (the signature covers these bytes).
+    #[serde(default = "full_rollout")]
+    pub rollout: u8,
+}
+
+fn full_rollout() -> u8 {
+    100
 }
 
 /// One plugin entry in the update manifest: the release a plugin should be
@@ -140,6 +151,18 @@ impl UpdateClient {
         }
         if manifest.assets.is_empty() {
             return Err(UpdateError::Protocol("manifest has no assets".into()));
+        }
+        if manifest.rollout > 100 {
+            return Err(UpdateError::Protocol(format!(
+                "manifest rollout out of range: {}",
+                manifest.rollout
+            )));
+        }
+        if !in_rollout(&manifest.version, manifest.rollout) {
+            // Staged rollout: this machine's turn has not come yet. It is
+            // "up to date" for now — the next check re-evaluates the same
+            // stable bucket.
+            return Ok(None);
         }
         Ok(Some(manifest))
     }
@@ -518,4 +541,50 @@ pub enum UpdateError {
 
     #[error("update checksum mismatch")]
     ChecksumMismatch,
+}
+
+/// Staged-rollout bucket for this machine and target version: stable across
+/// runs, no randomness and no stored identity. The hostname never leaves the
+/// machine — it only feeds a local hash.
+fn in_rollout(version: &str, percentage: u8) -> bool {
+    percentage >= 100 || rollout_bucket(version) < percentage
+}
+
+fn rollout_bucket(version: &str) -> u8 {
+    let host = std::env::var("HOSTNAME")
+        .or_else(|_| std::env::var("COMPUTERNAME"))
+        .unwrap_or_else(|_| "aether".to_string());
+    let digest = Sha256::digest(format!("{host}\n{version}").as_bytes());
+    digest[0] % 100
+}
+
+#[cfg(test)]
+mod rollout_tests {
+    use super::*;
+
+    #[test]
+    fn rollout_boundaries_are_exact() {
+        assert!(!in_rollout("9.9.9", 0), "0% reaches nobody");
+        assert!(in_rollout("9.9.9", 100), "100% reaches everybody");
+    }
+
+    #[test]
+    fn bucket_is_stable_and_per_version() {
+        let first = rollout_bucket("1.2.3");
+        assert_eq!(first, rollout_bucket("1.2.3"), "same version, same bucket");
+        assert!(first < 100);
+        // The bucket comparison must agree with the boundary semantics.
+        assert_eq!(in_rollout("1.2.3", first + 1), true);
+        assert_eq!(in_rollout("1.2.3", first), false);
+    }
+
+    #[test]
+    fn manifest_rollout_defaults_to_full() {
+        let manifest: UpdateManifest = serde_json::from_value(serde_json::json!({
+            "version": "0.3.0",
+            "assets": {"linux-x86_64": {"url": "https://example.test/a", "sha256": "00"}}
+        }))
+        .expect("minimal manifest parses");
+        assert_eq!(manifest.rollout, 100);
+    }
 }

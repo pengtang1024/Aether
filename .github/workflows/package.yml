@@ -297,6 +297,20 @@ jobs:
           cargo cyclonedx --format json --override-filename "aether-${VERSION}.cdx"
           mv "aether-${VERSION}.cdx.json" "artifacts/aether-${VERSION}.cdx.json"
 
+      - name: Generate update manifest
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          AETHER_UPDATE_SECRET_KEY: ${{ secrets.AETHER_UPDATE_SECRET_KEY }}
+        run: |
+          python3 scripts/make-update-manifest.py \
+            --dist artifacts --version "$VERSION" --out artifacts/update.json
+          if [ -n "$AETHER_UPDATE_SECRET_KEY" ]; then
+            cargo run --quiet -p aether-update --bin aether-update-sign -- artifacts/update.json
+          else
+            echo "::warning::AETHER_UPDATE_SECRET_KEY is not configured; dropping the unsigned update manifest (unsigned manifests must not ship)"
+            rm -f artifacts/update.json
+          fi
+
       - name: Prepare release notes and checksums
         env:
           VERSION: ${{ needs.version.outputs.version }}

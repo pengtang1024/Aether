@@ -96,6 +96,24 @@ aether-cli remote watch        # 每行一条 JSON 事件，Ctrl-C 退出
 - 本地模式（`tasks`/`logs`/`resume`）直接读 SQLite、自己拉起插件，适合单次下载；
   `remote` 走常驻 daemon，任务在后台继续，推荐日常使用。
 
+### 3.2 设置与任务迁移（`export` / `import`）
+
+```bash
+aether-cli export backup.json            # 导出 daemon settings + 任务清单
+aether-cli export -                      # 输出到 stdout
+aether-cli import backup.json            # 重新排队导出里的任务
+aether-cli import backup.json --settings # 同时应用导出的 daemon settings
+```
+
+- 导出格式 `aether-export/1`：`{format, settings, tasks:[{url, plugin_id,
+  priority, state, target_dir}]}`。
+- **不导出任务级 settings**（可能含 Cookie/token）——需要认证的链接在导入后
+  重新填写凭据，这是有意的隐私边界。
+- `import` 自动识别导出 JSON 与旧的 URL 行列表（`#` 注释/空行忽略），
+  `--dir` 覆盖导出里的 `target_dir`；`--settings` 不传时 daemon 配置保持不变。
+- 任务按导出顺序逐条 `add`（保留 plugin_id/priority），失败逐条报告并以非零
+  退出码结束。
+
 ## 4. 恢复与状态
 
 - 启动时 `recoverable_tasks()` 读取 `queued/running/paused` 任务；running/queued

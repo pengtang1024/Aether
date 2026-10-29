@@ -26,6 +26,7 @@
 | `79c2cdb` | i18n（中文优先）：全量 202 条 UI 串 @tr + en.po、select_bundled_translation 即时切换、设置→外观语言项；ComboBox 功能值不译 |
 | `f6ef273` | Rust 侧字符串表化：i18n::tr(zh,en) 内联对 + 全局语言位，toast/hint/notice/时间格式/插件描述/通知全迁；功能值保留 |
 | `c1d1bcd` | ja + zh-TW 全量（po 250 条 + Rust 单表多语言行）、语言下拉 4 项、扩展商店打包脚本+文案 |
+| （更新灰度+迁移） | 清单 `rollout` 稳定分桶灰度（签名覆盖，需重签调档）、make-update-manifest.py 自动生成清单（AppImage 优先/版本校验/未签名即丢弃）、`aether-cli export/import` 设置+任务迁移（不导出凭据，`--settings` 显式应用） |
 | `ee2ab81` | 单实例锁（fs2/配置目录锁文件，第二实例通知后退出）、关闭到托盘（仅托盘真实可用时；Linux 托盘无 watcher 改为诚实返回 None）、开机自启（Linux XDG / Windows HKCU Run / macOS LaunchAgent，状态以 OS 为准） |
 | `1d75cd5` | Windows 桌面通知（notify-rust toast + HKCU AUMID 一次注册，失败回退内置归属）+ Windows 发布产物补齐（daemon/CLI/native-host + 16 插件 exe 进 zip/安装器 `{app}\plugins`）+ default_plugins_dir exe 同级候选 |
 | `716896e` | 托盘平台分发（tray.rs → tray_sni.rs + tray_windows.rs 零依赖 Shell_NotifyIconW FFI）、zbus 移 unix-only、CI Windows 跑 bin 测试 |
@@ -410,6 +411,29 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
     存在）；开机自启点击 e2e（desktop entry 写入/删除、开关状态、toast）；
     单测覆盖双开/释放、entry 内容与引号、临时目录往返、Windows 注册表往返
     （CI Windows bin 测试实跑）。
+
+### 4.9 更新灰度与迁移导出
+
+- **已落地（2026-10-30，`<hash>`）**：
+  - **灰度发布（无服务器）**：`UpdateManifest.rollout: u8`（serde default 100，
+    >100 报协议错）。`UpdateClient::check()` 版本比较后过闸门：
+    bucket = `sha256(hostname\nversion)[0] % 100`（hostname 取
+    HOSTNAME/COMPUTERNAME，缺省 aether）——同机同版本恒定、无随机、无新依赖；
+    `rollout=0` 无人 / `100` 全量 / 其余 `bucket < rollout`。只作用于主程序，
+    `check_manifest()`（插件通道）不受影响。**签名覆盖 rollout**：调档要重签，
+    已在 UPDATE.md 写明。
+  - **清单生成**：`scripts/make-update-manifest.py` 扫发布产物生成 update.json
+    （deb/AppImage/Windows zip/macOS dmg；同 key AppImage 优先于 deb；setup.exe
+    不进清单；文件名版本必须等于 --version；sha256+size+tag 固定 URL）。
+    package.yml `publish` job 在 SBOM 后生成；有 `AETHER_UPDATE_SECRET_KEY`
+    secret 才签名，否则 `::warning::` + 删除未签名清单（未签名不得流出）。
+  - **设置/任务迁移**：`aether-cli export <file|->` 输出
+    `aether-export/1`（settings + tasks[url/plugin_id/priority/state/target_dir]）；
+    **不导出任务级 settings**（Cookie/token 隐私边界）。`import` 自动识别导出
+    JSON 与 URL 行列表；`--settings` 才应用导出配置，`--dir` 覆盖 target_dir。
+    集成测试：daemon e2e 导出→改 URL→导入（含 --settings）→ 任务数断言。
+  - 剩余（需外部条件）：真实灰度调档要离线私钥重签；更新服务器/CDN 用
+    GitHub Releases 固定地址即可（`releases/latest/download/update.json`）。
 
 ## 5. 发布流程摘要
 

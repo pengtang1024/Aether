@@ -126,6 +126,80 @@ fn import_queues_urls_through_the_daemon() {
 }
 
 #[test]
+fn export_writes_a_round_trippable_document() {
+    let root = temp_dir("export");
+    let socket = spawn_daemon(&root);
+    let mut client = aether_daemon::Client::connect(&socket).unwrap();
+    client
+        .add_with_settings("https://example.com/exported.bin", None, None, json!({}))
+        .unwrap();
+
+    let target = root.join("export.json");
+    let cli = env!("CARGO_BIN_EXE_aether-cli");
+    let output = Command::new(cli)
+        .args([
+            "export",
+            target.to_string_lossy().as_ref(),
+            "--socket",
+            socket.to_string_lossy().as_ref(),
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "export failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let text = fs::read_to_string(&target).unwrap();
+    let mut document: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(document["format"], "aether-export/1");
+    assert!(
+        document["settings"].is_object(),
+        "daemon settings are exported"
+    );
+    let tasks = document["tasks"].as_array().unwrap();
+    assert_eq!(tasks.len(), 1);
+    assert_eq!(tasks[0]["url"], "https://example.com/exported.bin");
+    assert!(
+        tasks[0].get("settings").is_none(),
+        "task credentials must not be exported"
+    );
+
+    // Re-import with a different URL so the daemon accepts it as a new task;
+    // `--settings` applies the exported daemon settings.
+    document["tasks"][0]["url"] = json!("https://example.com/exported-2.bin");
+    fs::write(&target, serde_json::to_string_pretty(&document).unwrap()).unwrap();
+    let output = Command::new(cli)
+        .args([
+            "import",
+            target.to_string_lossy().as_ref(),
+            "--socket",
+            socket.to_string_lossy().as_ref(),
+            "--settings",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "import failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("applied daemon settings"), "{stdout}");
+    assert!(stdout.contains("imported 1/1"), "{stdout}");
+
+    let mut client = aether_daemon::Client::connect(&socket).unwrap();
+    assert_eq!(client.list_tasks().unwrap().len(), 2);
+    client.shutdown().unwrap();
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
 fn import_reports_an_unreachable_daemon() {
     let root = temp_dir("nodemon");
     let list = root.join("urls.txt");

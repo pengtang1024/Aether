@@ -133,7 +133,29 @@ printf '%s\n' '{"id":1,"method":"update_status"}' \
 - 更新服务器/镜像可用 `AETHER_UPDATE_URL` 切换；清单签名是信任根。
 - 失去私钥时不能签新版本；公钥轮换需要发布一个带新公钥的版本。
 
-## 6. 低消耗策略
+## 6. 发布流水线与灰度
+
+发布分支的 `publish` job 在 SBOM 之后自动生成清单：
+
+```bash
+scripts/make-update-manifest.py --dist artifacts --version "$VERSION" --out artifacts/update.json
+```
+
+- 扫描产物：`.deb`（amd64/arm64）、AppImage、Windows 便携 zip、macOS dmg；
+  **每个平台 key 只收一个资产**，同平台 AppImage 优先于 `.deb`（可原地替换），
+  `setup.exe` 不进清单（便携 zip 已覆盖同 key，安装器仍是发布资产）。
+- 产物文件名里的版本必须等于 `--version`，否则脚本直接失败。
+- 清单 URL 用 tag 固定地址（`releases/download/v<ver>/<file>`）；清单本体发布在
+  `releases/latest/download/update.json`。
+- **签名**：只有配置了仓库 secret `AETHER_UPDATE_SECRET_KEY` 才签名；没配置时
+  打 `::warning::` 并**删除未签名清单**——未签名清单不得随发布流出。
+- 灰度：清单新增 `rollout`（0-100，缺省 100）。daemon 用
+  `sha256(hostname + version) % 100` 做稳定分桶，同一机器同一版本恒定；
+  `rollout=0` 无人、`100` 全量。**签名覆盖 rollout**，调灰度需要重新签名
+  （发布时用离线 key 重跑 `aether-update-sign` 并替换附件）。
+- 插件更新走同一清单的 `plugins` 字段（4.6b），灰度只作用于主程序。
+
+## 7. 低消耗策略
 
 - 更新检查：启动后 30 秒 + 每 6 小时一次，失败不重试风暴。
 - daemon 空闲：阻塞在命令 channel（1 秒超时），不轮询插件进程。

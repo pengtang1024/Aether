@@ -87,7 +87,17 @@ fn run() -> Result<(), String> {
                 .map(PathBuf::from)
                 .unwrap_or_else(aether_daemon::client::default_socket);
             let dir = option(&args, "--dir").map(PathBuf::from);
-            import(source, &socket, dir.as_deref())
+            let apply_settings = args.iter().any(|arg| arg == "--settings");
+            import(source, &socket, dir.as_deref(), apply_settings)
+        }
+        "export" => {
+            let target = args
+                .get(1)
+                .ok_or("export needs a file path or - for stdout")?;
+            let socket = option(&args, "--socket")
+                .map(PathBuf::from)
+                .unwrap_or_else(aether_daemon::client::default_socket);
+            export(target, &socket)
         }
         "tasks" => {
             let output = option(&args, "--dir").unwrap_or_else(|| "downloads".into());
@@ -709,13 +719,131 @@ fn remote_usage() -> &'static str {
 }
 
 fn import_usage() -> &'static str {
-    "\n  aether-cli import <file|-> [--socket <path>] [--dir <dir>]"
+    "\n  aether-cli import <file|-> [--socket <path>] [--dir <dir>] [--settings]\n  aether-cli export <file|-> [--socket <path>]"
 }
 
-/// Queue many URLs through the running daemon: one per line, `#` comments and
-/// blank lines ignored. Each add returns task_id/plugin_id/queued; failures
-/// are reported per URL and reflected in the exit code.
-fn import(source: &str, socket: &Path, dir: Option<&Path>) -> Result<(), String> {
+/// Export the daemon's settings and task list as a JSON document. Task
+/// settings are deliberately left out: they can carry cookies or tokens, and
+/// an export is meant to travel between machines.
+fn export(target: &str, socket: &Path) -> Result<(), String> {
+    let mut client = aether_daemon::Client::connect(socket).map_err(|error| {
+        format!(
+            "daemon is not reachable at {}: {error} (start aether-daemon first)",
+            socket.display()
+        )
+    })?;
+    let settings = client.settings().map_err(|error| error.to_string())?;
+    let tasks = client.list_tasks().map_err(|error| error.to_string())?;
+    let document = export_document(settings, &tasks);
+    let text = serde_json::to_string_pretty(&document).map_err(|error| error.to_string())?;
+    if target == "-" {
+        println!("{text}");
+    } else {
+        fs::write(target, format!("{text}\n"))
+            .map_err(|error| format!("cannot write {target}: {error}"))?;
+        println!("exported {} task(s) to {target}", tasks.len());
+    }
+    Ok(())
+}
+
+/// Marker in exported documents; bumped when the shape changes.
+const EXPORT_FORMAT: &str = "aether-export/1";
+
+/// Build the export document (pure so the shape is testable without a daemon).
+fn export_document(settings: serde_json::Value, tasks: &[StoredTask]) -> serde_json::Value {
+    let tasks = tasks
+        .iter()
+        .map(|task| {
+            serde_json::json!({
+                "url": task.url,
+                "plugin_id": task.plugin_id,
+                "priority": task.priority,
+                "state": task.state,
+                "target_dir": task.target_dir,
+            })
+        })
+        .collect::<Vec<_>>();
+    serde_json::json!({
+        "format": EXPORT_FORMAT,
+        "settings": settings,
+        "tasks": tasks,
+    })
+}
+
+/// One task row from an export document.
+#[derive(Debug)]
+struct ExportTask {
+    url: String,
+    plugin_id: Option<String>,
+    priority: i32,
+    target_dir: Option<String>,
+}
+
+/// Parse an export document; `Err` explains exactly what is wrong so a
+/// hand-edited file fails loudly instead of importing half the tasks.
+fn parse_export(text: &str) -> Result<(Option<serde_json::Value>, Vec<ExportTask>), String> {
+    let document: serde_json::Value =
+        serde_json::from_str(text).map_err(|error| format!("invalid JSON: {error}"))?;
+    match document.get("format").and_then(|value| value.as_str()) {
+        Some(EXPORT_FORMAT) => {}
+        Some(other) => {
+            return Err(format!(
+                "unsupported export format {other} (expected {EXPORT_FORMAT})"
+            ))
+        }
+        None => {
+            return Err(format!(
+                "missing export format marker (expected {EXPORT_FORMAT})"
+            ))
+        }
+    }
+    let settings = document
+        .get("settings")
+        .filter(|value| value.is_object())
+        .cloned();
+    let items = document
+        .get("tasks")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let mut tasks = Vec::with_capacity(items.len());
+    for (index, item) in items.iter().enumerate() {
+        let url = item
+            .get("url")
+            .and_then(|value| value.as_str())
+            .ok_or_else(|| format!("task {index}: missing url"))?
+            .to_string();
+        let plugin_id = item
+            .get("plugin_id")
+            .and_then(|value| value.as_str())
+            .map(str::to_string);
+        let priority = item
+            .get("priority")
+            .and_then(|value| value.as_i64())
+            .unwrap_or(0) as i32;
+        let target_dir = item
+            .get("target_dir")
+            .and_then(|value| value.as_str())
+            .map(str::to_string);
+        tasks.push(ExportTask {
+            url,
+            plugin_id,
+            priority,
+            target_dir,
+        });
+    }
+    Ok((settings, tasks))
+}
+
+/// Queue tasks from an export document (or a plain URL list). `--settings`
+/// applies the exported daemon settings; without it the daemon keeps its
+/// current configuration.
+fn import(
+    source: &str,
+    socket: &Path,
+    dir: Option<&Path>,
+    apply_settings: bool,
+) -> Result<(), String> {
     let text = if source == "-" {
         let mut buffer = String::new();
         std::io::stdin()
@@ -725,6 +853,10 @@ fn import(source: &str, socket: &Path, dir: Option<&Path>) -> Result<(), String>
     } else {
         fs::read_to_string(source).map_err(|error| format!("cannot read {source}: {error}"))?
     };
+
+    if text.trim_start().starts_with('{') {
+        return import_export(&text, socket, dir, apply_settings);
+    }
 
     let urls: Vec<&str> = text
         .lines()
@@ -764,4 +896,113 @@ fn import(source: &str, socket: &Path, dir: Option<&Path>) -> Result<(), String>
         return Err(format!("{failed} URL(s) failed"));
     }
     Ok(())
+}
+
+/// Import an export document: re-adds each task with its plugin and priority.
+/// Credentials are not part of the format, so authenticated links need their
+/// tokens re-entered afterwards.
+fn import_export(
+    text: &str,
+    socket: &Path,
+    dir: Option<&Path>,
+    apply_settings: bool,
+) -> Result<(), String> {
+    let (settings, tasks) = parse_export(text)?;
+    let mut client = aether_daemon::Client::connect(socket).map_err(|error| {
+        format!(
+            "daemon is not reachable at {}: {error} (start aether-daemon first)",
+            socket.display()
+        )
+    })?;
+    if apply_settings {
+        let Some(settings) = settings else {
+            return Err("export document has no settings to apply".into());
+        };
+        client
+            .call("set_settings", None, None, None, None, settings)
+            .map_err(|error| format!("set_settings: {error}"))?;
+        println!("applied daemon settings from the export");
+    }
+
+    let mut imported = 0_usize;
+    let mut failed = 0_usize;
+    for task in tasks {
+        let target = dir
+            .map(PathBuf::from)
+            .or_else(|| task.target_dir.map(PathBuf::from));
+        match client.add_with_priority(
+            &task.url,
+            target.as_deref(),
+            task.plugin_id.as_deref(),
+            task.priority,
+            serde_json::json!({}),
+        ) {
+            Ok(result) => {
+                imported += 1;
+                println!(
+                    "{} -> {} ({}) queued={}",
+                    task.url, result["task_id"], result["plugin_id"], result["queued"]
+                );
+            }
+            Err(error) => {
+                failed += 1;
+                eprintln!("{} -> ERROR: {error}", task.url);
+            }
+        }
+    }
+    println!("imported {imported}/{} tasks", imported + failed);
+    if failed > 0 {
+        return Err(format!("{failed} task(s) failed"));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod export_tests {
+    use super::{export_document, parse_export};
+
+    #[test]
+    fn export_document_parses_back_with_every_field() {
+        let document = export_document(serde_json::json!({"max_tasks": 5}), &[]);
+        // Round-trip through the parser the import path uses.
+        let text = serde_json::to_string(&document).unwrap();
+        let (settings, tasks) = parse_export(&text).expect("own document parses");
+        assert_eq!(settings.unwrap()["max_tasks"], 5);
+        assert!(tasks.is_empty(), "empty export is valid");
+    }
+
+    #[test]
+    fn parse_export_reads_task_fields() {
+        let text = r#"{
+            "format": "aether-export/1",
+            "settings": {"max_tasks": 3},
+            "tasks": [
+                {"url": "https://a.test/x.bin", "plugin_id": "http", "priority": 4, "target_dir": "/tmp"},
+                {"url": "magnet:?xt=urn:btih:aa"}
+            ]
+        }"#;
+        let (settings, tasks) = parse_export(text).expect("parses");
+        assert!(settings.is_some());
+        assert_eq!(tasks.len(), 2);
+        assert_eq!(tasks[0].url, "https://a.test/x.bin");
+        assert_eq!(tasks[0].plugin_id.as_deref(), Some("http"));
+        assert_eq!(tasks[0].priority, 4);
+        assert_eq!(tasks[0].target_dir.as_deref(), Some("/tmp"));
+        assert_eq!(tasks[1].plugin_id, None);
+        assert_eq!(tasks[1].priority, 0);
+    }
+
+    #[test]
+    fn parse_export_rejects_wrong_or_missing_format() {
+        let wrong = r#"{"format": "other/2", "tasks": []}"#;
+        assert!(parse_export(wrong)
+            .unwrap_err()
+            .contains("unsupported export format"));
+        let missing = r#"{"tasks": []}"#;
+        assert!(parse_export(missing)
+            .unwrap_err()
+            .contains("missing export format"));
+        let broken = r#"{"format": "aether-export/1", "tasks": [{"plugin_id": "http"}]}"#;
+        assert!(parse_export(broken).unwrap_err().contains("missing url"));
+    }
 }
