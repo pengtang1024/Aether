@@ -1,7 +1,7 @@
 # 路线图与会话交接
 
 > 面向后续会话/贡献者：现在在哪、下一步做什么、怎么做、别踩哪些坑。
-> 最后更新：2026-10-29（main @ 待提交）。历史盲区清单见 `GAP_AUDIT.md`，
+> 最后更新：2026-10-29（main @ `b0f8a26`）。历史盲区清单见 `GAP_AUDIT.md`，
 > 本文跟踪其中已完成的部分与剩余特性的具体方案。
 
 ## 1. 当前状态
@@ -20,7 +20,7 @@
 | `f8aefa0` | 媒体转码：`transcode_to` 任务级容器转封装（ffmpeg `-c copy`，失败保留原件）、全局 `ffmpeg_path` 注入、媒体页路径行、假 ffmpeg e2e |
 | `4c84ac2` | 剪贴板链接检测：arboard 轮询（默认关、变化触发、scheme 白名单）、toast 动作按钮 → 新建对话框预填、设置页开关；托盘/i18n 仍待做 |
 | `3ed8af5` | 插件安装+签名：`files` 哈希映射 + canonical Ed25519 签名、`aether-plugin-sign`、install/rescan RPC（staging swap 回滚、禁用状态保留）、UI 路径安装行、假开关改说明文本 |
-| （4.6b） | 插件更新下载链：清单 `plugins` 条目、plugin_updates/update_all RPC（tar.gz 解包防护）、`plugin_auto_update` 键+6h pass、UI 更新全部/自动更新开关接真 |
+| `b0f8a26` | 插件更新下载链：清单 `plugins` 条目、plugin_updates/update_all RPC（tar.gz 解包防护）、`plugin_auto_update` 键+6h pass、UI 更新全部/自动更新开关接真 |
 
 - **设置页现状**：10 个分类中每个控件要么真实生效、要么是诚实的能力说明卡，
   没有「点了没反应」或显示假值的控件。
