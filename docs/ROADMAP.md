@@ -203,9 +203,26 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
     开关禁用 + 描述说明原因，`clipboard-watch` 事件被拒并提示，不假装可用。
   - 冒烟验证（Xvfb + xclip 端到端）：复制 URL → toast 出现 → 点击 →
     对话框预填成功；设置页开关/描述渲染正确。
-- **托盘、i18n 未做**：托盘需要 StatusNotifier/dbus 依赖评估（Slint 无内置，
-  优先级本就低于 4.1-4.4）；i18n 全仓文案改动面大，按计划放在 UI 大改前
-  单独成波（Slint `tr()` + 资源文件、Rust 字符串表，先英文）。
+- **托盘已落地（2026-10-29，Linux）**：`src/tray.rs` 用 zbus（树内已有，
+  零新增依赖树）实现 StatusNotifierItem + com.canonical.dbusmenu 菜单
+  （显示主窗口/退出，`/Menu`+`/MenuBar` 双路径）；无 session bus 或无
+  StatusNotifier host 时优雅降级（一行日志，主程序照常——GNOME 需
+  AppIndicator 扩展才显示）。**私有 session bus 全链路实测**：bus name、
+  Title 属性、GetLayout（label 键值正确）、Activate 唤起、Event→退出
+  （app 实际退出）。macOS/Windows 托盘未做（Linux 第一）。
+  坑（都踩过）：zbus 5 **没有** `#[zbus(method)]`（普通方法自动识别，
+  method 级合法键仅 name/signal/property/out_args/proxy）；zvariant 5 的
+  `Signature` 是解析树 + `Type::SIGNATURE` 常量，derive 用
+  `#[zvariant(signature = "...")]` 显式覆盖（const 内临时 Signature 会
+  E0493）；**serde 序列化 `Value` 会包成 variant(v)**——derived 结构体的
+  typed 字段必须用 Dict/Array（按声明签名序列化），否则签名静默错配；
+  冒烟三坑：`pkill -f` 会匹配自己 heredoc 正文里的裸字符串（字符串拼接
+  避开）、busctl/gdbus 必须与 app 在同一 `dbus-run-session` 内否则查的
+  是另一条 bus、私有 bus 的 portal 激活刷屏需过滤；gdbus 给 `v` 参数传
+  空串 variant 写 `"<''>"`。
+- **i18n 未做（用户已定方向：中文优先）**：源串保持中文作为第一语言，
+  走 Slint `@tr()` + gettext .po（zh 恒等/en 翻译）+ `select_bundled_translation`
+  运行时切换 + UiPrefs.lang + Rust 字符串表；全仓文案改动面大，单独成波。
 
 ### 4.6 插件安装/更新接 daemon + manifest 签名
 

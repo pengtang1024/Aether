@@ -10,6 +10,7 @@ mod backend;
 mod chart;
 mod clipboard;
 mod model;
+mod tray;
 
 slint::include_modules!();
 
@@ -1834,6 +1835,11 @@ fn main() -> Result<(), slint::PlatformError> {
     }
 
     // Follow live desktop theme changes while the user chose "follow system".
+    // System tray (Linux/StatusNotifier): best effort — without a session
+    // bus or a StatusNotifier host it logs one line and the window keeps
+    // working as the only entry point.
+    let _ = tray::start(ui.as_weak());
+
     let theme_timer = Timer::default();
     {
         let ui_handle = ui.as_weak();

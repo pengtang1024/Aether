@@ -7,6 +7,15 @@ versioning; 0.x releases may still change structure.
 
 ### Added
 
+- A system tray for Linux (StatusNotifier over zbus, which was already in
+  the dependency tree through Slint): left-click or the context menu's
+  "显示主窗口" summons the window, "退出" quits it. Sessions without a D-Bus
+  bus or a StatusNotifier host degrade to "no tray" with a single log line
+  and the app works window-only; downloads keep running in the daemon
+  either way. Verified end-to-end on a private session bus: name
+  acquisition, properties, GetLayout, Activate, and the quit path actually
+  exiting the app.
+
 - Supply-chain hardening: every GitHub Action is pinned to a full commit
   SHA with a version comment resolved through the API (Dependabot keeps
   them current), `deny.toml` plus a CI cargo-deny job enforce license,
