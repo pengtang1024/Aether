@@ -6,13 +6,35 @@
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::{SocketAddr, TcpListener};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use aether_daemon::transport::Conn;
 use aether_daemon::{Client, DaemonConfig};
 use serde_json::{json, Value};
+
+/// The daemon's local endpoint: a socket file under `root` on Unix, a
+/// per-test named pipe on Windows (which has no filesystem path).
+fn endpoint(label: &str, root: &Path) -> PathBuf {
+    #[cfg(unix)]
+    {
+        let _ = label;
+        root.join("daemon.sock")
+    }
+    #[cfg(windows)]
+    {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let _ = root;
+        PathBuf::from(format!(
+            r"\\.\pipe\aether-rpc-{label}-{}-{nanos}",
+            std::process::id()
+        ))
+    }
+}
 
 fn temp_dir(label: &str) -> PathBuf {
     let nanos = SystemTime::now()
@@ -60,7 +82,7 @@ impl Drop for Daemon {
 /// client-side note: we always send the token, empty matches empty).
 fn spawn_rpc_daemon(label: &str, addr: SocketAddr, secret: Option<&str>) -> Daemon {
     let root = temp_dir(label);
-    let socket = root.join("daemon.sock");
+    let socket = endpoint(label, &root);
     let config = DaemonConfig {
         download_dir: root.join("downloads"),
         plugins_dir: root.join("no-plugins"),
@@ -211,7 +233,7 @@ fn authed_session_serves_subscriptions_and_shutdown() {
 #[test]
 fn non_loopback_without_secret_refuses_to_start() {
     let root = temp_dir("wide-open");
-    let socket = root.join("daemon.sock");
+    let socket = endpoint("wide-open", &root);
     let config = DaemonConfig {
         download_dir: root.join("downloads"),
         plugins_dir: root.join("no-plugins"),
