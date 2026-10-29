@@ -1,12 +1,12 @@
 # 路线图与会话交接
 
 > 面向后续会话/贡献者：现在在哪、下一步做什么、怎么做、别踩哪些坑。
-> 最后更新：2026-10-29（main @ `f8aefa0`）。历史盲区清单见 `GAP_AUDIT.md`，
+> 最后更新：2026-10-29（main @ 待提交）。历史盲区清单见 `GAP_AUDIT.md`，
 > 本文跟踪其中已完成的部分与剩余特性的具体方案。
 
 ## 1. 当前状态
 
-- **0.2.0 已发布**（tag v0.2.0）。main 之上已合入八个波次：
+- **0.2.0 已发布**（tag v0.2.0）。main 之上已合入九个波次：
 
 | 提交 | 内容 |
 | --- | --- |
@@ -18,6 +18,7 @@
 | `1353da9` | RPC over TCP：`rpc_listen`/`rpc_secret` settings + `--rpc-listen`，token 鉴权（常数时间，热轮换），CLI `--socket ip:port`，`tests/rpc.rs` 6 用例 |
 | `cb3ef23` | 浏览器接管：Cookie 显式授权（optional permission）、站点过滤、Windows manifest 安装（注册表）、native-host 透传测试 |
 | `f8aefa0` | 媒体转码：`transcode_to` 任务级容器转封装（ffmpeg `-c copy`，失败保留原件）、全局 `ffmpeg_path` 注入、媒体页路径行、假 ffmpeg e2e |
+| （4.5a） | 剪贴板链接检测：arboard 轮询（默认关、变化触发、scheme 白名单）、toast 动作按钮 → 新建对话框预填、设置页开关；托盘/i18n 仍待做 |
 
 - **设置页现状**：10 个分类中每个控件要么真实生效、要么是诚实的能力说明卡，
   没有「点了没反应」或显示假值的控件。
@@ -178,12 +179,23 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
 
 ### 4.5 托盘 / 剪贴板 / i18n
 
-- 托盘：Slint 无内置托盘。Linux 走 StatusNotifier（dbus，无重依赖）；
-  「关闭到托盘」的语义其实很轻——下载由 daemon 常驻负责，UI 关闭即可，
-  托盘主要为快速唤起。优先级低于 4.1-4.4。
-- 剪贴板监听：`arboard` + 轮询线程 + 「检测到链接」通知动作。
-- i18n：全仓文案硬编码中文。Slint 侧 `tr()` + 资源文件、Rust 侧字符串表；
-  建议先英文后多语言，且放在 UI 大改之前做（改动面大）。
+- **剪贴板监听已落地（2026-10-29）**：
+  - `arboard`（`default-features = false` + `wayland-data-control`，避免拖入
+    image/tiff/fax 重依赖）+ 独立轮询线程（1.2s，只在**链接变化**时上报）。
+  - 默认关（`UiPrefs.clipboard_watch`，剪贴板访问是显式授权的事）；开启时
+    基线重播种，不会对已有内容误触发。
+  - 检测规则：**首 token** 匹配 http/https/ftp/ftps/magnet/ed2k/thunder 才报
+    （`file://`、`javascript:`、纯文本路径、句中 URL 都拒绝——plugin probe
+    反正也会拒，不让用户白点一次）。
+  - UI：新 toast 动作按钮（「新建任务」）→ 点击打开新建对话框并**预填 URL**；
+    设置页常规面板加「剪贴板」分区（开关 + 诚实描述）。
+  - 无剪贴板后端（远程/无图形会话）时 `clipboard::start()` 返回 None：
+    开关禁用 + 描述说明原因，`clipboard-watch` 事件被拒并提示，不假装可用。
+  - 冒烟验证（Xvfb + xclip 端到端）：复制 URL → toast 出现 → 点击 →
+    对话框预填成功；设置页开关/描述渲染正确。
+- **托盘、i18n 未做**：托盘需要 StatusNotifier/dbus 依赖评估（Slint 无内置，
+  优先级本就低于 4.1-4.4）；i18n 全仓文案改动面大，按计划放在 UI 大改前
+  单独成波（Slint `tr()` + 资源文件、Rust 字符串表，先英文）。
 
 ### 4.6 插件安装/更新接 daemon + manifest 签名
 

@@ -7,6 +7,18 @@ versioning; 0.x releases may still change structure.
 
 ### Added
 
+- Clipboard link detection: an opt-in toggle (settings → general) starts a
+  background poll that watches for a *changed* clipboard value whose first
+  token is a download URL (http/https/ftp/ftps/magnet/ed2k/thunder). When it
+  fires, a snackbar offers a one-click "new task" action that opens the
+  download dialog with the URL prefilled. The first reading seeds a baseline,
+  so enabling never fires on stale content; sessions without a clipboard
+  backend get a disabled switch that says so instead of a dead control.
+  `file://`, embedded URLs and plain paths are rejected up front. The snackbar
+  itself grew an optional action button; verification: unit tests for the
+  detection rules plus an Xvfb + xclip end-to-end smoke (copy → toast →
+  click → prefilled dialog).
+
 - HLS/DASH downloads can be remuxed to another container after they finish:
   the task-level `transcode_to` setting names the container and the media
   plugin runs `ffmpeg -c copy` (container change only, no re-encode) with

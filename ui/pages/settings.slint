@@ -196,6 +196,10 @@ component GeneralPanel inherits Rectangle {
     in property <string> download-dir: "";
     // Daemon-independent UI preference, mirrored from the window.
     in-out property <int> start-page-index: 0;
+    // Clipboard link watch: off by default, and honestly unavailable when
+    // the session has no clipboard backend.
+    in-out property <bool> clipboard-on: false;
+    in-out property <bool> clipboard-available: true;
     callback changed(string, string);
 
     VerticalLayout {
@@ -240,6 +244,26 @@ component GeneralPanel inherits Rectangle {
                     font-size: Aether.text-caption;
                     font-family: "JetBrains Mono";
                     vertical-alignment: center;
+                }
+            }
+        }
+
+        SectionCard {
+            icon-source: AetherIcons.note;
+            title: "剪贴板";
+            subtitle: "复制链接后提示一键下载";
+
+            SettingRow {
+                icon-source: AetherIcons.download;
+                title: "检测下载链接";
+                description: root.clipboard-available
+                    ? "剪贴板出现下载链接时弹出提示，点提示直接新建任务；仅在链接变化时检测，内容不离开本机"
+                    : "当前会话没有可用的剪贴板后端（远程/无图形会话），此功能不可用";
+                divider: false;
+                Switch {
+                    checked: root.clipboard-on;
+                    enabled: root.clipboard-available;
+                    toggled => { root.changed("clipboard-watch", self.checked ? "true" : "false"); }
                 }
             }
         }
@@ -1215,6 +1239,9 @@ export component SettingsPage inherits Rectangle {
     in-out property <string> media-ffmpeg: "";
     // UI-local preferences (mirrored by the window).
     in-out property <int> start-page: 0;
+    // Clipboard link watch (GeneralPanel), mirrored from the window.
+    in-out property <bool> clipboard-on: false;
+    in-out property <bool> clipboard-available: true;
     in-out property <int> after-done: 0;
     in-out property <int> accent-index: 0;
     in-out property <bool> motion-on: true;
@@ -1297,6 +1324,8 @@ export component SettingsPage inherits Rectangle {
                 if root.tab == 0: GeneralPanel {
                     download-dir: root.download-dir;
                     start-page-index <=> root.start-page;
+                    clipboard-on <=> root.clipboard-on;
+                    clipboard-available <=> root.clipboard-available;
                     changed(k, v) => { root.settings-changed(k, v); }
                 }
                 if root.tab == 1: DownloadPanel {

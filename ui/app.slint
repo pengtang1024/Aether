@@ -71,6 +71,11 @@ export component AppWindow inherits Window {
     in-out property <bool> settings-flow: true;
     in-out property <bool> settings-notify-done: true;
     in-out property <bool> settings-notify-fail: true;
+    // Clipboard link watch (UI-local, default off).
+    in-out property <bool> settings-clipboard: false;
+    // True when no clipboard backend exists (headless): the switch stays
+    // off and the row explains why instead of pretending to work.
+    in-out property <bool> settings-clipboard-available: true;
     in-out property <bool> settings-schedule-on: false;
     in-out property <string> settings-schedule-start: "";
     in-out property <string> settings-schedule-end: "";
@@ -133,6 +138,8 @@ export component AppWindow inherits Window {
     in-out property <string> support-hint: "";
     in-out property <bool> system-dark: true;
     in-out property <bool> dialog-open: false;
+    // URL prefilled by Rust (clipboard detection); the dialog edits it live.
+    in-out property <string> dialog-url: "";
     // Set from Rust: the daemon's download root, used as the dialog default.
     in-out property <string> default-download-dir: "";
     in-out property <string> plugins-dir: "";
@@ -168,6 +175,10 @@ export component AppWindow inherits Window {
     in-out property <float> drift: 0;
     in-out property <bool> toast-open: false;
     in-out property <string> toast-text: "";
+    // Optional action label on the toast ("" = plain message); clicking the
+    // button fires `toast-action-clicked` (used by clipboard link detection).
+    in-out property <string> toast-action: "";
+    callback toast-action-clicked();
 
     // ---- aggregates ------------------------------------------------------
     in-out property <int> count-all: 0;
@@ -509,6 +520,8 @@ export component AppWindow inherits Window {
                         flow-on <=> root.settings-flow;
                         notify-done <=> root.settings-notify-done;
                         notify-fail <=> root.settings-notify-fail;
+                        clipboard-on <=> root.settings-clipboard;
+                        clipboard-available <=> root.settings-clipboard-available;
                         schedule-on <=> root.settings-schedule-on;
                         schedule-start <=> root.settings-schedule-start;
                         schedule-end <=> root.settings-schedule-end;
@@ -567,6 +580,29 @@ export component AppWindow inherits Window {
                     horizontal-stretch: 1;
                     overflow: elide;
                 }
+
+                if (root.toast-action != "") : Rectangle {
+                    height: 26px;
+                    width: action-label.preferred-width + 24px;
+                    border-radius: 13px;
+                    background: action-area.pressed ? Aether.primary-softer : Aether.primary-soft;
+                    cross-axis-self-alignment: center;
+
+                    action-area := TouchArea {
+                        clicked => { root.toast-action-clicked(); }
+                    }
+
+                    action-label := Text {
+                        text: root.toast-action;
+                        color: Aether.primary-bright;
+                        font-size: Aether.text-caption;
+                        font-weight: Aether.weight-medium;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        height: 100%;
+                        x: (parent.width - self.width) / 2;
+                    }
+                }
             }
         }
     }
@@ -579,6 +615,7 @@ export component AppWindow inherits Window {
         height: 100%;
         open: root.dialog-open;
         default-dir: root.default-download-dir;
+        url <=> root.dialog-url;
         confirmed(url, path, seg, limit, note) => {
             root.dialog-open = false;
             root.new-download(url, path, seg, limit, note);

@@ -8,6 +8,7 @@
 
 mod backend;
 mod chart;
+mod clipboard;
 mod model;
 
 slint::include_modules!();
@@ -69,6 +70,13 @@ struct State {
     started: Instant,
     /// Whether a browser extension native-host manifest is present.
     extension_installed: bool,
+    /// Clipboard link watcher: `None` when the session has no clipboard
+    /// backend (the settings row says so instead of faking availability).
+    clipboard: Option<clipboard::ClipboardWatch>,
+    /// Flips the poller from the settings page.
+    clipboard_control: Option<clipboard::ClipboardControl>,
+    /// URL staged by the latest detection; the toast action opens it.
+    clipboard_url: Option<String>,
 }
 
 impl State {
@@ -93,6 +101,9 @@ impl State {
             prefs: UiPrefs::load(),
             seen_page: 0,
             last_notice: None,
+            clipboard: None,
+            clipboard_control: None,
+            clipboard_url: None,
             plugins: Vec::new(),
             plugins_sig: String::new(),
             started: Instant::now(),
@@ -762,6 +773,16 @@ fn open_detail(ui: &AppWindow, state: &Rc<RefCell<State>>, id: i32) {
 fn show_toast(ui: &AppWindow, state: &Rc<RefCell<State>>, message: &str) {
     state.borrow_mut().toast_until = Some(Instant::now() + Duration::from_millis(2600));
     ui.set_toast_text(message.into());
+    ui.set_toast_action("".into());
+    ui.set_toast_open(true);
+}
+
+/// Snackbar with a click-through action (clipboard detection's "download"
+/// offer). The action payload lives in `State`, keyed by this toast.
+fn show_action_toast(ui: &AppWindow, state: &Rc<RefCell<State>>, message: &str, action: &str) {
+    state.borrow_mut().toast_until = Some(Instant::now() + Duration::from_millis(7000));
+    ui.set_toast_text(message.into());
+    ui.set_toast_action(action.into());
     ui.set_toast_open(true);
 }
 
@@ -823,6 +844,9 @@ struct UiPrefs {
     notify_done: bool,
     /// Desktop notification when a task fails (cancellations never notify).
     notify_fail: bool,
+    /// Watch the clipboard for a fresh download URL and offer a one-click
+    /// toast. Off by default: clipboard access is opt-in.
+    clipboard_watch: bool,
 }
 
 impl Default for UiPrefs {
@@ -836,6 +860,7 @@ impl Default for UiPrefs {
             after_done: 0,
             notify_done: true,
             notify_fail: true,
+            clipboard_watch: false,
         }
     }
 }
@@ -1000,6 +1025,16 @@ fn main() -> Result<(), slint::PlatformError> {
     let _ = slint::set_xdg_app_id("aether");
 
     let state = Rc::new(RefCell::new(State::new()));
+    // Clipboard link watch: start the poller (None = no backend in this
+    // session; the settings row reports that instead of faking a switch).
+    {
+        let mut st = state.borrow_mut();
+        if let Some((watch, control)) = clipboard::start() {
+            control.set_enabled(st.prefs.clipboard_watch);
+            st.clipboard = Some(watch);
+            st.clipboard_control = Some(control);
+        }
+    }
 
     // Theme: follow the desktop by default; AETHER_THEME can pin it for
     // screenshots and development (`light` or `dark`).
@@ -1023,6 +1058,8 @@ fn main() -> Result<(), slint::PlatformError> {
         ui.set_settings_after_done(prefs.after_done);
         ui.set_settings_notify_done(prefs.notify_done);
         ui.set_settings_notify_fail(prefs.notify_fail);
+        ui.set_settings_clipboard(prefs.clipboard_watch);
+        ui.set_settings_clipboard_available(state.borrow().clipboard_control.is_some());
         let page = match prefs.start_page {
             1 => 1,
             2 => prefs.last_page.clamp(0, 2),
@@ -1483,9 +1520,40 @@ fn main() -> Result<(), slint::PlatformError> {
                         }
                         st.prefs.save();
                     }
+                    "clipboard-watch" => {
+                        let enabled = value.as_str() == "true";
+                        // No backend in this session: refuse the switch
+                        // instead of saving a preference that does nothing.
+                        if st.clipboard_control.is_none() {
+                            if let Some(ui) = ui_handle.upgrade() {
+                                ui.set_settings_clipboard(false);
+                            }
+                            hint = Some("当前会话没有可用的剪贴板后端".into());
+                        } else {
+                            st.prefs.clipboard_watch = enabled;
+                            if let Some(control) = st.clipboard_control.as_ref() {
+                                control.set_enabled(enabled);
+                            }
+                            if let Some(ui) = ui_handle.upgrade() {
+                                ui.set_settings_clipboard(enabled);
+                            }
+                            st.prefs.save();
+                            hint = Some(if enabled {
+                                "剪贴板检测已开启：复制下载链接后会弹出提示".into()
+                            } else {
+                                "剪贴板检测已关闭".into()
+                            });
+                        }
+                    }
                     "reset-settings" => {
                         st.prefs = UiPrefs::default();
                         st.prefs.save();
+                        if let Some(control) = st.clipboard_control.as_ref() {
+                            control.set_enabled(false);
+                        }
+                        if let Some(ui) = ui_handle.upgrade() {
+                            ui.set_settings_clipboard(false);
+                        }
                         if let Some(ui) = ui_handle.upgrade() {
                             ui.set_settings_accent(0);
                             ui.set_settings_motion(true);
@@ -1596,6 +1664,30 @@ fn main() -> Result<(), slint::PlatformError> {
     }
 
     // ---- simulation clock (5 Hz) ------------------------------------------
+    // Clipboard toast action: open the new-download dialog with the staged
+    // URL. The dialog keeps whatever was last typed afterwards (existing
+    // behavior), so a plain manual open still starts empty only when the
+    // field was cleared by the user.
+    {
+        let ui_handle = ui.as_weak();
+        let state = state.clone();
+        ui.on_toast_action_clicked(move || {
+            let Some(ui) = ui_handle.upgrade() else {
+                return;
+            };
+            let staged = state.borrow_mut().clipboard_url.take();
+            let Some(url) = staged else {
+                // Stale click after expiry: just close the toast.
+                ui.set_toast_open(false);
+                return;
+            };
+            ui.set_dialog_url(url.into());
+            ui.set_dialog_open(true);
+            ui.set_toast_open(false);
+            state.borrow_mut().toast_until = None;
+        });
+    }
+
     let timer = Timer::default();
     {
         let ui_handle = ui.as_weak();
@@ -1628,6 +1720,21 @@ fn main() -> Result<(), slint::PlatformError> {
             }
             if let Some(notice) = notice {
                 show_toast(&ui, &state, &notice);
+            }
+            // Clipboard detections: stage the URL and offer one-click start.
+            {
+                let detected = state
+                    .borrow()
+                    .clipboard
+                    .as_ref()
+                    .map(|watch| watch.drain())
+                    .unwrap_or_default();
+                for link in detected {
+                    // Stage first, then drop the borrow: show_action_toast
+                    // borrows the state itself.
+                    state.borrow_mut().clipboard_url = Some(link.url);
+                    show_action_toast(&ui, &state, "检测到下载链接", "新建任务");
+                }
             }
             refresh_rows(&ui, &state);
             if drawer_open {
