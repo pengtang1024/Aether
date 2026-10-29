@@ -12,6 +12,15 @@ use serde_json::Value;
 
 use crate::model::Task;
 
+/// Split a pasted download field into individual URLs: whitespace
+/// separates them (newline-separated clipboard content included), so one
+/// dialog submit can queue a batch or several magnets at once. Returns
+/// tokens in order; empty input yields nothing (the dialog already guards
+/// an empty field).
+pub fn split_urls(input: &str) -> Vec<&str> {
+    input.split_whitespace().collect()
+}
+
 /// Immutable view of the daemon state, cloned per UI refresh.
 #[derive(Default)]
 pub struct Snapshot {
@@ -946,6 +955,7 @@ mod imp {
     #[cfg(test)]
     mod tests {
         use super::*;
+        use crate::backend::split_urls;
 
         #[test]
         fn chunk_order_is_a_permutation_and_stable() {
@@ -989,6 +999,23 @@ mod imp {
                 }),
                 "host.test"
             );
+        }
+        #[test]
+        fn split_urls_handles_pasted_batches() {
+            // One URL is the common case and must pass through unchanged.
+            assert_eq!(
+                split_urls("https://example.com/a.bin"),
+                vec!["https://example.com/a.bin"]
+            );
+            // Whitespace-separated batches and multiple magnets queue in
+            // order; newline-separated clipboard content counts too.
+            assert_eq!(
+                split_urls("https://a/x.bin  magnet:?xt=urn:btih:aa\nftp://b/y"),
+                vec!["https://a/x.bin", "magnet:?xt=urn:btih:aa", "ftp://b/y"]
+            );
+            // Tabs and trailing newlines are separators too; blanks drop out.
+            assert_eq!(split_urls("  a\t\t b \n"), vec!["a", "b"]);
+            assert!(split_urls("   \n ").is_empty());
         }
     }
 }

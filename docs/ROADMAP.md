@@ -1,12 +1,12 @@
 # 路线图与会话交接
 
 > 面向后续会话/贡献者：现在在哪、下一步做什么、怎么做、别踩哪些坑。
-> 最后更新：2026-10-29（main @ `b0f8a26`）。历史盲区清单见 `GAP_AUDIT.md`，
+> 最后更新：2026-10-29（main @ 待提交）。历史盲区清单见 `GAP_AUDIT.md`，
 > 本文跟踪其中已完成的部分与剩余特性的具体方案。
 
 ## 1. 当前状态
 
-- **0.2.0 已发布**（tag v0.2.0）。main 之上已合入十一个波次：
+- **0.2.0 已发布**（tag v0.2.0）。main 之上已合入十二个波次：
 
 | 提交 | 内容 |
 | --- | --- |
@@ -21,6 +21,7 @@
 | `4c84ac2` | 剪贴板链接检测：arboard 轮询（默认关、变化触发、scheme 白名单）、toast 动作按钮 → 新建对话框预填、设置页开关；托盘/i18n 仍待做 |
 | `3ed8af5` | 插件安装+签名：`files` 哈希映射 + canonical Ed25519 签名、`aether-plugin-sign`、install/rescan RPC（staging swap 回滚、禁用状态保留）、UI 路径安装行、假开关改说明文本 |
 | `b0f8a26` | 插件更新下载链：清单 `plugins` 条目、plugin_updates/update_all RPC（tar.gz 解包防护）、`plugin_auto_update` 键+6h pass、UI 更新全部/自动更新开关接真 |
+| （4.7） | 供应链：Actions pin SHA、cargo-deny+CI job、SBOM 进 release、AppStream 更新、优先级老化、UI 多 URL 导入 |
 
 - **设置页现状**：10 个分类中每个控件要么真实生效、要么是诚实的能力说明卡，
   没有「点了没反应」或显示假值的控件。
@@ -255,11 +256,30 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
 
 ### 4.7 发布与供应链
 
-- `cargo-deny`（license/advisory/sources）+ SBOM 生成进 release 资产；
-  GitHub Actions pin 到 SHA（现 Dependabot 会跟进）。
-- `.deb` 升级通道：appstream 元数据 + 每用户 daemon 的自更新提示
-  （`update_status` RPC 已有）。
-- 小件：任务优先级老化（防高优饿死）、批量导入（URL 列表文件 / 多 magnet）。
+- **已落地（2026-10-29）**：
+  - **Actions pin SHA**：ci.yml/package.yml 全部 6 个 actions 钉死真实
+    40 位 commit SHA + 版本注释；SHA 全部经 `gh api` 取得（annotated tag
+    peel、dtolnay 分支解析），版本注释经 tag 反查校正（不能凭记忆写）。
+    Dependabot 已为全部 pinned actions 自动开 SHA 更新 PR——pin 写法
+    （`# vX.Y.Z` 注释）正是它识别的格式。
+  - **cargo-deny**：`deny.toml`（宽松许可 allow 集、slint 三许可 exception
+    指向真实 crate 名——以 `cargo deny` 实测拒绝清单为准，猜的名字全错；
+    4 条带理由的 unmaintained ignore（zbus 家族/ttf-parser，slint 传递且
+    公告写明无升级路径）；未知 registry/git 拒绝）。本机四项全绿；CI 新增
+    pin SHA 的 cargo-deny job（已绿）。
+  - **SBOM**：package.yml release job 在 SHA256SUMS **之前**跑
+    cargo-cyclonedx（`--format json --override-filename aether-$V.cdx`，
+    注意 workspace 模式每成员一文件、工具会追加 `.json` 后缀——已本地实测
+    后才写进 workflow）→ CycloneDX 随 release 资产附带且被校验和覆盖。
+  - **AppStream**：metainfo 去掉 "mockup/no networking" 谎言，补 0.2.0，
+    `appstreamcli validate` 通过（`make check` 一环）。`.deb` 升级提示走
+    既有 `update_status` RPC + dashboard。
+  - **优先级老化**：`next_queued` 排序 `priority + MIN(100, wait_min/300)`
+    ——**等待奖励**而非惩罚（惩罚等待者会反向饿死低优先级），+100 头部
+    优势约 8.3h 后被公平竞争取代，平局回到最老优先；store 测试 3 断言。
+  - **批量导入**：新建对话框 URL 字段按空白切分（`backend::split_urls`
+    单测：多链接/多磁力/制表符/空输入），一次提交排队多个、toast 报数量；
+    CLI `import` 文件列表为既有能力。
 
 ## 5. 发布流程摘要
 

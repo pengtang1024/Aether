@@ -230,6 +230,7 @@ export component NewDownloadDialog inherits FocusScope {
                 url-field := LineEdit {
                     width: 100%;
                     text: root.url;
+                    placeholder-text: "https://…（空格分隔可一次粘贴多个链接/磁力）";
                     edited => { root.url = self.text; }
                     accepted => { root.submit(); }
                 }

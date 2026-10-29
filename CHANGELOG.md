@@ -7,6 +7,19 @@ versioning; 0.x releases may still change structure.
 
 ### Added
 
+- Supply-chain hardening: every GitHub Action is pinned to a full commit
+  SHA with a version comment resolved through the API (Dependabot keeps
+  them current), `deny.toml` plus a CI cargo-deny job enforce license,
+  advisory, ban and source policy (Slint's tri-license handled through
+  documented exceptions), release assets gain a CycloneDX SBOM generated
+  before the checksums so it is covered by SHA256SUMS, and the AppStream
+  metainfo now describes the real product instead of the old mockup
+  wording. The download queue ages priorities — waiting earns one point
+  per five minutes (capped at 100) — so a starved low-priority task
+  overtakes a freshly queued high-priority one after a few hours. The
+  new-download dialog accepts whitespace-separated batches: paste
+  several links or magnets at once and it queues them all.
+
 - The plugin update channel is live. The update manifest gains an optional
   `plugins` map (id → version/url/sha256, parsed compatibly with older
   manifests); the daemon's `plugin_updates` RPC compares installed versions

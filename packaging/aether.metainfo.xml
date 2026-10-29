@@ -2,12 +2,12 @@
 <component type="desktop-application">
   <id>io.github.pengtang1024.Aether</id>
   <name>Aether</name>
-  <summary>Native Material 3 download manager mockup</summary>
+  <summary>Native Material 3 download manager without a WebView</summary>
   <metadata_license>MIT</metadata_license>
   <project_license>MIT</project_license>
   <description>
-    <p>Aether is a native desktop download manager UI mockup built with Rust and Slint.</p>
-    <p>It uses Slint's Material 3 widget set and contains no WebView, networking or persistence.</p>
+    <p>Aether is a desktop download manager with a native Rust and Slint interface: no embedded browser, no Electron.</p>
+    <p>A background daemon supervises per-protocol plugins for HTTP(S), BitTorrent, HLS and DASH streaming, FTP, WebDAV, S3 and cloud drives. It supports resumable transfers, a priority queue with scheduled download windows, desktop notifications, a browser-extension handoff, and signed automatic updates.</p>
   </description>
   <launchable type="desktop-id">aether.desktop</launchable>
   <url type="homepage">https://github.com/pengtang1024/Aether</url>
@@ -20,6 +20,7 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.2.0" date="2026-10-27"/>
     <release version="0.1.0" date="2026-10-25"/>
   </releases>
   <categories>

@@ -1215,17 +1215,29 @@ fn main() -> Result<(), slint::PlatformError> {
             let Some(ui) = ui_handle.upgrade() else {
                 return;
             };
+            let urls = backend::split_urls(&url);
+            let count = urls.len();
             {
                 let mut st = state.borrow_mut();
                 st.filter = 0;
                 st.query = String::new();
-                st.backend.add_task(&url, &path, limit_kb);
+                for url in &urls {
+                    st.backend.add_task(url, &path, limit_kb);
+                }
             }
             ui.set_page(1);
             ui.set_active_filter(0);
             ui.set_search_text("".into());
             refresh_rows(&ui, &state);
-            show_toast(&ui, &state, "已添加下载任务");
+            // One URL is the plain case; a pasted batch reports how many
+            // tasks were queued (per-URL failures arrive as daemon notices
+            // afterwards).
+            let message = if count > 1 {
+                format!("已添加 {count} 个下载任务")
+            } else {
+                "已添加下载任务".to_string()
+            };
+            show_toast(&ui, &state, &message);
         });
     }
 

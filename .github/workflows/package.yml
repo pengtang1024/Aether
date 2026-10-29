@@ -270,6 +270,22 @@ jobs:
           merge-multiple: true
           path: artifacts
 
+      # SBOM first so the checksums below cover it. cargo-cyclonedx only
+      # reads the workspace metadata + lockfile (no build), and the resulting
+      # document describes the source dependency set shared by every
+      # platform artifact of this release.
+      - uses: dtolnay/rust-toolchain@3da603d4464771f1a8c3dd4acb41f03bc8107551 # branch 1.92.0
+      - name: Generate SBOM (CycloneDX)
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          cargo install cargo-cyclonedx --locked
+          # Workspace mode emits one file per member; the root package is
+          # the product. --override-filename takes the name without the
+          # format extension (the tool appends ".json").
+          cargo cyclonedx --format json --override-filename "aether-${VERSION}.cdx"
+          mv "aether-${VERSION}.cdx.json" "artifacts/aether-${VERSION}.cdx.json"
+
       - name: Prepare release notes and checksums
         env:
           VERSION: ${{ needs.version.outputs.version }}
