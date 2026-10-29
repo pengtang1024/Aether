@@ -350,6 +350,10 @@ Esc 关闭；下载空状态提供“清除筛选条件”，一次恢复全部�
 - Windows/macOS 包只含 Host：daemon 依赖 Unix socket，命名管道尚未实现
 - 窗口默认 900×600，最小 900×560；没有做手机/超窄窗口布局
 
+剩余特性的具体实施方案与开发环境要点（e2e 约定、Xvfb 冒烟配方、已知坑）
+维护在 [docs/ROADMAP.md](docs/ROADMAP.md)，历史盲区清单见
+[docs/GAP_AUDIT.md](docs/GAP_AUDIT.md)。
+
 ## 许可
 
 Aether 自有代码以 MIT 发布。`ui/material/` 为 Slint 上游 vendored 代码，版权归
