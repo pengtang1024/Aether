@@ -1,7 +1,7 @@
 # 路线图与会话交接
 
 > 面向后续会话/贡献者：现在在哪、下一步做什么、怎么做、别踩哪些坑。
-> 最后更新：2026-10-29（main @ 待提交）。历史盲区清单见 `GAP_AUDIT.md`，
+> 最后更新：2026-10-29（main @ `4c84ac2`）。历史盲区清单见 `GAP_AUDIT.md`，
 > 本文跟踪其中已完成的部分与剩余特性的具体方案。
 
 ## 1. 当前状态
@@ -18,7 +18,7 @@
 | `1353da9` | RPC over TCP：`rpc_listen`/`rpc_secret` settings + `--rpc-listen`，token 鉴权（常数时间，热轮换），CLI `--socket ip:port`，`tests/rpc.rs` 6 用例 |
 | `cb3ef23` | 浏览器接管：Cookie 显式授权（optional permission）、站点过滤、Windows manifest 安装（注册表）、native-host 透传测试 |
 | `f8aefa0` | 媒体转码：`transcode_to` 任务级容器转封装（ffmpeg `-c copy`，失败保留原件）、全局 `ffmpeg_path` 注入、媒体页路径行、假 ffmpeg e2e |
-| （4.5a） | 剪贴板链接检测：arboard 轮询（默认关、变化触发、scheme 白名单）、toast 动作按钮 → 新建对话框预填、设置页开关；托盘/i18n 仍待做 |
+| `4c84ac2` | 剪贴板链接检测：arboard 轮询（默认关、变化触发、scheme 白名单）、toast 动作按钮 → 新建对话框预填、设置页开关；托盘/i18n 仍待做 |
 
 - **设置页现状**：10 个分类中每个控件要么真实生效、要么是诚实的能力说明卡，
   没有「点了没反应」或显示假值的控件。
