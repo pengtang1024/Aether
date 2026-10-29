@@ -293,7 +293,7 @@ export component DownloadsPage inherits Rectangle {
                 cross-axis-self-alignment: center;
 
                 Text {
-                    text: "下载列表";
+                    text: @tr("下载列表");
                     color: Aether.on-surface;
                     font-size: Aether.text-headline;
                     font-weight: Aether.weight-semibold;
@@ -301,7 +301,7 @@ export component DownloadsPage inherits Rectangle {
                 }
 
                 Text {
-                    text: "共 " + root.tasks.length + " 个任务 · 按最近添加排序";
+                    text: @tr("共 ") + root.tasks.length + " 个任务 · 按最近添加排序";
                     color: Aether.on-surface-muted;
                     font-size: Aether.text-caption;
                 }
@@ -320,12 +320,12 @@ export component DownloadsPage inherits Rectangle {
         HorizontalLayout {
             spacing: 6px;
 
-            FilterPill { text: "全部"; count: root.count-all; selected: root.active-filter == 0; clicked => { root.active-filter = 0; root.filter-changed(0, root.search-text); } }
-            FilterPill { text: "下载中"; count: root.count-active; selected: root.active-filter == 1; clicked => { root.active-filter = 1; root.filter-changed(1, root.search-text); } }
-            FilterPill { text: "已完成"; count: root.count-done; selected: root.active-filter == 2; clicked => { root.active-filter = 2; root.filter-changed(2, root.search-text); } }
-            FilterPill { text: "已暂停"; count: root.count-paused; selected: root.active-filter == 3; clicked => { root.active-filter = 3; root.filter-changed(3, root.search-text); } }
-            FilterPill { text: "失败"; count: root.count-failed; selected: root.active-filter == 4; clicked => { root.active-filter = 4; root.filter-changed(4, root.search-text); } }
-            FilterPill { text: "种子"; count: root.count-seed; selected: root.active-filter == 5; clicked => { root.active-filter = 5; root.filter-changed(5, root.search-text); } }
+            FilterPill { text: @tr("全部"); count: root.count-all; selected: root.active-filter == 0; clicked => { root.active-filter = 0; root.filter-changed(0, root.search-text); } }
+            FilterPill { text: @tr("下载中"); count: root.count-active; selected: root.active-filter == 1; clicked => { root.active-filter = 1; root.filter-changed(1, root.search-text); } }
+            FilterPill { text: @tr("已完成"); count: root.count-done; selected: root.active-filter == 2; clicked => { root.active-filter = 2; root.filter-changed(2, root.search-text); } }
+            FilterPill { text: @tr("已暂停"); count: root.count-paused; selected: root.active-filter == 3; clicked => { root.active-filter = 3; root.filter-changed(3, root.search-text); } }
+            FilterPill { text: @tr("失败"); count: root.count-failed; selected: root.active-filter == 4; clicked => { root.active-filter = 4; root.filter-changed(4, root.search-text); } }
+            FilterPill { text: @tr("种子"); count: root.count-seed; selected: root.active-filter == 5; clicked => { root.active-filter = 5; root.filter-changed(5, root.search-text); } }
 
             Rectangle { horizontal-stretch: 1; background: transparent; }
         }
@@ -381,7 +381,7 @@ export component DownloadsPage inherits Rectangle {
                     }
 
                     Text {
-                        text: "没有符合条件的任务";
+                        text: @tr("没有符合条件的任务");
                         color: Aether.on-surface;
                         font-size: Aether.text-body;
                         font-weight: Aether.weight-medium;
@@ -390,7 +390,7 @@ export component DownloadsPage inherits Rectangle {
                     }
 
                     Text {
-                        text: "尝试切换筛选条件，或调整搜索关键词";
+                        text: @tr("尝试切换筛选条件，或调整搜索关键词");
                         color: Aether.on-surface-muted;
                         font-size: Aether.text-caption;
                         width: 100%;
@@ -398,7 +398,7 @@ export component DownloadsPage inherits Rectangle {
                     }
 
                     TextButton {
-                        text: "清除筛选条件";
+                        text: @tr("清除筛选条件");
                         clicked => { root.reset-filters(); }
                     }
                 }

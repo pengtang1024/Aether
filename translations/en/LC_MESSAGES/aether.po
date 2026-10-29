@@ -1,0 +1,665 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: en\n"
+
+msgid "常规"
+msgstr "General"
+
+msgid "启动与存储"
+msgstr "Startup and storage"
+
+msgid "下载"
+msgstr "Downloads"
+
+msgid "下载列表"
+msgstr "Download list"
+
+msgid "没有符合条件的任务"
+msgstr "No tasks match the current filter"
+
+msgid "尝试切换筛选条件，或调整搜索关键词"
+msgstr "Try another filter, or adjust the search"
+
+msgid "清除筛选条件"
+msgstr "Clear filters"
+
+msgid "实时速度"
+msgstr "Live speed"
+
+msgid "当前速度"
+msgstr "Current speed"
+
+msgid "实时更新"
+msgstr "Live updates"
+
+msgid "限速"
+msgstr "Speed cap"
+
+msgid "任务"
+msgstr "Tasks"
+
+msgid "活跃任务"
+msgstr "Active tasks"
+
+msgid "实时下载中"
+msgstr "Downloading right now"
+
+msgid "已完成"
+msgstr "Completed"
+
+msgid "暂停"
+msgstr "Paused"
+
+msgid "失败"
+msgstr "Failed"
+
+msgid "种子"
+msgstr "Torrents"
+
+msgid "数据统计"
+msgstr "Statistics"
+
+msgid "本周下载"
+msgstr "Downloaded this week"
+
+msgid "存储与分类"
+msgstr "Storage"
+
+msgid "磁盘使用"
+msgstr "Disk usage"
+
+msgid "本周入库"
+msgstr "Added this week"
+
+msgid "视频"
+msgstr "Video"
+
+msgid "压缩包"
+msgstr "Archives"
+
+msgid "应用"
+msgstr "Applications"
+
+msgid "文档"
+msgstr "Documents"
+
+msgid "系统与会话"
+msgstr "System & session"
+
+msgid "版本"
+msgstr "Version"
+
+msgid "引擎"
+msgstr "Engine"
+
+msgid "浏览器扩展"
+msgstr "Browser extension"
+
+msgid "插件"
+msgstr "Plugins"
+
+msgid "协议"
+msgstr "Protocols"
+
+msgid "运行"
+msgstr "Uptime"
+
+msgid "下载设置"
+msgstr "Download settings"
+
+msgid "下载地址"
+msgstr "Download URL"
+
+msgid "https://…（空格分隔可一次粘贴多个链接/磁力）"
+msgstr "https://… (space-separate to paste several links or magnets)"
+
+msgid "保存路径"
+msgstr "Save to"
+
+msgid "分段数"
+msgstr "Segments"
+
+msgid "单任务限速"
+msgstr "Per-task speed limit"
+
+msgid "备注"
+msgstr "Note"
+
+msgid "启动"
+msgstr "Startup"
+
+msgid "启动页面"
+msgstr "Start page"
+
+msgid "每次打开 Aether 时显示的页面"
+msgstr "Page shown when Aether opens"
+
+msgid "存储"
+msgstr "Storage"
+
+msgid "默认下载目录"
+msgstr "Default download folder"
+
+msgid "daemon 启动参数决定，新任务默认保存到这里"
+msgstr "Set by the daemon launch options; new tasks default here"
+
+msgid "剪贴板"
+msgstr "Clipboard"
+
+msgid "检测下载链接"
+msgstr "Detect download links"
+
+msgid "并发与分段"
+msgstr "Concurrency & segments"
+
+msgid "同时进行的下载数"
+msgstr "Simultaneous downloads"
+
+msgid "超出后任务进入等待队列"
+msgstr "Extra tasks wait in the queue"
+
+msgid "每任务连接数"
+msgstr "Connections per task"
+
+msgid "HTTP(S) 单任务并行连接数，上限 16"
+msgstr "Parallel connections per HTTP(S) task, up to 16"
+
+msgid "失败重试次数"
+msgstr "Retry count"
+
+msgid "网络抖动或超时后自动重试"
+msgstr "Retries after network errors or timeouts"
+
+msgid "带宽"
+msgstr "Bandwidth"
+
+msgid "启用全局限速"
+msgstr "Enable global speed limit"
+
+msgid "限制所有任务的合计带宽"
+msgstr "Cap the combined bandwidth of all tasks"
+
+msgid "下载限速"
+msgstr "Download limit"
+
+msgid "完成后动作"
+msgstr "After completion"
+
+msgid "任务下载完成后的默认行为"
+msgstr "What happens when a task finishes"
+
+msgid "代理"
+msgstr "Proxy"
+
+msgid "代理模式"
+msgstr "Proxy mode"
+
+msgid "跟随系统或为 Aether 单独配置"
+msgstr "Follow the system, or configure Aether separately"
+
+msgid "代理地址"
+msgstr "Proxy address"
+
+msgid "支持 HTTP / SOCKS5；切到手动模式后生效"
+msgstr "HTTP / SOCKS5; applied after switching to manual mode"
+
+msgid "DNS 服务器"
+msgstr "DNS servers"
+
+msgid "仅 HTTP(S) 生效；指定后失败即报错，不回退系统 DNS"
+msgstr "HTTP(S) only; failures are reported instead of falling back to the system DNS"
+
+msgid "IP 协议"
+msgstr "IP protocol"
+
+msgid "仅 HTTP(S) 下载生效；BT / FTP 不受影响"
+msgstr "HTTP(S) downloads only; BT / FTP are unaffected"
+
+msgid "协议与请求"
+msgstr "Protocols & requests"
+
+msgid "留空使用 Aether 默认值；改动对空闲插件立即生效"
+msgstr "Leave empty for the Aether default; idle plugins pick changes up immediately"
+
+msgid "自定义请求头"
+msgstr "Custom headers"
+
+msgid "Key: Value，多条用分号分隔；仅 HTTP 族插件，任务级同名头优先"
+msgstr "Key: Value; separate with semicolons. HTTP-family plugins only; a per-task header of the same name wins"
+
+msgid "FTP 被动模式"
+msgstr "FTP passive mode"
+
+msgid "兼容更多 FTP 服务器；关闭后使用主动模式"
+msgstr "Works with more FTP servers; turn off for active mode"
+
+msgid "连接"
+msgstr "Connection"
+
+msgid "监听端口"
+msgstr "Listen port"
+
+msgid "需要放行时在路由器中转发"
+msgstr "Forward it on your router when needed"
+
+msgid "通过分布式哈希表发现节点"
+msgstr "Discover peers through the distributed hash table"
+
+msgid "做种"
+msgstr "Seeding"
+
+msgid "上传限速"
+msgstr "Upload limit"
+
+msgid "过滤与 Tracker"
+msgstr "Filters & trackers"
+
+msgid "屏蔽列表路径"
+msgstr "Blocklist path"
+
+msgid "dat 格式黑名单文件或 URL；留空不启用"
+msgstr "A .dat blocklist file or URL; leave empty to disable"
+
+msgid "Tracker 列表"
+msgstr "Tracker list"
+
+msgid "附加到所有种子；多条用分号分隔"
+msgstr "Added to every torrent; separate with semicolons"
+
+msgid "媒体下载"
+msgstr "Media downloads"
+
+msgid "HLS / DASH 直链"
+msgstr "Direct HLS / DASH links"
+
+msgid "粘贴 .m3u8 / .mpd 链接即可下载，AES 加密分段自动解密合并；下载完成后可按任务转封装容器（transcode_to，仅 -c copy 不重编码）"
+msgstr "Paste an .m3u8 or .mpd link; encrypted segments are decrypted and merged. A task can remux to another container afterwards (transcode_to, -c copy only, no re-encode)"
+
+msgid "已支持"
+msgstr "Supported"
+
+msgid "ffmpeg 路径"
+msgstr "ffmpeg path"
+
+msgid "留空使用 PATH 里的 ffmpeg（或 AETHER_FFMPEG 环境变量）；对之后开始的任务生效"
+msgstr "Leave empty to use ffmpeg from PATH (or AETHER_FFMPEG); applies to tasks started afterwards"
+
+msgid "可更新"
+msgstr "Updates available"
+
+msgid "插件库"
+msgstr "Plugin catalog"
+
+msgid "更新全部"
+msgstr "Update all"
+
+msgid "插件引擎"
+msgstr "Plugin engine"
+
+msgid "自动更新插件"
+msgstr "Auto-update plugins"
+
+msgid "daemon 每 6 小时按更新清单安装插件新版；需配置更新清单与签名公钥"
+msgstr "The daemon installs plugin updates from the update manifest every 6 hours; the manifest URL and signing key must be configured"
+
+msgid "加载插件目录之外的文件"
+msgstr "Load files outside the plugin directory"
+
+msgid "不做签名校验的直加载没有提供；请用上面的「安装插件」（会复制进插件目录并验签）"
+msgstr "Unsigned direct loading is not offered; use “Install plugin” above (it copies into the plugin directory and verifies the signature)"
+
+msgid "不支持"
+msgstr "Not supported"
+
+msgid "插件目录"
+msgstr "Plugin directory"
+
+msgid "本地插件的安装位置"
+msgstr "Where local plugins live"
+
+msgid "安装插件"
+msgstr "Install plugin"
+
+msgid "插件包目录的绝对路径（含 plugin.json）；daemon 校验 manifest 签名与文件哈希后复制进插件目录"
+msgstr "Absolute path to a plugin package (containing plugin.json); the daemon verifies the manifest signature and file hashes, then copies it into the plugin directory"
+
+msgid "安装"
+msgstr "Install"
+
+msgid "开发"
+msgstr "Development"
+
+msgid "开发者模式"
+msgstr "Developer mode"
+
+msgid "插件日志查看与调试入口（任务详情里已有每任务日志）"
+msgstr "Plugin logs and debugging entry points (per-task logs already live in the task detail)"
+
+msgid "未实现"
+msgstr "Not implemented"
+
+msgid "重新加载插件"
+msgstr "Reload plugins"
+
+msgid "不重启应用刷新本地插件"
+msgstr "Refresh local plugins without restarting the app"
+
+msgid "重新加载"
+msgstr "Reload"
+
+msgid "计划任务"
+msgstr "Scheduled downloads"
+
+msgid "启用计划下载"
+msgstr "Enable scheduled downloads"
+
+msgid "需要填好开始与结束时间"
+msgstr "Both start and end times are required"
+
+msgid "开始时间"
+msgstr "Start time"
+
+msgid "本机时间 HH:MM，例如 01:00"
+msgstr "Local time HH:MM, e.g. 01:00"
+
+msgid "结束时间"
+msgstr "End time"
+
+msgid "早于开始时间表示跨午夜，例如 22:00 - 07:00"
+msgstr "Earlier than the start wraps midnight, e.g. 22:00 - 07:00"
+
+msgid "通知"
+msgstr "Notifications"
+
+msgid "下载完成"
+msgstr "Download completed"
+
+msgid "完成后通过系统通知提醒（notify-send）"
+msgstr "A system notification when a task completes (notify-send)"
+
+msgid "下载失败"
+msgstr "Download failed"
+
+msgid "失败时提醒并附错误原因；手动取消不提醒"
+msgstr "Notify with the error reason; manual cancels never notify"
+
+msgid "主题"
+msgstr "Theme"
+
+msgid "界面语言"
+msgstr "Interface language"
+
+msgid "中文为内置源语言；切换立即生效"
+msgstr "Chinese is the built-in source language; switching applies immediately"
+
+msgid "默认跟随系统，也可固定浅色或深色"
+msgstr "Follows the system by default; can be pinned to light or dark"
+
+msgid "主色"
+msgstr "Accent color"
+
+msgid "品牌强调色，按钮、进度与高亮同步换色"
+msgstr "Brand accent; buttons, progress and highlights follow"
+
+msgid "界面"
+msgstr "Interface"
+
+msgid "背景流线"
+msgstr "Background flow"
+
+msgid "窗口边缘的低对比度 Aurora 装饰"
+msgstr "Low-contrast Aurora decoration along the window edge"
+
+msgid "界面动效"
+msgstr "Interface motion"
+
+msgid "关闭后所有过渡立即完成（无障碍）"
+msgstr "Transitions complete instantly (accessibility)"
+
+msgid "路径"
+msgstr "Paths"
+
+msgid "数据库路径"
+msgstr "Database path"
+
+msgid "任务、历史与插件元数据"
+msgstr "Tasks, history and plugin metadata"
+
+msgid "第一方插件的安装位置"
+msgstr "Where first-party plugins are installed"
+
+msgid "维护"
+msgstr "Maintenance"
+
+msgid "重置界面偏好"
+msgstr "Reset UI preferences"
+
+msgid "恢复外观与完成动作的默认值，不影响 daemon 与任务"
+msgstr "Restores appearance and completion defaults; the daemon and tasks are untouched"
+
+msgid "Rust + Slint · Material 3 · 原生桌面，无 WebView"
+msgstr "Rust + Slint · Material 3 · native desktop, no WebView"
+
+msgid "检查更新"
+msgstr "Check for updates"
+
+msgid "更新"
+msgstr "Updates"
+
+msgid "更新通道"
+msgstr "Update channel"
+
+msgid "稳定版优先，测试版获取新能力"
+msgstr "Stable first; the beta channel gets new features earlier"
+
+msgid "自动下载更新"
+msgstr "Download updates automatically"
+
+msgid "在后台准备新版本"
+msgstr "Prepare new versions in the background"
+
+msgid "版本说明"
+msgstr "Release notes"
+
+msgid "查看变更、兼容性与已知问题"
+msgstr "Changes, compatibility and known issues"
+
+msgid "支持"
+msgstr "Support"
+
+msgid "安装、插件、RPC 与常见问题"
+msgstr "Installation, plugins, RPC and FAQ"
+
+msgid "社区"
+msgstr "Community"
+
+msgid "讨论、分享配置与插件"
+msgstr "Discuss, share setups and plugins"
+
+msgid "反馈问题"
+msgstr "Report an issue"
+
+msgid "报告 Bug 或提出功能建议"
+msgstr "Report a bug or propose a feature"
+
+msgid "许可"
+msgstr "License"
+
+msgid "设置中心"
+msgstr "Settings"
+
+msgid "偏好、网络与扩展"
+msgstr "Preferences, network and extensions"
+
+
+msgid "启动位置与窗口行为"
+msgstr "Startup location and window behavior"
+
+msgid "下载目录"
+msgstr "Download folder"
+
+msgid "复制链接后提示一键下载"
+msgstr "Offer one-click download when a link is copied"
+
+msgid "决定下载速度和服务器压力"
+msgstr "Controls download speed and server load"
+
+msgid "全局限速与智能调度"
+msgstr "Global throttling and smart scheduling"
+
+msgid "完成动作"
+msgstr "Completion"
+
+msgid "让下载经过系统或自定义网络"
+msgstr "Route downloads through the system or a custom network"
+
+msgid "兼容性与请求行为"
+msgstr "Compatibility and request behavior"
+
+msgid "端口与节点发现"
+msgstr "Ports and peer discovery"
+
+msgid "上传带宽，0 为不限速"
+msgstr "Upload bandwidth; 0 means unlimited"
+
+msgid "屏蔽规则与私有 Tracker"
+msgstr "Block rules and private trackers"
+
+msgid "已实现的能力"
+msgstr "Available capabilities"
+
+msgid "rtmp 直播录制与媒体转封装共用"
+msgstr "Shared by rtmp capture and media remuxing"
+
+msgid "插件目录、来源与更新"
+msgstr "Plugin directory, sources and updates"
+
+msgid "调试与重新加载"
+msgstr "Debugging and reloading"
+
+msgid "时段外自动暂停队列，到点自动恢复"
+msgstr "Pauses the queue outside the window and resumes on time"
+
+msgid "任务结束时的系统通知"
+msgstr "System notifications when tasks finish"
+
+msgid "Aurora ink 视觉语言"
+msgstr "Aurora ink visual language"
+
+msgid "背景与动效"
+msgstr "Background and motion"
+
+msgid "daemon 的真实数据位置"
+msgstr "Where the daemon actually keeps its data"
+
+msgid "恢复默认外观与偏好"
+msgstr "Restore default appearance and preferences"
+
+msgid "版本通道与自动更新"
+msgstr "Release channel and auto-update"
+
+msgid "文档、社区、反馈与许可"
+msgstr "Documentation, community, feedback and license"
+
+msgid "剪贴板出现下载链接时弹出提示，点提示直接新建任务；仅在链接变化时检测，内容不离开本机"
+msgstr "Offers a one-click prompt when a download link is copied; only fires on changes, and nothing leaves this machine"
+
+msgid "当前会话没有可用的剪贴板后端（远程/无图形会话），此功能不可用"
+msgstr "No clipboard backend in this session (remote or headless); this feature is unavailable"
+msgid "共 "
+msgstr "Total "
+
+msgid "全部"
+msgstr "All"
+
+msgid "下载中"
+msgstr "Downloading"
+
+msgid "已暂停"
+msgstr "Paused"
+
+msgid "活跃 "
+msgstr "Active "
+
+msgid "今日下载"
+msgstr "Downloaded today"
+
+msgid "今日上传"
+msgstr "Uploaded today"
+
+msgid "峰值速度"
+msgstr "Peak speed"
+
+msgid "上传"
+msgstr "Upload"
+
+msgid "平均文件"
+msgstr "Avg file size"
+
+msgid "成功率"
+msgstr "Success rate"
+
+msgid "并发、分段、限速与磁盘策略"
+msgstr "Concurrency, segments, throttling and disk policy"
+
+msgid "网络"
+msgstr "Network"
+
+msgid "代理、DNS、协议与请求头"
+msgstr "Proxy, DNS, protocols and headers"
+
+msgid "端口、节点发现与做种"
+msgstr "Ports, peer discovery and seeding"
+
+msgid "媒体与浏览器"
+msgstr "Media & browser"
+
+msgid "当前能力与边界"
+msgstr "Current capabilities and limits"
+
+msgid "内置"
+msgstr "Built-in"
+
+msgid "已启用"
+msgstr "Enabled"
+
+msgid "计划与通知"
+msgstr "Schedule & notifications"
+
+msgid "定时任务与桌面提醒"
+msgstr "Timed windows and desktop alerts"
+
+msgid "外观"
+msgstr "Appearance"
+
+msgid "主题、主色与动效"
+msgstr "Theme, accent and motion"
+
+msgid "高级"
+msgstr "Advanced"
+
+msgid "路径与维护"
+msgstr "Paths & maintenance"
+
+msgid "重置"
+msgstr "Reset"
+
+msgid "关于与支持"
+msgstr "About & support"
+
+msgid "版本、更新、文档与社群"
+msgstr "Version, updates, docs and community"
+
+msgid "打开"
+msgstr "Open"
+
+msgid "查看"
+msgstr "View"
+
+msgid "传输速度  ·  峰值 "
+msgstr "Transfer speed  ·  peak "
+
+msgid "分片进度  "
+msgstr "Chunk progress  "
+

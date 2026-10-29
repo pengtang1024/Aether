@@ -387,7 +387,7 @@ export component TaskDrawer inherits FocusScope {
                     Tip {
                         x: (parent.width - self.width) / 2;
                         y: -30px;
-                        text: "传输速度  ·  峰值 " + root.detail.peak;
+                        text: @tr("传输速度  ·  峰值 ") + root.detail.peak;
                         show: chart-touch.has-hover;
                     }
                 }
@@ -405,7 +405,7 @@ export component TaskDrawer inherits FocusScope {
                     Tip {
                         x: (parent.width - self.width) / 2;
                         y: -30px;
-                        text: "分片进度  " + root.detail.chunks-text;
+                        text: @tr("分片进度  ") + root.detail.chunks-text;
                         show: chunk-touch.has-hover;
                     }
                 }

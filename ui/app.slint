@@ -75,6 +75,8 @@ export component AppWindow inherits Window {
     in-out property <bool> settings-clipboard: false;
     // Daemon-backed: auto-install outdated plugins on the update cycle.
     in-out property <bool> settings-plugin-auto-update: false;
+    // UI-local: interface language (0 = Chinese source, 1 = English).
+    in-out property <int> settings-language: 0;
     // True when no clipboard backend exists (headless): the switch stays
     // off and the row explains why instead of pretending to work.
     in-out property <bool> settings-clipboard-available: true;
@@ -516,6 +518,7 @@ export component AppWindow inherits Window {
                         bt-trackers <=> root.settings-bt-trackers;
                         media-ffmpeg <=> root.settings-media-ffmpeg;
                         plugin-auto-update <=> root.settings-plugin-auto-update;
+                        language-index <=> root.settings-language;
                         start-page <=> root.settings-start-page;
                         after-done <=> root.settings-after-done;
                         accent-index <=> root.settings-accent;

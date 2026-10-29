@@ -443,7 +443,7 @@ export component HomePage inherits Rectangle {
 
         speed-card := Card {
             width: root.col-w * 2 + root.gap;
-            title: "实时速度";
+            title: @tr("实时速度");
             icon-source: AetherIcons.signal;
             tone: Aether.live;
 
@@ -463,7 +463,7 @@ export component HomePage inherits Rectangle {
                         alignment: start;
 
                         Text {
-                            text: "当前速度";
+                            text: @tr("当前速度");
                             color: Aether.on-surface-muted;
                             font-size: Aether.text-caption;
                         }
@@ -478,7 +478,7 @@ export component HomePage inherits Rectangle {
                         }
 
                         Text {
-                            text: "活跃 " + root.count-active + " · 队列 " + root.count-paused + " · 连接 24";
+                            text: @tr("活跃 ") + root.count-active + " · 队列 " + root.count-paused + " · 连接 24";
                             color: Aether.on-surface-muted;
                             font-size: Aether.text-micro;
                         }
@@ -491,7 +491,7 @@ export component HomePage inherits Rectangle {
                             cross-axis-alignment: center;
 
                             Text {
-                                text: "实时更新";
+                                text: @tr("实时更新");
                                 color: Aether.on-surface-muted;
                                 font-size: Aether.text-micro;
                             }
@@ -532,11 +532,11 @@ export component HomePage inherits Rectangle {
                         height: 100%;
                         spacing: 6px;
 
-                        MetricCell { label: "今日下载"; value: root.today-bytes; horizontal-stretch: 1; }
+                        MetricCell { label: @tr("今日下载"); value: root.today-bytes; horizontal-stretch: 1; }
                         Rectangle { width: 1px; height: 18px; background: Aether.outline-faint; cross-axis-self-alignment: center; }
-                        MetricCell { label: "今日上传"; value: root.today-upload; horizontal-stretch: 1; }
+                        MetricCell { label: @tr("今日上传"); value: root.today-upload; horizontal-stretch: 1; }
                         Rectangle { width: 1px; height: 18px; background: Aether.outline-faint; cross-axis-self-alignment: center; }
-                        MetricCell { label: "峰值速度"; value: root.peak-speed; horizontal-stretch: 1; }
+                        MetricCell { label: @tr("峰值速度"); value: root.peak-speed; horizontal-stretch: 1; }
                     }
 
                     Rectangle {
@@ -556,7 +556,7 @@ export component HomePage inherits Rectangle {
                         alignment: center;
 
                         Text {
-                            text: "限速";
+                            text: @tr("限速");
                             color: Aether.on-surface-muted;
                             font-size: Aether.text-caption;
                             height: 24px;
@@ -579,7 +579,7 @@ export component HomePage inherits Rectangle {
 
         task-card := Card {
             width: root.col-w;
-            title: "任务";
+            title: @tr("任务");
             icon-source: AetherIcons.list;
             tone: Aether.primary-bright;
             action: "全部";
@@ -606,7 +606,7 @@ export component HomePage inherits Rectangle {
                     alignment: center;
 
                     Text {
-                        text: "活跃任务";
+                        text: @tr("活跃任务");
                         color: Aether.on-surface-muted;
                         font-size: Aether.text-micro;
                     }
@@ -618,7 +618,7 @@ export component HomePage inherits Rectangle {
                         font-family: "JetBrains Mono";
                     }
                     Text {
-                        text: "实时下载中";
+                        text: @tr("实时下载中");
                         color: Aether.on-surface-muted;
                         font-size: Aether.text-micro;
                     }
@@ -660,7 +660,7 @@ export component HomePage inherits Rectangle {
             TaskStatusRow {
                 height: (task-card.height - 164px) / 4;
                 dot: Aether.success;
-                label: "已完成";
+                label: @tr("已完成");
                 count: "" + root.count-done;
                 percent: (root.count-all > 0 ? round(100.0 * root.count-done / root.count-all) : 0) + "%";
                 clicked => { root.open-downloads(2); }
@@ -668,7 +668,7 @@ export component HomePage inherits Rectangle {
             TaskStatusRow {
                 height: (task-card.height - 164px) / 4;
                 dot: Aether.warning;
-                label: "暂停";
+                label: @tr("暂停");
                 count: "" + root.count-paused;
                 percent: (root.count-all > 0 ? round(100.0 * root.count-paused / root.count-all) : 0) + "%";
                 clicked => { root.open-downloads(3); }
@@ -676,7 +676,7 @@ export component HomePage inherits Rectangle {
             TaskStatusRow {
                 height: (task-card.height - 164px) / 4;
                 dot: Aether.error;
-                label: "失败";
+                label: @tr("失败");
                 count: "" + root.count-failed;
                 percent: (root.count-all > 0 ? round(100.0 * root.count-failed / root.count-all) : 0) + "%";
                 clicked => { root.open-downloads(4); }
@@ -684,7 +684,7 @@ export component HomePage inherits Rectangle {
             TaskStatusRow {
                 height: (task-card.height - 164px) / 4;
                 dot: Aether.info;
-                label: "种子";
+                label: @tr("种子");
                 count: "" + root.count-seed;
                 percent: (root.count-all > 0 ? round(100.0 * root.count-seed / root.count-all) : 0) + "%";
                 clicked => { root.open-downloads(5); }
@@ -702,7 +702,7 @@ export component HomePage inherits Rectangle {
 
         stats-card := Card {
             width: root.col-w;
-            title: "数据统计";
+            title: @tr("数据统计");
             icon-source: AetherIcons.gauge;
             tone: Aether.primary-bright;
 
@@ -719,7 +719,7 @@ export component HomePage inherits Rectangle {
                         spacing: 0;
 
                         Text {
-                            text: "本周下载";
+                            text: @tr("本周下载");
                             color: Aether.on-surface-muted;
                             font-size: Aether.text-micro;
                         }
@@ -759,18 +759,18 @@ export component HomePage inherits Rectangle {
                     height: Aether.control-xs;
                     spacing: 8px;
 
-                    MetricCell { label: "上传"; value: root.today-upload; horizontal-stretch: 1; }
+                    MetricCell { label: @tr("上传"); value: root.today-upload; horizontal-stretch: 1; }
                     Rectangle { width: 1px; height: 14px; background: Aether.outline-faint; cross-axis-self-alignment: center; }
-                    MetricCell { label: "平均文件"; value: root.avg-file; horizontal-stretch: 1; }
+                    MetricCell { label: @tr("平均文件"); value: root.avg-file; horizontal-stretch: 1; }
                     Rectangle { width: 1px; height: 14px; background: Aether.outline-faint; cross-axis-self-alignment: center; }
-                    MetricCell { label: "成功率"; value: root.success-rate; horizontal-stretch: 1; }
+                    MetricCell { label: @tr("成功率"); value: root.success-rate; horizontal-stretch: 1; }
                 }
             }
         }
 
         storage-card := Card {
             width: root.col-w;
-            title: "存储与分类";
+            title: @tr("存储与分类");
             icon-source: AetherIcons.drive;
             tone: Aether.success;
 
@@ -796,7 +796,7 @@ export component HomePage inherits Rectangle {
                         alignment: center;
 
                         Text {
-                            text: "磁盘使用";
+                            text: @tr("磁盘使用");
                             color: Aether.on-surface-muted;
                             font-size: Aether.text-micro;
                         }
@@ -820,7 +820,7 @@ export component HomePage inherits Rectangle {
                     spacing: 4px;
 
                     Text {
-                        text: "本周入库";
+                        text: @tr("本周入库");
                         color: Aether.on-surface-muted;
                         font-size: Aether.text-micro;
                         vertical-alignment: center;
@@ -854,28 +854,28 @@ export component HomePage inherits Rectangle {
                 CategoryRow {
                     height: (storage-card.height - 180px) / 4;
                     dot: Aether.primary-bright;
-                    label: "视频";
+                    label: @tr("视频");
                     value: root.cat-values[0];
                     percent: root.cat-percents[0];
                 }
                 CategoryRow {
                     height: (storage-card.height - 180px) / 4;
                     dot: Aether.live;
-                    label: "压缩包";
+                    label: @tr("压缩包");
                     value: root.cat-values[1];
                     percent: root.cat-percents[1];
                 }
                 CategoryRow {
                     height: (storage-card.height - 180px) / 4;
                     dot: Aether.warning;
-                    label: "应用";
+                    label: @tr("应用");
                     value: root.cat-values[2];
                     percent: root.cat-percents[2];
                 }
                 CategoryRow {
                     height: (storage-card.height - 180px) / 4;
                     dot: Aether.info;
-                    label: "文档";
+                    label: @tr("文档");
                     value: root.cat-values[3];
                     percent: root.cat-percents[3];
                 }
@@ -884,7 +884,7 @@ export component HomePage inherits Rectangle {
 
         system-card := Card {
             width: root.col-w;
-            title: "系统与会话";
+            title: @tr("系统与会话");
             icon-source: AetherIcons.info;
             tone: Aether.warning;
             action: "插件";
@@ -897,33 +897,33 @@ export component HomePage inherits Rectangle {
 
                 InfoRow {
                     icon-source: AetherIcons.info;
-                    label: "版本";
+                    label: @tr("版本");
                     value: root.version-name;
                 }
                 InfoRow {
                     icon-source: AetherIcons.layers;
-                    label: "引擎";
+                    label: @tr("引擎");
                     value: root.engine-name;
                 }
                 InfoRow {
                     icon-source: AetherIcons.link;
-                    label: "浏览器扩展";
+                    label: @tr("浏览器扩展");
                     value: root.extension-status;
                     connected: root.extension-connected;
                 }
                 InfoRow {
                     icon-source: AetherIcons.layers;
-                    label: "插件";
+                    label: @tr("插件");
                     value: root.plugins-text;
                 }
                 InfoRow {
                     icon-source: AetherIcons.signal;
-                    label: "协议";
+                    label: @tr("协议");
                     value: root.protocols-text;
                 }
                 InfoRow {
                     icon-source: AetherIcons.clock;
-                    label: "运行";
+                    label: @tr("运行");
                     value: root.uptime-text;
                 }
 
@@ -931,7 +931,7 @@ export component HomePage inherits Rectangle {
 
                 InfoRow {
                     icon-source: AetherIcons.tune;
-                    label: "下载设置";
+                    label: @tr("下载设置");
                     value: "";
                     interactive: true;
                     clicked => { root.open-download-settings(); }

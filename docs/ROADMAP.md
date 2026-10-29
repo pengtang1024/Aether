@@ -220,9 +220,22 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
   避开）、busctl/gdbus 必须与 app 在同一 `dbus-run-session` 内否则查的
   是另一条 bus、私有 bus 的 portal 激活刷屏需过滤；gdbus 给 `v` 参数传
   空串 variant 写 `"<''>"`。
-- **i18n 未做（用户已定方向：中文优先）**：源串保持中文作为第一语言，
-  走 Slint `@tr()` + gettext .po（zh 恒等/en 翻译）+ `select_bundled_translation`
-  运行时切换 + UiPrefs.lang + Rust 字符串表；全仓文案改动面大，单独成波。
+- **i18n 已落地（Slint 侧，中文优先，2026-10-29）**：
+  - 源串保持中文（第一语言，编译器 index0 = 源语言槽，天然默认）；
+    `build.rs` 启用 `with_bundled_translations("translations")` +
+    `DefaultTranslationContext::None`（免 msgctxt）+ `rerun-if-changed`。
+  - `translations/en/LC_MESSAGES/aether.po`：**全量 202 条** UI 串翻译
+    （text/title/subtitle/description/placeholder-text/label 两轮脚本扫除
+    含行中出现与跨行三元表达式）。运行时
+    `slint::select_bundled_translation("en"/"")`（空串=中文源）即时切换，
+    设置→外观→界面语言；UiPrefs.lang 持久化，启动先选后渲染（不闪）。
+  - **故意不译**：ComboBox 的 model 值字符串同时是传给 Rust 的功能值
+    （`changed(key, self.current-value)`），翻译会破坏匹配——要译需先改成
+    index 语义（记为未来重构项）。
+  - Xvfb 双语言截图核验：中文默认 ✓ / en 全英文（含导航、条件描述两分支）✓。
+  - **剩余**：Rust 侧 toast/notice/设置提示仍是中文（需字符串表 + lang
+    查询，下一波）；主页面 home.slint 的动态拼接串已裹 @tr，但 home 页
+    的图例/统计标签部分来自 Rust model（同属 Rust 侧清单）。
 
 ### 4.6 插件安装/更新接 daemon + manifest 签名
 

@@ -7,6 +7,15 @@ versioning; 0.x releases may still change structure.
 
 ### Added
 
+- The UI is bilingual with Chinese as the built-in first language. All 200+
+  Slint strings are wrapped in `@tr()` with the Chinese source remaining the
+  default (the compiler reserves index 0 for it); `translations/en` provides
+  the English gettext translations, bundled at build time. A language switch
+  in Settings → Appearance applies instantly and persists; the language is
+  selected before the first render so the window never flashes the wrong
+  one. ComboBox option strings are deliberately not translated: they double
+  as the wire values the Rust side matches on.
+
 - A system tray for Linux (StatusNotifier over zbus, which was already in
   the dependency tree through Slint): left-click or the context menu's
   "显示主窗口" summons the window, "退出" quits it. Sessions without a D-Bus

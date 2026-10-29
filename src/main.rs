@@ -851,6 +851,9 @@ struct UiPrefs {
     /// Watch the clipboard for a fresh download URL and offer a one-click
     /// toast. Off by default: clipboard access is opt-in.
     clipboard_watch: bool,
+    /// Interface language: "zh" (Chinese source, default) or "en"
+    /// (translations/en/LC_MESSAGES/aether.po).
+    lang: String,
 }
 
 impl Default for UiPrefs {
@@ -865,6 +868,7 @@ impl Default for UiPrefs {
             notify_done: true,
             notify_fail: true,
             clipboard_watch: false,
+            lang: "zh".into(),
         }
     }
 }
@@ -1071,6 +1075,15 @@ fn main() -> Result<(), slint::PlatformError> {
         };
         ui.set_page(page);
         state.borrow_mut().seen_page = page;
+        // Chinese is the source language (index 0, no .po needed); "en"
+        // selects the bundled translation. Runs before the first render
+        // so the window never flashes the wrong language.
+        if let Err(error) =
+            slint::select_bundled_translation(if prefs.lang == "en" { "en" } else { "" })
+        {
+            eprintln!("aether: language selection failed: {error:?}");
+        }
+        ui.set_settings_language(if prefs.lang == "en" { 1 } else { 0 });
     }
 
     // Initial data.
@@ -1488,6 +1501,26 @@ fn main() -> Result<(), slint::PlatformError> {
                         _ => hint = Some(format!("限速值「{value}」无效")),
                     },
                     // Persisted locally, no daemon round-trip.
+                    "language" => {
+                        let english = value.as_str() == "English";
+                        st.prefs.lang = if english { "en".into() } else { "zh".into() };
+                        st.prefs.save();
+                        // Bundled translations re-evaluate on select; no
+                        // explicit update_all_translations call needed.
+                        if let Err(error) =
+                            slint::select_bundled_translation(if english { "en" } else { "" })
+                        {
+                            eprintln!("aether: language selection failed: {error:?}");
+                        }
+                        if let Some(ui) = ui_handle.upgrade() {
+                            ui.set_settings_language(if english { 1 } else { 0 });
+                        }
+                        hint = Some(if english {
+                            "Language switched to English".into()
+                        } else {
+                            "界面语言已切回简体中文".into()
+                        });
+                    }
                     "theme" => {}
                     // UI-local preferences: persist and apply immediately.
                     "accent" => {

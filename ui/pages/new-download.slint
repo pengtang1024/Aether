@@ -224,13 +224,13 @@ export component NewDownloadDialog inherits FocusScope {
 
                 FieldIcon {
                     icon-source: AetherIcons.link;
-                    label: "下载地址";
+                    label: @tr("下载地址");
                 }
 
                 url-field := LineEdit {
                     width: 100%;
                     text: root.url;
-                    placeholder-text: "https://…（空格分隔可一次粘贴多个链接/磁力）";
+                    placeholder-text: @tr("https://…（空格分隔可一次粘贴多个链接/磁力）");
                     edited => { root.url = self.text; }
                     accepted => { root.submit(); }
                 }
@@ -247,7 +247,7 @@ export component NewDownloadDialog inherits FocusScope {
 
                 FieldIcon {
                     icon-source: AetherIcons.folder;
-                    label: "保存路径";
+                    label: @tr("保存路径");
                 }
 
                 HorizontalLayout {
@@ -288,7 +288,7 @@ export component NewDownloadDialog inherits FocusScope {
 
                             FieldIcon {
                                 icon-source: AetherIcons.layers;
-                                label: "分段数";
+                                label: @tr("分段数");
                             }
 
                             ComboBox {
@@ -306,7 +306,7 @@ export component NewDownloadDialog inherits FocusScope {
 
                             FieldIcon {
                                 icon-source: AetherIcons.gauge;
-                                label: "单任务限速";
+                                label: @tr("单任务限速");
                             }
 
                             HorizontalLayout {
@@ -344,7 +344,7 @@ export component NewDownloadDialog inherits FocusScope {
 
                 FieldIcon {
                     icon-source: AetherIcons.note;
-                    label: "备注";
+                    label: @tr("备注");
                 }
 
                 LineEdit {

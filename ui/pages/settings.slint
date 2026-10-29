@@ -206,17 +206,17 @@ component GeneralPanel inherits Rectangle {
         width: 100%;
         spacing: 16px;
 
-        PanelHeader { icon-source: AetherIcons.tune; title: "常规"; subtitle: "启动与存储"; tone: Aether.primary-bright; }
+        PanelHeader { icon-source: AetherIcons.tune; title: @tr("常规"); subtitle: @tr("启动与存储"); tone: Aether.primary-bright; }
 
         SectionCard {
             icon-source: AetherIcons.info;
-            title: "启动";
-            subtitle: "启动位置与窗口行为";
+            title: @tr("启动");
+            subtitle: @tr("启动位置与窗口行为");
 
             SettingRow {
                 icon-source: AetherIcons.home;
-                title: "启动页面";
-                description: "每次打开 Aether 时显示的页面";
+                title: @tr("启动页面");
+                description: @tr("每次打开 Aether 时显示的页面");
                 divider: false;
                 ComboBox {
                     model: ["主页", "下载列表", "上次页面"];
@@ -230,13 +230,13 @@ component GeneralPanel inherits Rectangle {
 
         SectionCard {
             icon-source: AetherIcons.folder;
-            title: "存储";
-            subtitle: "下载目录";
+            title: @tr("存储");
+            subtitle: @tr("下载目录");
 
             SettingRow {
                 icon-source: AetherIcons.folder;
-                title: "默认下载目录";
-                description: "daemon 启动参数决定，新任务默认保存到这里";
+                title: @tr("默认下载目录");
+                description: @tr("daemon 启动参数决定，新任务默认保存到这里");
                 divider: false;
                 Text {
                     text: root.download-dir == "" ? "未连接" : root.download-dir;
@@ -250,15 +250,15 @@ component GeneralPanel inherits Rectangle {
 
         SectionCard {
             icon-source: AetherIcons.note;
-            title: "剪贴板";
-            subtitle: "复制链接后提示一键下载";
+            title: @tr("剪贴板");
+            subtitle: @tr("复制链接后提示一键下载");
 
             SettingRow {
                 icon-source: AetherIcons.download;
-                title: "检测下载链接";
+                title: @tr("检测下载链接");
                 description: root.clipboard-available
-                    ? "剪贴板出现下载链接时弹出提示，点提示直接新建任务；仅在链接变化时检测，内容不离开本机"
-                    : "当前会话没有可用的剪贴板后端（远程/无图形会话），此功能不可用";
+                    ? @tr("剪贴板出现下载链接时弹出提示，点提示直接新建任务；仅在链接变化时检测，内容不离开本机")
+                    : @tr("当前会话没有可用的剪贴板后端（远程/无图形会话），此功能不可用");
                 divider: false;
                 Switch {
                     checked: root.clipboard-on;
@@ -287,17 +287,17 @@ component DownloadPanel inherits Rectangle {
         width: 100%;
         spacing: 16px;
 
-        PanelHeader { icon-source: AetherIcons.download; title: "下载"; subtitle: "并发、分段、限速与磁盘策略"; tone: Aether.live; }
+        PanelHeader { icon-source: AetherIcons.download; title: @tr("下载"); subtitle: @tr("并发、分段、限速与磁盘策略"); tone: Aether.live; }
 
         SectionCard {
             icon-source: AetherIcons.split;
-            title: "并发与分段";
-            subtitle: "决定下载速度和服务器压力";
+            title: @tr("并发与分段");
+            subtitle: @tr("决定下载速度和服务器压力");
 
             SettingRow {
                 icon-source: AetherIcons.layers;
-                title: "同时进行的下载数";
-                description: "超出后任务进入等待队列";
+                title: @tr("同时进行的下载数");
+                description: @tr("超出后任务进入等待队列");
                 ComboBox {
                     model: ["3", "5", "10", "16"];
                     current-index <=> root.max-tasks-index;
@@ -308,8 +308,8 @@ component DownloadPanel inherits Rectangle {
             }
             SettingRow {
                 icon-source: AetherIcons.signal;
-                title: "每任务连接数";
-                description: "HTTP(S) 单任务并行连接数，上限 16";
+                title: @tr("每任务连接数");
+                description: @tr("HTTP(S) 单任务并行连接数，上限 16");
                 ComboBox {
                     model: ["2", "4", "8", "16"];
                     current-index <=> root.max-connections-index;
@@ -320,8 +320,8 @@ component DownloadPanel inherits Rectangle {
             }
             SettingRow {
                 icon-source: AetherIcons.refresh;
-                title: "失败重试次数";
-                description: "网络抖动或超时后自动重试";
+                title: @tr("失败重试次数");
+                description: @tr("网络抖动或超时后自动重试");
                 divider: false;
                 ComboBox {
                     model: ["不重试", "3", "5", "10"];
@@ -335,18 +335,18 @@ component DownloadPanel inherits Rectangle {
 
         SectionCard {
             icon-source: AetherIcons.gauge;
-            title: "带宽";
-            subtitle: "全局限速与智能调度";
+            title: @tr("带宽");
+            subtitle: @tr("全局限速与智能调度");
 
             SettingRow {
                 icon-source: AetherIcons.gauge;
-                title: "启用全局限速";
-                description: "限制所有任务的合计带宽";
+                title: @tr("启用全局限速");
+                description: @tr("限制所有任务的合计带宽");
                 Switch { checked <=> root.global-limit-on; toggled => { root.changed("global-limit", self.checked ? "true" : "false"); } }
             }
             ValueSlider {
                 icon-source: AetherIcons.download;
-                label: "下载限速";
+                label: @tr("下载限速");
                 value <=> root.download-limit-kb;
                 minimum: 0;
                 maximum: 10240;
@@ -358,13 +358,13 @@ component DownloadPanel inherits Rectangle {
 
         SectionCard {
             icon-source: AetherIcons.drive;
-            title: "任务";
-            subtitle: "完成动作";
+            title: @tr("任务");
+            subtitle: @tr("完成动作");
 
             SettingRow {
                 icon-source: AetherIcons.folder;
-                title: "完成后动作";
-                description: "任务下载完成后的默认行为";
+                title: @tr("完成后动作");
+                description: @tr("任务下载完成后的默认行为");
                 divider: false;
                 ComboBox {
                     model: ["不操作", "打开所在文件夹", "打开文件"];
@@ -395,17 +395,17 @@ component NetworkPanel inherits Rectangle {
         width: 100%;
         spacing: 16px;
 
-        PanelHeader { icon-source: AetherIcons.signal; title: "网络"; subtitle: "代理、DNS、协议与请求头"; tone: Aether.info; }
+        PanelHeader { icon-source: AetherIcons.signal; title: @tr("网络"); subtitle: @tr("代理、DNS、协议与请求头"); tone: Aether.info; }
 
         SectionCard {
             icon-source: AetherIcons.link;
-            title: "代理";
-            subtitle: "让下载经过系统或自定义网络";
+            title: @tr("代理");
+            subtitle: @tr("让下载经过系统或自定义网络");
 
             SettingRow {
                 icon-source: AetherIcons.signal;
-                title: "代理模式";
-                description: "跟随系统或为 Aether 单独配置";
+                title: @tr("代理模式");
+                description: @tr("跟随系统或为 Aether 单独配置");
                 ComboBox {
                     model: ["跟随系统", "直连", "手动", "PAC"];
                     current-index <=> root.proxy-mode-index;
@@ -416,8 +416,8 @@ component NetworkPanel inherits Rectangle {
             }
             SettingRow {
                 icon-source: AetherIcons.link;
-                title: "代理地址";
-                description: "支持 HTTP / SOCKS5；切到手动模式后生效";
+                title: @tr("代理地址");
+                description: @tr("支持 HTTP / SOCKS5；切到手动模式后生效");
                 LineEdit {
                     text <=> root.proxy-url-value;
                     placeholder-text: "http://127.0.0.1:7890";
@@ -428,8 +428,8 @@ component NetworkPanel inherits Rectangle {
             }
             SettingRow {
                 icon-source: AetherIcons.cloud;
-                title: "DNS 服务器";
-                description: "仅 HTTP(S) 生效；指定后失败即报错，不回退系统 DNS";
+                title: @tr("DNS 服务器");
+                description: @tr("仅 HTTP(S) 生效；指定后失败即报错，不回退系统 DNS");
                 LineEdit {
                     text <=> root.dns-value;
                     min-width: Aether.field-md;
@@ -442,8 +442,8 @@ component NetworkPanel inherits Rectangle {
             }
             SettingRow {
                 icon-source: AetherIcons.layers;
-                title: "IP 协议";
-                description: "仅 HTTP(S) 下载生效；BT / FTP 不受影响";
+                title: @tr("IP 协议");
+                description: @tr("仅 HTTP(S) 下载生效；BT / FTP 不受影响");
                 divider: false;
                 ComboBox {
                     model: ["IPv4 + IPv6", "仅 IPv4", "仅 IPv6"];
@@ -457,13 +457,13 @@ component NetworkPanel inherits Rectangle {
 
         SectionCard {
             icon-source: AetherIcons.shield;
-            title: "协议与请求";
-            subtitle: "兼容性与请求行为";
+            title: @tr("协议与请求");
+            subtitle: @tr("兼容性与请求行为");
 
             SettingRow {
                 icon-source: AetherIcons.info;
                 title: "User-Agent";
-                description: "留空使用 Aether 默认值；改动对空闲插件立即生效";
+                description: @tr("留空使用 Aether 默认值；改动对空闲插件立即生效");
                 LineEdit {
                     text <=> root.user-agent-value;
                     min-width: Aether.field-md;
@@ -474,8 +474,8 @@ component NetworkPanel inherits Rectangle {
             }
             SettingRow {
                 icon-source: AetherIcons.note;
-                title: "自定义请求头";
-                description: "Key: Value，多条用分号分隔；仅 HTTP 族插件，任务级同名头优先";
+                title: @tr("自定义请求头");
+                description: @tr("Key: Value，多条用分号分隔；仅 HTTP 族插件，任务级同名头优先");
                 LineEdit {
                     text <=> root.headers-value;
                     placeholder-text: "Referer: https://example.com";
@@ -487,8 +487,8 @@ component NetworkPanel inherits Rectangle {
             }
             SettingRow {
                 icon-source: AetherIcons.link;
-                title: "FTP 被动模式";
-                description: "兼容更多 FTP 服务器；关闭后使用主动模式";
+                title: @tr("FTP 被动模式");
+                description: @tr("兼容更多 FTP 服务器；关闭后使用主动模式");
                 divider: false;
                 Switch { checked: root.ftp-passive-on; toggled => { root.changed("ftp-passive", self.checked ? "true" : "false"); } }
             }
@@ -510,17 +510,17 @@ component BtPanel inherits Rectangle {
         width: 100%;
         spacing: 16px;
 
-        PanelHeader { icon-source: AetherIcons.seed; title: "BT / PT"; subtitle: "端口、节点发现与做种"; tone: Aether.primary-bright; }
+        PanelHeader { icon-source: AetherIcons.seed; title: "BT / PT"; subtitle: @tr("端口、节点发现与做种"); tone: Aether.primary-bright; }
 
         SectionCard {
             icon-source: AetherIcons.link;
-            title: "连接";
-            subtitle: "端口与节点发现";
+            title: @tr("连接");
+            subtitle: @tr("端口与节点发现");
 
             SettingRow {
                 icon-source: AetherIcons.link;
-                title: "监听端口";
-                description: "需要放行时在路由器中转发";
+                title: @tr("监听端口");
+                description: @tr("需要放行时在路由器中转发");
                 LineEdit {
                     text <=> root.bt-port-value;
                     min-width: Aether.field-xs;
@@ -532,7 +532,7 @@ component BtPanel inherits Rectangle {
             SettingRow {
                 icon-source: AetherIcons.seed;
                 title: "DHT";
-                description: "通过分布式哈希表发现节点";
+                description: @tr("通过分布式哈希表发现节点");
                 divider: false;
                 Switch { checked: root.bt-dht-on; toggled => { root.changed("bt-dht", self.checked ? "true" : "false"); } }
             }
@@ -540,12 +540,12 @@ component BtPanel inherits Rectangle {
 
         SectionCard {
             icon-source: AetherIcons.upload;
-            title: "做种";
-            subtitle: "上传带宽，0 为不限速";
+            title: @tr("做种");
+            subtitle: @tr("上传带宽，0 为不限速");
 
             ValueSlider {
                 icon-source: AetherIcons.upload;
-                label: "上传限速";
+                label: @tr("上传限速");
                 value <=> root.bt-upload-kbps;
                 minimum: 0;
                 maximum: 4096;
@@ -557,13 +557,13 @@ component BtPanel inherits Rectangle {
 
         SectionCard {
             icon-source: AetherIcons.shield;
-            title: "过滤与 Tracker";
-            subtitle: "屏蔽规则与私有 Tracker";
+            title: @tr("过滤与 Tracker");
+            subtitle: @tr("屏蔽规则与私有 Tracker");
 
             SettingRow {
                 icon-source: AetherIcons.drive;
-                title: "屏蔽列表路径";
-                description: "dat 格式黑名单文件或 URL；留空不启用";
+                title: @tr("屏蔽列表路径");
+                description: @tr("dat 格式黑名单文件或 URL；留空不启用");
                 divider: false;
                 LineEdit {
                     text <=> root.bt-blocklist-value;
@@ -577,8 +577,8 @@ component BtPanel inherits Rectangle {
             }
             SettingRow {
                 icon-source: AetherIcons.link;
-                title: "Tracker 列表";
-                description: "附加到所有种子；多条用分号分隔";
+                title: @tr("Tracker 列表");
+                description: @tr("附加到所有种子；多条用分号分隔");
                 divider: false;
                 LineEdit {
                     text <=> root.bt-trackers-value;
@@ -603,20 +603,20 @@ component MediaPanel inherits Rectangle {
         width: 100%;
         spacing: 16px;
 
-        PanelHeader { icon-source: AetherIcons.play; title: "媒体与浏览器"; subtitle: "当前能力与边界"; tone: Aether.warning; }
+        PanelHeader { icon-source: AetherIcons.play; title: @tr("媒体与浏览器"); subtitle: @tr("当前能力与边界"); tone: Aether.warning; }
 
         SectionCard {
             icon-source: AetherIcons.info;
-            title: "媒体下载";
-            subtitle: "已实现的能力";
+            title: @tr("媒体下载");
+            subtitle: @tr("已实现的能力");
 
             SettingRow {
                 icon-source: AetherIcons.play;
-                title: "HLS / DASH 直链";
-                description: "粘贴 .m3u8 / .mpd 链接即可下载，AES 加密分段自动解密合并；下载完成后可按任务转封装容器（transcode_to，仅 -c copy 不重编码）";
+                title: @tr("HLS / DASH 直链");
+                description: @tr("粘贴 .m3u8 / .mpd 链接即可下载，AES 加密分段自动解密合并；下载完成后可按任务转封装容器（transcode_to，仅 -c copy 不重编码）");
                 divider: false;
                 Text {
-                    text: "已支持";
+                    text: @tr("已支持");
                     color: Aether.success;
                     font-size: Aether.text-caption;
                     font-weight: Aether.weight-medium;
@@ -628,12 +628,12 @@ component MediaPanel inherits Rectangle {
         SectionCard {
             icon-source: AetherIcons.tune;
             title: "ffmpeg";
-            subtitle: "rtmp 直播录制与媒体转封装共用";
+            subtitle: @tr("rtmp 直播录制与媒体转封装共用");
 
             SettingRow {
                 icon-source: AetherIcons.info;
-                title: "ffmpeg 路径";
-                description: "留空使用 PATH 里的 ffmpeg（或 AETHER_FFMPEG 环境变量）；对之后开始的任务生效";
+                title: @tr("ffmpeg 路径");
+                description: @tr("留空使用 PATH 里的 ffmpeg（或 AETHER_FFMPEG 环境变量）；对之后开始的任务生效");
                 LineEdit {
                     text <=> root.ffmpeg-value;
                     min-width: Aether.field-md;
@@ -752,7 +752,7 @@ component InstalledPlugin inherits Rectangle {
                 padding-right: 8px;
 
                 Text {
-                    text: "可更新";
+                    text: @tr("可更新");
                     color: Aether.warning;
                     font-size: Aether.text-micro;
                     font-weight: Aether.weight-medium;
@@ -788,14 +788,14 @@ component PluginPanel inherits Rectangle {
 
         PanelHeader {
             icon-source: AetherIcons.layers;
-            title: "插件";
+            title: @tr("插件");
             subtitle: PluginCatalog.total + " 个已安装 · " + PluginCatalog.active + " 个运行中 · " + PluginCatalog.updates + " 个可更新";
             tone: Aether.info;
         }
 
         SectionCard {
             icon-source: AetherIcons.list;
-            title: "插件库";
+            title: @tr("插件库");
             subtitle: PluginCatalog.builtin + " 个内置 · " + PluginCatalog.community + " 个社区 · 独立进程运行";
 
             HorizontalLayout {
@@ -803,15 +803,15 @@ component PluginPanel inherits Rectangle {
                 spacing: 6px;
                 cross-axis-alignment: center;
 
-                PluginFilter { text: "全部"; count: PluginCatalog.total; selected: root.plugin-filter == 0; clicked => { root.plugin-filter = 0; } }
-                PluginFilter { text: "内置"; count: PluginCatalog.builtin; selected: root.plugin-filter == 1; clicked => { root.plugin-filter = 1; } }
-                PluginFilter { text: "已启用"; count: PluginCatalog.active; selected: root.plugin-filter == 2; clicked => { root.plugin-filter = 2; } }
-                PluginFilter { text: "可更新"; count: PluginCatalog.updates; selected: root.plugin-filter == 3; clicked => { root.plugin-filter = 3; } }
+                PluginFilter { text: @tr("全部"); count: PluginCatalog.total; selected: root.plugin-filter == 0; clicked => { root.plugin-filter = 0; } }
+                PluginFilter { text: @tr("内置"); count: PluginCatalog.builtin; selected: root.plugin-filter == 1; clicked => { root.plugin-filter = 1; } }
+                PluginFilter { text: @tr("已启用"); count: PluginCatalog.active; selected: root.plugin-filter == 2; clicked => { root.plugin-filter = 2; } }
+                PluginFilter { text: @tr("可更新"); count: PluginCatalog.updates; selected: root.plugin-filter == 3; clicked => { root.plugin-filter = 3; } }
 
                 Rectangle { horizontal-stretch: 1; background: transparent; }
 
                 TextButton {
-                    text: "更新全部";
+                    text: @tr("更新全部");
                     clicked => { root.plugin-action("update-all"); }
                 }
             }
@@ -828,13 +828,13 @@ component PluginPanel inherits Rectangle {
 
         SectionCard {
             icon-source: AetherIcons.layers;
-            title: "插件引擎";
-            subtitle: "插件目录、来源与更新";
+            title: @tr("插件引擎");
+            subtitle: @tr("插件目录、来源与更新");
 
             SettingRow {
                 icon-source: AetherIcons.refresh;
-                title: "自动更新插件";
-                description: "daemon 每 6 小时按更新清单安装插件新版；需配置更新清单与签名公钥";
+                title: @tr("自动更新插件");
+                description: @tr("daemon 每 6 小时按更新清单安装插件新版；需配置更新清单与签名公钥");
                 Switch {
                     checked <=> root.auto-update-on;
                     toggled => { root.changed("plugin-auto-update", self.checked ? "true" : "false"); }
@@ -842,11 +842,11 @@ component PluginPanel inherits Rectangle {
             }
             SettingRow {
                 icon-source: AetherIcons.shield;
-                title: "加载插件目录之外的文件";
-                description: "不做签名校验的直加载没有提供；请用上面的「安装插件」（会复制进插件目录并验签）";
+                title: @tr("加载插件目录之外的文件");
+                description: @tr("不做签名校验的直加载没有提供；请用上面的「安装插件」（会复制进插件目录并验签）");
                 divider: false;
                 Text {
-                    text: "不支持";
+                    text: @tr("不支持");
                     color: Aether.on-surface-muted;
                     font-size: Aether.text-caption;
                     vertical-alignment: center;
@@ -854,8 +854,8 @@ component PluginPanel inherits Rectangle {
             }
             SettingRow {
                 icon-source: AetherIcons.folder;
-                title: "插件目录";
-                description: "本地插件的安装位置";
+                title: @tr("插件目录");
+                description: @tr("本地插件的安装位置");
                 Text {
                     text: root.plugins-dir == "" ? "未连接" : root.plugins-dir;
                     color: Aether.on-surface-variant;
@@ -866,8 +866,8 @@ component PluginPanel inherits Rectangle {
             }
             SettingRow {
                 icon-source: AetherIcons.download;
-                title: "安装插件";
-                description: "插件包目录的绝对路径（含 plugin.json）；daemon 校验 manifest 签名与文件哈希后复制进插件目录";
+                title: @tr("安装插件");
+                description: @tr("插件包目录的绝对路径（含 plugin.json）；daemon 校验 manifest 签名与文件哈希后复制进插件目录");
                 divider: false;
                 HorizontalLayout {
                     spacing: 6px;
@@ -878,7 +878,7 @@ component PluginPanel inherits Rectangle {
                         accepted => { root.changed("plugin-install", self.text); }
                     }
                     TextButton {
-                        text: "安装";
+                        text: @tr("安装");
                         clicked => { root.changed("plugin-install", root.install-path); }
                     }
                 }
@@ -887,16 +887,16 @@ component PluginPanel inherits Rectangle {
 
         SectionCard {
             icon-source: AetherIcons.note;
-            title: "开发";
-            subtitle: "调试与重新加载";
+            title: @tr("开发");
+            subtitle: @tr("调试与重新加载");
 
             SettingRow {
                 icon-source: AetherIcons.tune;
-                title: "开发者模式";
-                description: "插件日志查看与调试入口（任务详情里已有每任务日志）";
+                title: @tr("开发者模式");
+                description: @tr("插件日志查看与调试入口（任务详情里已有每任务日志）");
                 divider: false;
                 Text {
-                    text: "未实现";
+                    text: @tr("未实现");
                     color: Aether.on-surface-muted;
                     font-size: Aether.text-caption;
                     vertical-alignment: center;
@@ -904,11 +904,11 @@ component PluginPanel inherits Rectangle {
             }
             SettingRow {
                 icon-source: AetherIcons.refresh;
-                title: "重新加载插件";
-                description: "不重启应用刷新本地插件";
+                title: @tr("重新加载插件");
+                description: @tr("不重启应用刷新本地插件");
                 divider: false;
                 TextButton {
-                    text: "重新加载";
+                    text: @tr("重新加载");
                     clicked => { root.plugin-action("reload"); }
                 }
             }
@@ -930,23 +930,23 @@ component SchedulePanel inherits Rectangle {
         width: 100%;
         spacing: 16px;
 
-        PanelHeader { icon-source: AetherIcons.clock; title: "计划与通知"; subtitle: "定时任务与桌面提醒"; tone: Aether.live; }
+        PanelHeader { icon-source: AetherIcons.clock; title: @tr("计划与通知"); subtitle: @tr("定时任务与桌面提醒"); tone: Aether.live; }
 
         SectionCard {
             icon-source: AetherIcons.clock;
-            title: "计划任务";
-            subtitle: "时段外自动暂停队列，到点自动恢复";
+            title: @tr("计划任务");
+            subtitle: @tr("时段外自动暂停队列，到点自动恢复");
 
             SettingRow {
                 icon-source: AetherIcons.play;
-                title: "启用计划下载";
-                description: "需要填好开始与结束时间";
+                title: @tr("启用计划下载");
+                description: @tr("需要填好开始与结束时间");
                 Switch { checked: root.schedule-on; toggled => { root.changed("schedule-on", self.checked ? "true" : "false"); } }
             }
             SettingRow {
                 icon-source: AetherIcons.clock;
-                title: "开始时间";
-                description: "本机时间 HH:MM，例如 01:00";
+                title: @tr("开始时间");
+                description: @tr("本机时间 HH:MM，例如 01:00");
                 LineEdit {
                     text <=> root.schedule-start;
                     placeholder-text: "01:00";
@@ -958,8 +958,8 @@ component SchedulePanel inherits Rectangle {
             }
             SettingRow {
                 icon-source: AetherIcons.pause;
-                title: "结束时间";
-                description: "早于开始时间表示跨午夜，例如 22:00 - 07:00";
+                title: @tr("结束时间");
+                description: @tr("早于开始时间表示跨午夜，例如 22:00 - 07:00");
                 divider: false;
                 LineEdit {
                     text <=> root.schedule-end;
@@ -974,19 +974,19 @@ component SchedulePanel inherits Rectangle {
 
         SectionCard {
             icon-source: AetherIcons.info;
-            title: "通知";
-            subtitle: "任务结束时的系统通知";
+            title: @tr("通知");
+            subtitle: @tr("任务结束时的系统通知");
 
             SettingRow {
                 icon-source: AetherIcons.check;
-                title: "下载完成";
-                description: "完成后通过系统通知提醒（notify-send）";
+                title: @tr("下载完成");
+                description: @tr("完成后通过系统通知提醒（notify-send）");
                 Switch { checked: root.notify-done-on; toggled => { root.changed("notify-done", self.checked ? "true" : "false"); } }
             }
             SettingRow {
                 icon-source: AetherIcons.alert;
-                title: "下载失败";
-                description: "失败时提醒并附错误原因；手动取消不提醒";
+                title: @tr("下载失败");
+                description: @tr("失败时提醒并附错误原因；手动取消不提醒");
                 divider: false;
                 Switch { checked: root.notify-fail-on; toggled => { root.changed("notify-fail", self.checked ? "true" : "false"); } }
             }
@@ -996,6 +996,8 @@ component SchedulePanel inherits Rectangle {
 
 component AppearancePanel inherits Rectangle {
     in-out property <int> theme-mode: 0;
+    // 0 = 简体中文（源语言，无需翻译文件）；1 = English (translations/en)
+    in-out property <int> language-index: 0;
     // UI-local preferences, mirrored from the window.
     in-out property <int> accent-index: 0;
     in-out property <bool> motion-on: true;
@@ -1006,17 +1008,29 @@ component AppearancePanel inherits Rectangle {
         width: 100%;
         spacing: 16px;
 
-        PanelHeader { icon-source: AetherIcons.moon; title: "外观"; subtitle: "主题、主色与动效"; tone: Aether.primary-bright; }
+        PanelHeader { icon-source: AetherIcons.moon; title: @tr("外观"); subtitle: @tr("主题、主色与动效"); tone: Aether.primary-bright; }
 
         SectionCard {
             icon-source: AetherIcons.moon;
-            title: "主题";
-            subtitle: "Aurora ink 视觉语言";
+            title: @tr("主题");
+            subtitle: @tr("Aurora ink 视觉语言");
 
             SettingRow {
+                icon-source: AetherIcons.tune;
+                title: @tr("界面语言");
+                description: @tr("中文为内置源语言；切换立即生效");
+                ComboBox {
+                    model: ["简体中文", "English"];
+                    current-index <=> root.language-index;
+                    min-width: Aether.field-md;
+                    max-width: Aether.field-md;
+                    selected => { root.changed("language", self.current-value); }
+                }
+            }
+            SettingRow {
                 icon-source: AetherIcons.moon;
-                title: "主题";
-                description: "默认跟随系统，也可固定浅色或深色";
+                title: @tr("主题");
+                description: @tr("默认跟随系统，也可固定浅色或深色");
                 ComboBox {
                     model: ["跟随系统", "浅色", "深色"];
                     current-index <=> root.theme-mode;
@@ -1027,8 +1041,8 @@ component AppearancePanel inherits Rectangle {
             }
             SettingRow {
                 icon-source: AetherIcons.tune;
-                title: "主色";
-                description: "品牌强调色，按钮、进度与高亮同步换色";
+                title: @tr("主色");
+                description: @tr("品牌强调色，按钮、进度与高亮同步换色");
                 divider: false;
                 ComboBox {
                     model: ["Aurora 紫", "靛蓝", "青碧", "苔绿", "琥珀", "蔷薇"];
@@ -1042,19 +1056,19 @@ component AppearancePanel inherits Rectangle {
 
         SectionCard {
             icon-source: AetherIcons.layers;
-            title: "界面";
-            subtitle: "背景与动效";
+            title: @tr("界面");
+            subtitle: @tr("背景与动效");
 
             SettingRow {
                 icon-source: AetherIcons.cloud;
-                title: "背景流线";
-                description: "窗口边缘的低对比度 Aurora 装饰";
+                title: @tr("背景流线");
+                description: @tr("窗口边缘的低对比度 Aurora 装饰");
                 Switch { checked: root.flow-on; toggled => { root.changed("flow-background", self.checked ? "true" : "false"); } }
             }
             SettingRow {
                 icon-source: AetherIcons.play;
-                title: "界面动效";
-                description: "关闭后所有过渡立即完成（无障碍）";
+                title: @tr("界面动效");
+                description: @tr("关闭后所有过渡立即完成（无障碍）");
                 divider: false;
                 Switch { checked: root.motion-on; toggled => { root.changed("motion", self.checked ? "true" : "false"); } }
             }
@@ -1071,17 +1085,17 @@ component AdvancedPanel inherits Rectangle {
         width: 100%;
         spacing: 16px;
 
-        PanelHeader { icon-source: AetherIcons.shield; title: "高级"; subtitle: "路径与维护"; tone: Aether.error; }
+        PanelHeader { icon-source: AetherIcons.shield; title: @tr("高级"); subtitle: @tr("路径与维护"); tone: Aether.error; }
 
         SectionCard {
             icon-source: AetherIcons.note;
-            title: "路径";
-            subtitle: "daemon 的真实数据位置";
+            title: @tr("路径");
+            subtitle: @tr("daemon 的真实数据位置");
 
             SettingRow {
                 icon-source: AetherIcons.drive;
-                title: "数据库路径";
-                description: "任务、历史与插件元数据";
+                title: @tr("数据库路径");
+                description: @tr("任务、历史与插件元数据");
                 divider: false;
                 Text {
                     text: root.data-dir == "" ? "未连接" : root.data-dir;
@@ -1093,8 +1107,8 @@ component AdvancedPanel inherits Rectangle {
             }
             SettingRow {
                 icon-source: AetherIcons.folder;
-                title: "插件目录";
-                description: "第一方插件的安装位置";
+                title: @tr("插件目录");
+                description: @tr("第一方插件的安装位置");
                 divider: false;
                 Text {
                     text: root.plugins-dir == "" ? "未连接" : root.plugins-dir;
@@ -1108,15 +1122,15 @@ component AdvancedPanel inherits Rectangle {
 
         SectionCard {
             icon-source: AetherIcons.alert;
-            title: "维护";
-            subtitle: "恢复默认外观与偏好";
+            title: @tr("维护");
+            subtitle: @tr("恢复默认外观与偏好");
 
             SettingRow {
                 icon-source: AetherIcons.alert;
-                title: "重置界面偏好";
-                description: "恢复外观与完成动作的默认值，不影响 daemon 与任务";
+                title: @tr("重置界面偏好");
+                description: @tr("恢复外观与完成动作的默认值，不影响 daemon 与任务");
                 divider: false;
-                TextButton { text: "重置"; clicked => { root.changed("reset-settings", "clicked"); } }
+                TextButton { text: @tr("重置"); clicked => { root.changed("reset-settings", "clicked"); } }
             }
         }
     }
@@ -1130,7 +1144,7 @@ component AboutPanel inherits Rectangle {
         width: 100%;
         spacing: 16px;
 
-        PanelHeader { icon-source: AetherIcons.info; title: "关于与支持"; subtitle: "版本、更新、文档与社群"; tone: Aether.primary-bright; }
+        PanelHeader { icon-source: AetherIcons.info; title: @tr("关于与支持"); subtitle: @tr("版本、更新、文档与社群"); tone: Aether.primary-bright; }
 
         Rectangle {
             height: Aether.about-hero;
@@ -1164,14 +1178,14 @@ component AboutPanel inherits Rectangle {
                     }
 
                     Text {
-                        text: "Rust + Slint · Material 3 · 原生桌面，无 WebView";
+                        text: @tr("Rust + Slint · Material 3 · 原生桌面，无 WebView");
                         color: Aether.on-surface-muted;
                         font-size: Aether.text-caption;
                     }
                 }
 
                 TextButton {
-                    text: "检查更新";
+                    text: @tr("检查更新");
                     clicked => { root.support-action("update"); }
                 }
             }
@@ -1179,13 +1193,13 @@ component AboutPanel inherits Rectangle {
 
         SectionCard {
             icon-source: AetherIcons.refresh;
-            title: "更新";
-            subtitle: "版本通道与自动更新";
+            title: @tr("更新");
+            subtitle: @tr("版本通道与自动更新");
 
             SettingRow {
                 icon-source: AetherIcons.signal;
-                title: "更新通道";
-                description: "稳定版优先，测试版获取新能力";
+                title: @tr("更新通道");
+                description: @tr("稳定版优先，测试版获取新能力");
                 ComboBox {
                     model: ["稳定版", "测试版"];
                     current-index: 0;
@@ -1196,48 +1210,48 @@ component AboutPanel inherits Rectangle {
             }
             SettingRow {
                 icon-source: AetherIcons.refresh;
-                title: "自动下载更新";
-                description: "在后台准备新版本";
+                title: @tr("自动下载更新");
+                description: @tr("在后台准备新版本");
                 Switch { checked: true; toggled => { root.support-action("auto-update"); } }
             }
             SettingRow {
                 icon-source: AetherIcons.info;
-                title: "版本说明";
-                description: "查看变更、兼容性与已知问题";
+                title: @tr("版本说明");
+                description: @tr("查看变更、兼容性与已知问题");
                 divider: false;
-                TextButton { text: "打开"; clicked => { root.support-action("changelog"); } }
+                TextButton { text: @tr("打开"); clicked => { root.support-action("changelog"); } }
             }
         }
 
         SectionCard {
             icon-source: AetherIcons.info;
-            title: "支持";
-            subtitle: "文档、社区、反馈与许可";
+            title: @tr("支持");
+            subtitle: @tr("文档、社区、反馈与许可");
 
             SettingRow {
                 icon-source: AetherIcons.note;
-                title: "文档";
-                description: "安装、插件、RPC 与常见问题";
-                TextButton { text: "打开"; clicked => { root.support-action("docs"); } }
+                title: @tr("文档");
+                description: @tr("安装、插件、RPC 与常见问题");
+                TextButton { text: @tr("打开"); clicked => { root.support-action("docs"); } }
             }
             SettingRow {
                 icon-source: AetherIcons.signal;
-                title: "社区";
-                description: "讨论、分享配置与插件";
-                TextButton { text: "打开"; clicked => { root.support-action("community"); } }
+                title: @tr("社区");
+                description: @tr("讨论、分享配置与插件");
+                TextButton { text: @tr("打开"); clicked => { root.support-action("community"); } }
             }
             SettingRow {
                 icon-source: AetherIcons.alert;
-                title: "反馈问题";
-                description: "报告 Bug 或提出功能建议";
-                TextButton { text: "打开"; clicked => { root.support-action("feedback"); } }
+                title: @tr("反馈问题");
+                description: @tr("报告 Bug 或提出功能建议");
+                TextButton { text: @tr("打开"); clicked => { root.support-action("feedback"); } }
             }
             SettingRow {
                 icon-source: AetherIcons.shield;
-                title: "许可";
+                title: @tr("许可");
                 description: "MIT · Slint Royalty-free / GPL-3.0";
                 divider: false;
-                TextButton { text: "查看"; clicked => { root.support-action("license"); } }
+                TextButton { text: @tr("查看"); clicked => { root.support-action("license"); } }
             }
         }
     }
@@ -1273,6 +1287,8 @@ export component SettingsPage inherits Rectangle {
     in-out property <bool> clipboard-available: true;
     // Daemon-backed: install outdated plugins on the periodic update cycle.
     in-out property <bool> plugin-auto-update: false;
+    // UI-local: interface language (0 = Chinese source, 1 = English).
+    in-out property <int> language-index: 0;
     in-out property <int> after-done: 0;
     in-out property <int> accent-index: 0;
     in-out property <bool> motion-on: true;
@@ -1310,30 +1326,30 @@ export component SettingsPage inherits Rectangle {
                 spacing: 2px;
 
                 Text {
-                    text: "设置中心";
+                    text: @tr("设置中心");
                     color: Aether.on-surface;
                     font-size: Aether.text-heading;
                     font-weight: Aether.weight-semibold;
                 }
 
                 Text {
-                    text: "偏好、网络与扩展";
+                    text: @tr("偏好、网络与扩展");
                     color: Aether.on-surface-muted;
                     font-size: Aether.text-micro;
                 }
 
                 Rectangle { height: Aether.space-sm; background: transparent; }
 
-                SettingsNav { icon-source: AetherIcons.tune; text: "常规"; active: root.tab == 0; clicked => { root.tab = 0; } }
-                SettingsNav { icon-source: AetherIcons.download; text: "下载"; active: root.tab == 1; clicked => { root.tab = 1; } }
-                SettingsNav { icon-source: AetherIcons.signal; text: "网络"; active: root.tab == 2; clicked => { root.tab = 2; } }
+                SettingsNav { icon-source: AetherIcons.tune; text: @tr("常规"); active: root.tab == 0; clicked => { root.tab = 0; } }
+                SettingsNav { icon-source: AetherIcons.download; text: @tr("下载"); active: root.tab == 1; clicked => { root.tab = 1; } }
+                SettingsNav { icon-source: AetherIcons.signal; text: @tr("网络"); active: root.tab == 2; clicked => { root.tab = 2; } }
                 SettingsNav { icon-source: AetherIcons.seed; text: "BT / PT"; active: root.tab == 3; clicked => { root.tab = 3; } }
-                SettingsNav { icon-source: AetherIcons.play; text: "媒体与浏览器"; active: root.tab == 4; clicked => { root.tab = 4; } }
-                SettingsNav { icon-source: AetherIcons.layers; text: "插件"; active: root.tab == 5; clicked => { root.tab = 5; } }
-                SettingsNav { icon-source: AetherIcons.clock; text: "计划与通知"; active: root.tab == 6; clicked => { root.tab = 6; } }
-                SettingsNav { icon-source: AetherIcons.moon; text: "外观"; active: root.tab == 7; clicked => { root.tab = 7; } }
-                SettingsNav { icon-source: AetherIcons.shield; text: "高级"; active: root.tab == 8; clicked => { root.tab = 8; } }
-                SettingsNav { icon-source: AetherIcons.info; text: "关于与支持"; active: root.tab == 9; clicked => { root.tab = 9; } }
+                SettingsNav { icon-source: AetherIcons.play; text: @tr("媒体与浏览器"); active: root.tab == 4; clicked => { root.tab = 4; } }
+                SettingsNav { icon-source: AetherIcons.layers; text: @tr("插件"); active: root.tab == 5; clicked => { root.tab = 5; } }
+                SettingsNav { icon-source: AetherIcons.clock; text: @tr("计划与通知"); active: root.tab == 6; clicked => { root.tab = 6; } }
+                SettingsNav { icon-source: AetherIcons.moon; text: @tr("外观"); active: root.tab == 7; clicked => { root.tab = 7; } }
+                SettingsNav { icon-source: AetherIcons.shield; text: @tr("高级"); active: root.tab == 8; clicked => { root.tab = 8; } }
+                SettingsNav { icon-source: AetherIcons.info; text: @tr("关于与支持"); active: root.tab == 9; clicked => { root.tab = 9; } }
 
                 Rectangle { vertical-stretch: 1; background: transparent; }
 
@@ -1407,6 +1423,7 @@ export component SettingsPage inherits Rectangle {
                     changed(k, v) => { root.settings-changed(k, v); }
                 }
                 if root.tab == 7: AppearancePanel {
+                    language-index <=> root.language-index;
                     theme-mode <=> root.theme-mode;
                     accent-index <=> root.accent-index;
                     motion-on <=> root.motion-on;
