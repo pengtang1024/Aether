@@ -11,6 +11,11 @@
     h1 { font-weight: 500; color: #d0bcff; }
     .card { background: #1d1b20; border-radius: 16px; padding: 20px; margin: 16px 0; }
     label { display: flex; align-items: center; gap: 12px; margin: 12px 0; }
+    label.column { display: block; }
+    label.column span { display: block; margin-bottom: 6px; }
+    textarea { width: 100%; box-sizing: border-box; background: #141218; color: #e6e0e9;
+      border: 1px solid #49454f; border-radius: 8px; padding: 8px; font: inherit; min-height: 72px; }
+    small { color: #cac4d0; }
     button { background: #6750a4; color: white; border: 0; border-radius: 20px; padding: 10px 20px; cursor: pointer; }
     pre { white-space: pre-wrap; color: #cac4d0; }
     a { color: #d0bcff; }
@@ -22,9 +27,21 @@
   <div class="card">
     <label><input type="checkbox" id="intercept"> Intercept browser downloads</label>
     <label><input type="checkbox" id="notify"> Show notifications</label>
+    <label class="column">
+      <span>Intercepted sites (one host per line, <code>*.example.com</code> allowed; blank = all sites)</span>
+      <textarea id="siteFilter" placeholder="example.com&#10;*.cdn.example.net"></textarea>
+    </label>
     <p>Right-click a link, video or audio element and choose “Download with Aether”.</p>
     <button id="ping">Test native host</button>
     <pre id="status"></pre>
+  </div>
+  <div class="card">
+    <h2 style="font-weight:500;font-size:16px">Cookies</h2>
+    <small>Off by default. When enabled, Aether attaches your cookies for the
+      downloaded URL so authenticated/intranet links work. Cookies are only
+      sent with the download request and never stored.</small>
+    <label><input type="checkbox" id="sendCookies"> Send cookies with downloads</label>
+    <p id="cookieStatus"></p>
   </div>
   <div class="card">
     <p>Native host manifest must be installed for this extension ID. See

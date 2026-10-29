@@ -10,7 +10,10 @@ MV3 extension that sends links/downloads to the local Aether daemon through
 3. Copy the extension ID shown by the browser.
 4. Install the native manifest:
    ```bash
+   # Linux/macOS
    scripts/install-native-messaging.sh <extension-id> /usr/bin/aether-native-host
+   # Windows (per-user, no admin)
+   powershell -File scripts/install-native-messaging.ps1 -ExtensionId <extension-id> -HostPath <path-to-aether-native-host.exe>
    ```
 5. Open the extension options and click “Test native host”.
 
@@ -22,6 +25,13 @@ template in `packaging/native-messaging/`.
 - Context menu: send link/video/audio URL.
 - Optional interception: `downloads.onCreated` → native host → cancel browser
   download only after the daemon accepts the task.
+- Site filter (options page): interception applies only to the listed hosts
+  (`example.com` or `*.example.com`); blank = all sites.
+- Cookies (options page, **off by default**): when enabled, the browser asks
+  for the optional `cookies` permission; cookies for the download URL are
+  attached to the task request so authenticated/intranet links work. They are
+  only sent with the request and never stored.
 - If Aether/native host is unavailable, the browser download is left untouched.
-- Cookies/headers are not read by default; the host accepts them only if a
-  future UI explicitly adds them.
+
+This is a development build; store packaging/signing is tracked in
+`docs/BROWSER_INTEGRATION.md`.

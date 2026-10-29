@@ -6,7 +6,7 @@
 
 ## 1. 当前状态
 
-- **0.2.0 已发布**（tag v0.2.0）。main 之上已合入六个波次：
+- **0.2.0 已发布**（tag v0.2.0）。main 之上已合入七个波次：
 
 | 提交 | 内容 |
 | --- | --- |
@@ -16,6 +16,7 @@
 | `4710e01` | 计划下载窗口（daemon 调度器，支持跨午夜）+ 完成/失败桌面通知 |
 | `4f9493a` | Windows：named pipe transport（无新依赖），daemon/UI/CLI/native-host 全部跨平台，CI Windows job 跑回环测试 |
 | `1353da9` | RPC over TCP：`rpc_listen`/`rpc_secret` settings + `--rpc-listen`，token 鉴权（常数时间，热轮换），CLI `--socket ip:port`，`tests/rpc.rs` 6 用例 |
+| （4.3） | 浏览器接管：Cookie 显式授权（optional permission）、站点过滤、Windows manifest 安装（注册表）、native-host 透传测试 |
 
 - **设置页现状**：10 个分类中每个控件要么真实生效、要么是诚实的能力说明卡，
   没有「点了没反应」或显示假值的控件。
@@ -135,15 +136,22 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
 
 ### 4.3 浏览器扩展接管
 
-- **依赖已就绪**：4.1（named pipe）与 4.2（TCP+token RPC，`connect_rpc`）
-  都已落地。
-- **现状**：`scripts/install-native-messaging.sh` 装 native-host manifest；
-  dashboard 显示是否已安装（`browser_extension_installed()`）；native-host
-  能转发 `add`，但扩展本体与常驻通道都还没有。
-- **方案**：扩展 → native host → daemon。先 Unix socket 版（权限位即可信），
-  或扩展直连 TCP+token（4.2 通道现成）。抓取的 `referrer/cookies/headers`
-  直接进 `TaskSpec.settings`（http 插件已支持，无需引擎改动）。细节已有
-  `docs/BROWSER_INTEGRATION.md`。
+- **已落地（2026-10-29）**：
+  - **Cookie 显式授权**：manifest 把 `cookies` 放进 `optional_permissions`；
+    选项页开关触发浏览器自己的权限请求，默认关。开启后扩展用
+    `chrome.cookies.getAll` 组装 Cookie 头随任务下发（http 插件已消费）。
+  - **站点过滤**：选项页按 host 匹配（`example.com` / `*.example.com`，
+    空 = 全部），只作用于接管模式；右键菜单不受限。
+  - **Windows 安装**：`scripts/install-native-messaging.ps1`——HKCU 注册表
+    （Chrome/Edge/Brave）+ Firefox `%APPDATA%` 文件，免管理员；
+    UI 的 `browser_extension_installed()` 在 Windows 查注册表 + Firefox 文件。
+  - **透传有测试**：`aether-native-host/tests/native.rs` 断言
+    referrer/cookies/headers/filename 一路进 `add` 的 `TaskSpec.settings`；
+    另有 `file://` 拒绝用例。
+- **诚实的限制**：扩展是 JS，仓库没有浏览器测试基建——Cookie/过滤等扩展侧
+  行为靠选项页 “Test native host” + 手工冒烟；商店上架（签名、审核）未做。
+- 通道维持「扩展 → native host（一次性进程）→ 本地 socket/管道」：同用户
+  权限即信任，不需要额外 token；远程投递用 4.2 的 RPC。
 
 ### 4.4 媒体转码（ffmpeg 管线）
 

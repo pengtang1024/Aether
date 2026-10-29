@@ -221,26 +221,55 @@ fn plugin_tone(id: &str) -> i32 {
 
 /// Standard native-messaging manifest locations; any `aether*.json` counts.
 fn browser_extension_installed() -> bool {
+    // Windows keeps the Chrome-family manifest path in HKCU; Firefox uses a
+    // plain file under %APPDATA%.
+    #[cfg(windows)]
+    {
+        let registry = std::process::Command::new("reg")
+            .args([
+                "query",
+                r"HKCU\Software\Google\Chrome\NativeMessagingHosts\com.pengtang1024.aether",
+            ])
+            .output();
+        if registry.ok().is_some_and(|out| out.status.success()) {
+            return true;
+        }
+        if let Some(appdata) = std::env::var_os("APPDATA") {
+            let manifest = PathBuf::from(appdata)
+                .join("Mozilla")
+                .join("NativeMessagingHosts")
+                .join("com.pengtang1024.aether.json");
+            if manifest.is_file() {
+                return true;
+            }
+        }
+        return false;
+    }
+    #[cfg(not(windows))]
     let Some(home) = std::env::var_os("HOME") else {
         return false;
     };
+    #[cfg(not(windows))]
     let home = PathBuf::from(home);
-    let dirs = [
-        ".mozilla/native-messaging-hosts",
-        ".config/google-chrome/NativeMessagingHosts",
-        ".config/chromium/NativeMessagingHosts",
-        ".config/BraveSoftware/Brave-Browser/NativeMessagingHosts",
-    ];
-    dirs.iter().any(|dir| {
-        let dir = home.join(dir);
-        dir.is_dir()
-            && std::fs::read_dir(&dir).ok().is_some_and(|entries| {
-                entries.filter_map(Result::ok).any(|entry| {
-                    let name = entry.file_name().to_string_lossy().to_lowercase();
-                    name.starts_with("aether") && name.ends_with(".json")
+    #[cfg(not(windows))]
+    {
+        let dirs = [
+            ".mozilla/native-messaging-hosts",
+            ".config/google-chrome/NativeMessagingHosts",
+            ".config/chromium/NativeMessagingHosts",
+            ".config/BraveSoftware/Brave-Browser/NativeMessagingHosts",
+        ];
+        dirs.iter().any(|dir| {
+            let dir = home.join(dir);
+            dir.is_dir()
+                && std::fs::read_dir(&dir).ok().is_some_and(|entries| {
+                    entries.filter_map(Result::ok).any(|entry| {
+                        let name = entry.file_name().to_string_lossy().to_lowercase();
+                        name.starts_with("aether") && name.ends_with(".json")
+                    })
                 })
-            })
-    })
+        })
+    }
 }
 
 fn to_row(task: &model::Task, detail_id: i32) -> TaskRow {

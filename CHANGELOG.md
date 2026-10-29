@@ -7,6 +7,18 @@ versioning; 0.x releases may still change structure.
 
 ### Added
 
+- Browser takeover is now end-to-end wired. The extension attaches cookies to
+  downloads only after the user enables it in the options page (the browser's
+  own optional-permission prompt; off by default, never stored), interception
+  honors a per-host site filter (`example.com` / `*.example.com`), and
+  `scripts/install-native-messaging.ps1` registers the native host on Windows
+  through HKCU (no admin) plus the Firefox `%APPDATA%` manifest — the UI's
+  "extension installed" check reads the registry there. The native host's
+  referrer/cookies/headers/filename passthrough into `TaskSpec.settings` is
+  asserted by an integration test, alongside a `file://` rejection case.
+  Extension-side behavior has no browser test harness; it is verified through
+  the options page "Test native host" plus manual smoke testing.
+
 - RPC over TCP is available as an opt-in remote-control channel. The daemon
   gains `rpc_listen` / `rpc_secret` settings (plus `--rpc-listen` /
   `AETHER_RPC_LISTEN`); every TCP connection must open with an `auth` request

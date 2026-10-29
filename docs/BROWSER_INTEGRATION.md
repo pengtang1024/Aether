@@ -1,18 +1,19 @@
 # 浏览器集成方案
 
 > 目标：让浏览器下载可以交给 Aether 管理，同时保持本地、显式授权、不做 Cookie/密码窃取。
-> **状态：P5 基础已实现**（native host、MV3 扩展骨架、URL handler、daemon 转发）；
-> 商店上架、Windows named pipe、站点过滤/Cookie 实际使用仍待补。
+> **状态：P5 核心已实现并接线**（native host、MV3 扩展、URL handler、daemon 转发、
+> Cookie 显式授权、站点过滤、Windows manifest 安装）；商店上架仍待补。
 
 ## 0. 当前实现
 
 | 组件 | 位置 | 状态 |
 | --- | --- | --- |
-| Native Messaging host | `crates/aether-native-host` | 已实现，4 字节 native-endian + JSON，最大 1 MiB |
-| 浏览器扩展 | `browser-extension/` | MV3 骨架，右键发送/可选接管/选项页 |
+| Native Messaging host | `crates/aether-native-host` | 已实现，4 字节 native-endian + JSON，最大 1 MiB；`referrer/headers/cookies/filename` 透传进 `TaskSpec.settings`（集成测试断言） |
+| 浏览器扩展 | `browser-extension/` | MV3：右键发送、可选接管、站点过滤、Cookie 显式授权（可选权限，默认关） |
 | 桌面 URL handler | `packaging/aether-url-handler.desktop` | `aether/magnet/ed2k/thunder` |
-| daemon 连接 | `aether_daemon::Client` | 未运行时自动启动 `aether-daemon` |
-| 安装脚本 | `scripts/install-native-messaging.sh` | Chrome/Edge/Chromium/Brave/Firefox |
+| daemon 连接 | `aether_daemon::Client` | 未运行时自动启动 `aether-daemon`；本地 socket/管道即可信（同用户权限） |
+| 安装脚本 | `scripts/install-native-messaging.sh` / `.ps1` | Linux/macOS shell；Windows 注册表版（HKCU，免管理员） |
+| UI 检测 | `browser_extension_installed()` | Unix 查 manifest 文件，Windows 查 HKCU 注册表 + Firefox 文件 |
 
 本地安装：
 
@@ -20,14 +21,15 @@
 # 1. 构建/安装 Aether 后
 # 2. 浏览器加载 browser-extension/，复制扩展 ID
 aether-install-native-messaging <extension-id> /usr/bin/aether-native-host
+# Windows：powershell -File scripts/install-native-messaging.ps1 -ExtensionId <id> -HostPath <exe>
 # 3. 扩展选项页点击“Test native host”
 # 4. 如协议关联未生效，刷新桌面数据库/设置默认处理器
 update-desktop-database ~/.local/share/applications 2>/dev/null || true
 xdg-mime default aether-url-handler.desktop x-scheme-handler/magnet
 ```
 
-限制：扩展尚未上架商店；native manifest 需要扩展 ID；Windows named pipe 未实现；
-站点白名单/询问模式未实现。
+限制：扩展尚未上架商店；Cookie/站点过滤等扩展侧改动无法自动化测试
+（无浏览器测试基建），靠选项页 “Test native host” + 手工冒烟验证。
 
 HTTP 插件已消费这些设置：`referrer` → Referer 头、`user_agent` → User-Agent、
 `cookies`（字符串或对象）→ Cookie 头、`headers` 对象逐项附加（Range/Host/
@@ -66,7 +68,8 @@ Aether Host（已在运行；未运行则启动）
 - 消息：`{type:"add", url, referrer, headers?, cookies?, filename?}`；
   返回 `{ok, task_id, error?}`。
 - 限制消息大小（如 1 MiB）；校验 scheme（http/https/ftp/magnet）；拒绝 `file://`。
-- 本地 IPC token：Host 生成随机 token，native host 读取用户级配置文件；仅同用户可读。
+- 本地信任模型：同用户文件权限（Unix socket 0600 / Windows 管道默认 DACL），
+  不另设 token。远程场景走 daemon 的 RPC over TCP（token 鉴权，见 `DAEMON.md`）。
 - Host 未运行时：native host 启动 Host，等待就绪；超时返回错误。
 
 ## 4. 接管浏览器下载

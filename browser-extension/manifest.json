@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "description": "Send downloads to the local Aether daemon.",
   "permissions": ["contextMenus", "downloads", "storage", "nativeMessaging", "notifications"],
+  "optional_permissions": ["cookies"],
   "host_permissions": ["http://*/*", "https://*/*"],
   "background": { "service_worker": "background.js" },
   "action": { "default_title": "Aether" },
