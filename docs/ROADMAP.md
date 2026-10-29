@@ -25,13 +25,14 @@
 | `3cc8d1c` | 托盘（Linux）：zbus StatusNotifierItem + dbusmenu 菜单（显示/退出），私有 bus 全链路实测含退出；无 bus/host 优雅降级 |
 | `79c2cdb` | i18n（中文优先）：全量 202 条 UI 串 @tr + en.po、select_bundled_translation 即时切换、设置→外观语言项；ComboBox 功能值不译 |
 | `f6ef273` | Rust 侧字符串表化：i18n::tr(zh,en) 内联对 + 全局语言位，toast/hint/notice/时间格式/插件描述/通知全迁；功能值保留 |
-| （多语言） | ja + zh-TW 全量（po 250 条 + Rust 单表多语言行）、语言下拉 4 项、扩展商店打包脚本+文案 |
+| `c1d1bcd` | ja + zh-TW 全量（po 250 条 + Rust 单表多语言行）、语言下拉 4 项、扩展商店打包脚本+文案 |
+| （Windows 托盘） | 托盘平台分发（tray.rs → tray_sni.rs + tray_windows.rs 零依赖 Shell_NotifyIconW FFI）、zbus 移 unix-only、CI Windows 跑 bin 测试 |
 
 - **设置页现状**：10 个分类中每个控件要么真实生效、要么是诚实的能力说明卡，
   没有「点了没反应」或显示假值的控件。
 - **质量门禁**：`cargo fmt --all --check` + 全仓 86 套件 + CI 三平台
-  （Linux 全量测试，Windows 测 transport + rpc 回环 + 全量 check，macOS
-  check）。macOS runner 偶发 cancel——`gh run rerun <id> --failed` 重跑即可，
+  （Linux 全量测试，Windows 测 transport + rpc 回环 + bin 测试（托盘 FFI/i18n）
+  + 全量 check，macOS check）。macOS runner 偶发 cancel——`gh run rerun <id> --failed` 重跑即可，
   不是代码问题。Linux 上 `system_proxy` stub 测试族偶发失败（runner 环境），
   单跑必过，重跑即可。
 
@@ -213,7 +214,7 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
   StatusNotifier host 时优雅降级（一行日志，主程序照常——GNOME 需
   AppIndicator 扩展才显示）。**私有 session bus 全链路实测**：bus name、
   Title 属性、GetLayout（label 键值正确）、Activate 唤起、Event→退出
-  （app 实际退出）。macOS/Windows 托盘未做（Linux 第一）。
+  （app 实际退出）。当时 macOS/Windows 托盘未做（Linux 第一）——Windows 见下条，macOS 延后见说明。
   坑（都踩过）：zbus 5 **没有** `#[zbus(method)]`（普通方法自动识别，
   method 级合法键仅 name/signal/property/out_args/proxy）；zvariant 5 的
   `Signature` 是解析树 + `Type::SIGNATURE` 常量，derive 用
@@ -224,6 +225,32 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
   避开）、busctl/gdbus 必须与 app 在同一 `dbus-run-session` 内否则查的
   是另一条 bus、私有 bus 的 portal 激活刷屏需过滤；gdbus 给 `v` 参数传
   空串 variant 写 `"<''>"`。
+- **Windows 托盘已落地（2026-10-30）**：
+  - `src/tray.rs` 重构为平台分发器（Linux 实现原样挪进 `src/tray_sni.rs`，
+    一行逻辑没动）；Windows 走 `src/tray_windows.rs`——**零依赖 raw FFI**
+    （shell32/user32/kernel32，与 transport.rs 同哲学）：message-only 窗口
+    （HWND_MESSAGE，不显示不绘制）+ `Shell_NotifyIconW` + WM_APP+1 v0 回调
+    （左键/双击→唤起、右键→显示主窗口/退出 菜单，SetForegroundWindow+WM_NULL
+    处理菜单吞首击的经典坑）；图标取 exe 旁 `logo.ico`（Inno 打包本就放置），
+    加载失败回退 IDI_APPLICATION（诚实降级，不装死）。
+  - `Hooks{on_show,on_quit}` 解耦 Slint：dispatcher 从 `Weak<AppWindow>` 适配，
+    测试用 no-op 起图标，无需窗口/显示环境。`zbus` 移入
+    `[target.'cfg(unix)'.dependencies]`——Windows 构建不再编译 zbus。
+  - **CI Windows job 新增 `cargo test --bin aether`**：FFI 布局测试
+    （`NotifyIconData` 976B/x64、960B/x86 + hIcon/szTip/guid 等 offset 断言，
+    防 cbSize 协商被手滑破坏）、message-only 窗口创建/销毁回环、start 契约
+    （会话有 shell→Some、无 shell 拒绝图标→None，**两者都过**；硬性要求是
+    5s 内回报且不 panic——CI runner 无桌面，按 best-effort 验收）。
+  - **本地交叉预检配方**（Linux 上先于 CI 抓 Windows 编译错）：
+    `apt install gcc-mingw-w64-x86-64 nasm`（nasm 是 aws-lc-sys 的汇编器，
+    缺了整仓 check 直接挂）→
+    `cargo check --workspace --all-targets --target x86_64-pc-windows-gnu`。
+    本波 4 个编译错（LoadImageW 参数 `null`→`null_mut` 可变性、with_hooks
+    借用出 `&State` 而非 `&Hooks`、缺 `ComponentHandle` import）推送前即抓掉。
+- **macOS 托盘：诚实延后**：需要 objc2/NSStatusItem，而本仓 macOS CI 仅
+  `cargo check`，没有任何运行时验证路径——**无法验证的托盘不做**（Linux
+  （2026-10-29）/Windows（2026-10-30）先落地；macOS 记为未来项：先补 macOS
+  运行时冒烟路径再谈实现）。
 - **i18n 已落地（Slint 侧，中文优先，2026-10-29）**：
   - 源串保持中文（第一语言，编译器 index0 = 源语言槽，天然默认）；
     `build.rs` 启用 `with_bundled_translations("translations")` +

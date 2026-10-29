@@ -39,10 +39,6 @@ pub fn current_code() -> &'static str {
     LANGUAGES[LANG.load(Ordering::Relaxed) as usize].0
 }
 
-pub fn is_english() -> bool {
-    current_code() == "en"
-}
-
 /// Index of a language code for the UI switch mirror.
 pub fn index_of(code: &str) -> usize {
     LANGUAGES

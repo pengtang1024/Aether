@@ -29,6 +29,7 @@ pub fn lookup_zh_hant(zh: &str) -> Option<String> {
 }
 
 /// Iterate rows for tests.
+#[cfg(test)]
 pub fn rows() -> impl Iterator<Item = Row> {
     ROWS.iter().copied()
 }

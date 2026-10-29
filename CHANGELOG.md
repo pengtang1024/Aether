@@ -14,7 +14,8 @@ versioning; 0.x releases may still change structure.
   in Settings → Appearance applies instantly and persists; the language is
   selected before the first render so the window never flashes the wrong
   one. ComboBox option strings are deliberately not translated: they double
-  same language: toasts, settings hints, daemon notices, relative times and
+  as the functional values Rust matches on. The Rust side speaks the same
+  language: toasts, settings hints, daemon notices, relative times and
   ETAs, plugin descriptions and dashboard strings pair Chinese with English
   through i18n::tr(zh, en) at the call site, driven by one process-wide
   flag that the language switch flips. Two more languages ship complete:
@@ -33,6 +34,23 @@ versioning; 0.x releases may still change structure.
   either way. Verified end-to-end on a private session bus: name
   acquisition, properties, GetLayout, Activate, and the quit path actually
   exiting the app.
+
+- The tray now reaches Windows. `src/tray.rs` dispatches per platform and
+  Windows gets its own implementation in `src/tray_windows.rs`, written in
+  the project's raw-FFI style (shell32/user32/kernel32 directly, no new
+  dependencies): a message-only window hosts a Shell_NotifyIconW icon with
+  the same "显示主窗口 / 退出" menu, the icon loads from the logo.ico that
+  the installer places next to the exe and falls back to the stock
+  application icon otherwise. Start-up degrades honestly when the session
+  has no shell to host an icon — one log line, window-only, exactly like
+  the Linux path without a StatusNotifier host. The Windows CI job runs
+  the bin tests now: a layout test pins NotifyIconData to the SDK's exact
+  size and offsets (976 bytes on x64), a window test covers creation and
+  the WM_DESTROY round trip, and the start handshake accepts Some or None
+  on a headless runner as long as it reports promptly without crashing.
+  zbus moved to a unix-only target dependency, so Windows builds no longer
+  compile it. macOS stays out on purpose: an NSStatusItem needs objc2 and
+  this repo's macOS CI is check-only, leaving no way to verify it.
 
 - Supply-chain hardening: every GitHub Action is pinned to a full commit
   SHA with a version comment resolved through the API (Dependabot keeps
