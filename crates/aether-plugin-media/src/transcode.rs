@@ -85,28 +85,24 @@ fn remux(
     let output = staging.join(&output_name);
     let executable = executable(task);
 
-    let mut child = Command::new(&executable)
-        .args([
-            "-nostdin",
-            "-y",
-            "-i",
-            &input.to_string_lossy(),
-            "-c",
-            "copy",
-            // `-f` keeps names ffmpeg cannot infer working; every container
-            // this plugin accepts has a matching muxer.
-            "-f",
-            container,
-            "-progress",
-            "pipe:1",
-            "-loglevel",
-            "error",
-            &output.to_string_lossy(),
-        ])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|error| format!("cannot start {executable}: {error}"))?;
+    let args = [
+        "-nostdin",
+        "-y",
+        "-i",
+        &input.to_string_lossy(),
+        "-c",
+        "copy",
+        // `-f` keeps names ffmpeg cannot infer working; every container
+        // this plugin accepts has a matching muxer.
+        "-f",
+        container,
+        "-progress",
+        "pipe:1",
+        "-loglevel",
+        "error",
+        &output.to_string_lossy(),
+    ];
+    let mut child = spawn_ffmpeg(&executable, &args)?;
 
     // Progress arrives on stdout as `key=value` lines; stderr stays quiet
     // at `-loglevel error` and is only read once the process exits.
@@ -154,6 +150,39 @@ fn remux(
             value: checksum,
         }),
     })
+}
+
+/// Spawn ffmpeg, retrying once on `ETXTBSY`: on Linux/macOS that errno means
+/// the binary is momentarily open for writing (an in-place update, a just
+/// written test fixture). The writer always closes, so a single bounded
+/// retry turns a spurious "cannot start" into a normal run instead of
+/// throwing away the download over a transient exec condition.
+fn spawn_ffmpeg(executable: &str, args: &[&str]) -> Result<std::process::Child, String> {
+    let spawn = || {
+        Command::new(executable)
+            .args(args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+    };
+    let mut last = None;
+    for attempt in 0..3 {
+        match spawn() {
+            Ok(child) => return Ok(child),
+            // ETXTBSY (26) only: every other errno is a real failure.
+            Err(error) if error.raw_os_error() == Some(26) => {
+                last = Some(error);
+                if attempt < 2 {
+                    thread::sleep(Duration::from_millis(250));
+                }
+            }
+            Err(error) => return Err(format!("cannot start {executable}: {error}")),
+        }
+    }
+    Err(format!(
+        "cannot start {executable}: {}",
+        last.expect("ETXTBSY loop ran at least once")
+    ))
 }
 
 /// Parse ffmpeg `-progress pipe:1` output into progress events. `out_time`

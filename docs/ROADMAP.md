@@ -94,6 +94,13 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
     `last_os_error()` 再 CloseHandle（否则错误码被覆盖）。
   - 本机 Linux 无法交叉验证 Windows 编译（ring/rusqlite 需 MSVC/mingw），
     **Windows 侧只有 CI 是权威判定**，别只看本地 `cargo check`。
+  - **CI 并发抢占**：`ci.yml` 的 concurrency 组 `cancel-in-progress: true`——
+    在新 run 进行中时 `gh run rerun --failed` 会把进行中的 run 打成
+    "cancelled"（曾把 4.6a 的 macOS job 误杀出假失败）。重跑失败 job 前先
+    确认组里没有更新的 run 在跑/排队。
+  - **ETXTBSY（os error 26）**：exec 一个正被写入的二进制时报此错——本质
+    瞬态。media transcode 的 spawn 已带 3×250ms 有界重试（CI 假 ffmpeg
+    fixture 曾被它咬过）；写测试脚本再立即执行的模式都要留心。
   - **Windows 上集成测试的 daemon 端点必须是 `\\.\pipe\` 名**，不能拿
     `root/daemon.sock` 当 socket（`Listener::bind` 报错、daemon 起不来、
     用例全灭——rpc.rs 踩过，见 `2d9fa72`）。
