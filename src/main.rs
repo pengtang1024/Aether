@@ -6,10 +6,12 @@
 
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
+mod autostart;
 mod backend;
 mod chart;
 mod clipboard;
 mod i18n;
+mod instance;
 mod model;
 mod tray;
 
@@ -1136,6 +1138,22 @@ fn system_is_dark() -> bool {
 }
 
 fn main() -> Result<(), slint::PlatformError> {
+    // One UI per user: a second launch would race for the daemon and the
+    // tray, so it reports and exits. The guard lives for the whole process
+    // (dropping it releases the lock).
+    let _instance = match instance::acquire() {
+        instance::Acquired::AlreadyRunning => {
+            send_notification(
+                &i18n::tr("Aether 已在运行", "Aether is already running"),
+                &i18n::tr(
+                    "请使用已经打开的窗口",
+                    "Use the window that is already open",
+                ),
+            );
+            return Ok(());
+        }
+        other => other,
+    };
     let ui = AppWindow::new()?;
     ui.set_app_version(env!("CARGO_PKG_VERSION").into());
 
@@ -1183,6 +1201,9 @@ fn main() -> Result<(), slint::PlatformError> {
         ui.set_settings_notify_fail(prefs.notify_fail);
         ui.set_settings_clipboard(prefs.clipboard_watch);
         ui.set_settings_clipboard_available(state.borrow().clipboard_control.is_some());
+        // Start-at-login lives in the OS, not in ui.json: show the real
+        // registration instead of a remembered preference.
+        ui.set_settings_autostart(autostart::is_enabled());
         let page = match prefs.start_page {
             1 => 1,
             2 => prefs.last_page.clamp(0, 2),
@@ -1754,6 +1775,40 @@ fn main() -> Result<(), slint::PlatformError> {
                             });
                         }
                     }
+                    "autostart" => {
+                        let enabled = value.as_str() == "true";
+                        match autostart::set_enabled(enabled) {
+                            Ok(()) => {
+                                if let Some(ui) = ui_handle.upgrade() {
+                                    ui.set_settings_autostart(enabled);
+                                }
+                                hint = Some(if enabled {
+                                    i18n::tr(
+                                        "已设置为登录时启动",
+                                        "Aether will start at login",
+                                    )
+                                    .into()
+                                } else {
+                                    i18n::tr(
+                                        "已取消登录时启动",
+                                        "Aether no longer starts at login",
+                                    )
+                                    .into()
+                                });
+                            }
+                            Err(error) => {
+                                // The OS refused: bounce the switch back and
+                                // say why instead of showing a fake "on".
+                                if let Some(ui) = ui_handle.upgrade() {
+                                    ui.set_settings_autostart(!enabled);
+                                }
+                                hint = Some(i18n::tr(
+                                    format!("无法修改开机自启：{error}"),
+                                    format!("Could not change start-at-login: {error}"),
+                                ));
+                            }
+                        }
+                    }
                     "reset-settings" => {
                         st.prefs = UiPrefs::default();
                         st.prefs.save();
@@ -2071,10 +2126,16 @@ fn main() -> Result<(), slint::PlatformError> {
     }
 
     // Follow live desktop theme changes while the user chose "follow system".
-    // System tray (Linux/StatusNotifier): best effort — without a session
-    // bus or a StatusNotifier host it logs one line and the window keeps
-    // working as the only entry point.
-    let _ = tray::start(ui.as_weak());
+    // System tray (Linux StatusNotifier / Windows Shell_NotifyIcon): best
+    // effort — without a host it logs one line and the window keeps working
+    // as the only entry point. Only a *visible* tray earns close-to-tray:
+    // closing then hides the window (the tray menu quits), while a session
+    // without a tray keeps the default where closing quits.
+    let tray_up = tray::start(ui.as_weak()).is_some();
+    if tray_up {
+        ui.window()
+            .on_close_requested(|| slint::CloseRequestResponse::HideWindow);
+    }
 
     let theme_timer = Timer::default();
     {

@@ -50,6 +50,9 @@ arboard = { version = "3.7.0", default-features = false, features = [
 ] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Advisory file lock for the single-instance guard (already in the tree
+# through aether-daemon, so no new supply-chain surface).
+fs2 = "0.4"
 slint = { version = "1.18", default-features = false, features = [
     "std",
     "backend-winit",

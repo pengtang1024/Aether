@@ -80,6 +80,8 @@ export component AppWindow inherits Window {
     // True when no clipboard backend exists (headless): the switch stays
     // off and the row explains why instead of pretending to work.
     in-out property <bool> settings-clipboard-available: true;
+    // OS-managed start-at-login state (read back from the OS at startup).
+    in-out property <bool> settings-autostart: false;
     in-out property <bool> settings-schedule-on: false;
     in-out property <string> settings-schedule-start: "";
     in-out property <string> settings-schedule-end: "";
@@ -528,6 +530,7 @@ export component AppWindow inherits Window {
                         notify-fail <=> root.settings-notify-fail;
                         clipboard-on <=> root.settings-clipboard;
                         clipboard-available <=> root.settings-clipboard-available;
+                        autostart-on <=> root.settings-autostart;
                         schedule-on <=> root.settings-schedule-on;
                         schedule-start <=> root.settings-schedule-start;
                         schedule-end <=> root.settings-schedule-end;

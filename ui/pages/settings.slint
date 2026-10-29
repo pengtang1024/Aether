@@ -200,6 +200,8 @@ component GeneralPanel inherits Rectangle {
     // the session has no clipboard backend.
     in-out property <bool> clipboard-on: false;
     in-out property <bool> clipboard-available: true;
+    // OS-managed start-at-login state (mirrored from the window).
+    in-out property <bool> autostart-on: false;
     callback changed(string, string);
 
     VerticalLayout {
@@ -217,7 +219,6 @@ component GeneralPanel inherits Rectangle {
                 icon-source: AetherIcons.home;
                 title: @tr("启动页面");
                 description: @tr("每次打开 Aether 时显示的页面");
-                divider: false;
                 ComboBox {
                     model: ["主页", "下载列表", "上次页面"];
                     current-index <=> root.start-page-index;
@@ -225,6 +226,23 @@ component GeneralPanel inherits Rectangle {
                     max-width: Aether.field-md;
                     selected => { root.changed("start-page", self.current-value); }
                 }
+            }
+
+            SettingRow {
+                icon-source: AetherIcons.play;
+                title: @tr("开机自启");
+                description: @tr("登录系统时自动启动 Aether（由操作系统管理，删除自启项即关闭）");
+                Switch {
+                    checked: root.autostart-on;
+                    toggled => { root.changed("autostart", self.checked ? "true" : "false"); }
+                }
+            }
+
+            SettingRow {
+                icon-source: AetherIcons.close;
+                title: @tr("关闭窗口");
+                description: @tr("有系统托盘时收进托盘继续下载，从托盘菜单退出；没有托盘时直接退出");
+                divider: false;
             }
         }
 
@@ -1285,6 +1303,8 @@ export component SettingsPage inherits Rectangle {
     // Clipboard link watch (GeneralPanel), mirrored from the window.
     in-out property <bool> clipboard-on: false;
     in-out property <bool> clipboard-available: true;
+    // Start-at-login, read from the OS at startup (not a ui.json pref).
+    in-out property <bool> autostart-on: false;
     // Daemon-backed: install outdated plugins on the periodic update cycle.
     in-out property <bool> plugin-auto-update: false;
     // UI-local: interface language (0 = Chinese source, 1 = English).
@@ -1373,6 +1393,7 @@ export component SettingsPage inherits Rectangle {
                     start-page-index <=> root.start-page;
                     clipboard-on <=> root.clipboard-on;
                     clipboard-available <=> root.clipboard-available;
+                    autostart-on <=> root.autostart-on;
                     changed(k, v) => { root.settings-changed(k, v); }
                 }
                 if root.tab == 1: DownloadPanel {

@@ -349,6 +349,10 @@ Esc 关闭；下载空状态提供“清除筛选条件”，一次恢复全部�
 - 系统托盘（Linux StatusNotifier、Windows 通知区域）、剪贴板链接检测与
   四语言界面（简体中文/English/日本語/繁體中文）已落地；协议关联由安装包
   注册
+- 单实例（第二次启动提示后退出，不唤起已有窗口）、关闭到托盘（有托盘时
+  关闭窗口=隐藏，托盘菜单退出；无托盘时关闭=退出）、开机自启（Linux XDG
+  autostart / Windows HKCU Run / macOS LaunchAgent）均为真实系统集成；
+  开机自启开关显示操作系统里的真实状态，写失败会回弹并说明原因
 - Windows 安装包与便携 zip 已随附 daemon、CLI、native-host 和全部第一方
   插件 exe（`{app}\plugins`，daemon 按 exe 同级解析）；macOS 包目前只含
   UI 本体——app bundle 内未随附 daemon/插件，需另行安装或源码运行

@@ -52,6 +52,18 @@ versioning; 0.x releases may still change structure.
   compile it. macOS stays out on purpose: an NSStatusItem needs objc2 and
   this repo's macOS CI is check-only, leaving no way to verify it.
 
+- Background behaviour: Aether is now single-instance (an advisory lock in
+  the config directory; a second launch notifies "already running" and exits
+  instead of racing for the daemon and tray), closes to the tray when one is
+  actually visible (closing hides the window and the tray menu quits; a
+  session without a tray keeps close = quit), and can start at login through
+  the OS's own mechanism — an XDG autostart entry, an HKCU Run value, or a
+  LaunchAgent plist. The start-at-login switch reads the real OS state at
+  startup, so removing the entry by hand shows up honestly, and a refused
+  write bounces the switch back with the reason. Along the way the Linux tray
+  stopped claiming success when no StatusNotifier host exists: it now returns
+  "no tray", which is what makes close-to-tray safe.
+
 - Desktop notifications reach Windows: a WinRT toast through notify-rust
   (the platform's only toast path is not reachable via an external
   command, unlike notify-send and osascript). The toast is attributed to

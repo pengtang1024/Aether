@@ -106,9 +106,14 @@ fn run(shared: Arc<TrayShared>, ready: mpsc::Sender<Result<(), String>>) {
         let _ = ready.send(Err(format!("bus name: {error}")));
         return;
     }
-    // Best effort: without a StatusNotifierWatcher the item is simply not
-    // displayed — the "no host" degradation, not an error here.
-    let _ = register_with_watcher(&conn, &service);
+    // No watcher means no visible icon: report the honest "no tray" so the
+    // window keeps its default close behaviour (quitting) instead of hiding
+    // into an icon that does not exist. A host that appears later needs an
+    // app restart.
+    if let Err(error) = register_with_watcher(&conn, &service) {
+        let _ = ready.send(Err(format!("no StatusNotifier host: {error}")));
+        return;
+    }
     let _ = ready.send(Ok(()));
     // The internal zbus thread serves calls; this thread only owns the
     // connection (dropping it releases the bus name).

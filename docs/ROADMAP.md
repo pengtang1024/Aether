@@ -26,6 +26,7 @@
 | `79c2cdb` | i18n（中文优先）：全量 202 条 UI 串 @tr + en.po、select_bundled_translation 即时切换、设置→外观语言项；ComboBox 功能值不译 |
 | `f6ef273` | Rust 侧字符串表化：i18n::tr(zh,en) 内联对 + 全局语言位，toast/hint/notice/时间格式/插件描述/通知全迁；功能值保留 |
 | `c1d1bcd` | ja + zh-TW 全量（po 250 条 + Rust 单表多语言行）、语言下拉 4 项、扩展商店打包脚本+文案 |
+| （后台形态） | 单实例锁（fs2/配置目录锁文件，第二实例通知后退出）、关闭到托盘（仅托盘真实可用时；Linux 托盘无 watcher 改为诚实返回 None）、开机自启（Linux XDG / Windows HKCU Run / macOS LaunchAgent，状态以 OS 为准） |
 | `1d75cd5` | Windows 桌面通知（notify-rust toast + HKCU AUMID 一次注册，失败回退内置归属）+ Windows 发布产物补齐（daemon/CLI/native-host + 16 插件 exe 进 zip/安装器 `{app}\plugins`）+ default_plugins_dir exe 同级候选 |
 | `716896e` | 托盘平台分发（tray.rs → tray_sni.rs + tray_windows.rs 零依赖 Shell_NotifyIconW FFI）、zbus 移 unix-only、CI Windows 跑 bin 测试 |
 
@@ -231,6 +232,9 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
   AppIndicator 扩展才显示）。**私有 session bus 全链路实测**：bus name、
   Title 属性、GetLayout（label 键值正确）、Activate 唤起、Event→退出
   （app 实际退出）。当时 macOS/Windows 托盘未做（Linux 第一）——Windows 见下条，macOS 延后见说明。
+  2026-10-30 诚实化：无 StatusNotifierWatcher 时 `start` 返回 None（原来
+  返回 Some 但图标不可见）——「图标不可见就不假装有托盘」，关闭窗口因此
+  保持退出语义（见 §4.8）。
   坑（都踩过）：zbus 5 **没有** `#[zbus(method)]`（普通方法自动识别，
   method 级合法键仅 name/signal/property/out_args/proxy）；zvariant 5 的
   `Signature` 是解析树 + `Type::SIGNATURE` 常量，derive 用
@@ -378,6 +382,34 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
   - **批量导入**：新建对话框 URL 字段按空白切分（`backend::split_urls`
     单测：多链接/多磁力/制表符/空输入），一次提交排队多个、toast 报数量；
     CLI `import` 文件列表为既有能力。
+
+### 4.8 后台形态（单实例 / 关闭到托盘 / 开机自启）
+
+- **已落地（2026-10-30，`<hash>`）**：来自 GAP_AUDIT #3。
+  - **单实例**：`src/instance.rs` 用 fs2 的 `try_lock_exclusive`（flock /
+    LockFileEx）锁配置目录 `aether/instance.lock`；进程退出/崩溃由 OS 释放，
+    无 stale lock。三态 Primary(Guard) / AlreadyRunning / Unlocked（配置目录
+    不可用等环境问题照常启动——双开好过不开）。第二实例发系统通知
+    「Aether 已在运行」后退出。**已知限制：不唤起已有窗口**（需 UI 级 IPC），
+    通知文案即说明「请使用已经打开的窗口」。冲突判定 unix WouldBlock /
+    Windows ERROR_LOCK_VIOLATION(33)。
+  - **关闭到托盘**：Slint 1.18 的 CloseRequestResponse 只有 HideWindow /
+    KeepWindowShown（**无 Quit**）→ 仅当托盘真实可用才注册关闭→隐藏，托盘
+    菜单「退出」走 quit_event_loop；无托盘保持关闭=退出（绝不把应用藏进
+    看不见的地方）。Linux 托盘随之诚实化（见 §4.5 注）。
+  - **开机自启**：`src/autostart.rs`，状态源是**操作系统**而非 ui.json（启动
+    时读真实状态，手删也如实反映）：Linux XDG autostart desktop entry（Exec
+    含空格按 spec 加引号）；Windows HKCU `...\CurrentVersion\Run`（reg
+    add/delete，免管理员，值带引号）；macOS LaunchAgent plist（RunAtLoad，
+    XML 转义；**未做运行时验证**——macOS CI 仅 check）。写失败时开关回弹 +
+    错误提示，不假装成功。
+  - UI：设置→常规→启动 新增「开机自启」开关 + 「关闭窗口」说明行；属性链
+    GeneralPanel ↔ SettingsPage ↔ AppWindow；新增 Slint 串 4 条进
+    en/ja/zh-TW po，Rust 静态串 4 条进 `i18n/table.rs`。
+  - 验证：单实例双开 Xvfb 冒烟（第二实例 0 退出、第一实例存活、锁文件真实
+    存在）；开机自启点击 e2e（desktop entry 写入/删除、开关状态、toast）；
+    单测覆盖双开/释放、entry 内容与引号、临时目录往返、Windows 注册表往返
+    （CI Windows bin 测试实跑）。
 
 ## 5. 发布流程摘要
 

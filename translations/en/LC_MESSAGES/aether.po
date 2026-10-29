@@ -753,3 +753,15 @@ msgstr " tasks · most recently added"
 msgid "搜索任务名称或地址"
 msgstr "Search by name or URL"
 
+
+msgid "开机自启"
+msgstr "Start at login"
+
+msgid "登录系统时自动启动 Aether（由操作系统管理，删除自启项即关闭）"
+msgstr "Launch Aether when you sign in (managed by the OS; removing the autostart entry turns it off)"
+
+msgid "关闭窗口"
+msgstr "Closing the window"
+
+msgid "有系统托盘时收进托盘继续下载，从托盘菜单退出；没有托盘时直接退出"
+msgstr "With a system tray the window hides and downloads continue — quit from the tray menu; without a tray, closing quits"
