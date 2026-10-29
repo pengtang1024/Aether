@@ -24,7 +24,7 @@
 | `6fad6ef`+`bfd5ae1` | 供应链：Actions pin SHA、cargo-deny+CI job、SBOM 进 release、AppStream 更新、优先级老化、UI 多 URL 导入 |
 | `3cc8d1c` | 托盘（Linux）：zbus StatusNotifierItem + dbusmenu 菜单（显示/退出），私有 bus 全链路实测含退出；无 bus/host 优雅降级 |
 | `79c2cdb` | i18n（中文优先）：全量 202 条 UI 串 @tr + en.po、select_bundled_translation 即时切换、设置→外观语言项；ComboBox 功能值不译 |
-| （i18n-Rust） | Rust 侧字符串表化：i18n::tr(zh,en) 内联对 + 全局语言位，toast/hint/notice/时间格式/插件描述/通知全迁；功能值保留 |
+| `f6ef273` | Rust 侧字符串表化：i18n::tr(zh,en) 内联对 + 全局语言位，toast/hint/notice/时间格式/插件描述/通知全迁；功能值保留 |
 
 - **设置页现状**：10 个分类中每个控件要么真实生效、要么是诚实的能力说明卡，
   没有「点了没反应」或显示假值的控件。

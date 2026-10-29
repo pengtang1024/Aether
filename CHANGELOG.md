@@ -14,7 +14,10 @@ versioning; 0.x releases may still change structure.
   in Settings → Appearance applies instantly and persists; the language is
   selected before the first render so the window never flashes the wrong
   one. ComboBox option strings are deliberately not translated: they double
-  as the wire values the Rust side matches on.
+  same language: toasts, settings hints, daemon notices, relative times and
+  ETAs, plugin descriptions and dashboard strings pair Chinese with English
+  through i18n::tr(zh, en) at the call site, driven by one process-wide
+  flag that the language switch flips.
 
 - A system tray for Linux (StatusNotifier over zbus, which was already in
   the dependency tree through Slint): left-click or the context menu's
