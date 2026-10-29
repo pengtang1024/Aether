@@ -82,21 +82,20 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
 
 ### 4.1 Windows 完整支持（named pipe + 通知 + 插件打包）★
 
-- **现状**：`src/backend.rs` 在非 Unix 是空壳 stub；`aether-daemon` 在 Windows
-  直接 `exit`（「Unix sockets are required」）；CI 的 Windows check 只编译不跑测试。
-- **方案**：
-  1. `crates/aether-daemon/src/transport.rs`：把「JSON lines 双向流」抽象成
-     trait，Unix 实现保持现状，Windows 实现用 named pipe
-     （`\\.\pipe\aether-<user>`；同步 pipe 可用 `std` 无依赖裸 API 或引
-     `r-named-pipe` 之类小 crate——优先无依赖）。协议行格式不变，
-     `docs/UI_INTEGRATION.md` 契约通用。
-  2. client 侧（`crates/aether-daemon/src/client.rs`）同样按 cfg 分流；
-     `default_socket()` → Windows 返回 pipe 名。
-  3. 通知：Windows toast 需要 WinRT，建议独立小 crate 封装（`notify-rust` 若
-     依赖可接受则直接用；否则诚实保持「Windows 暂无通知」直到有方案）。
-  4. 发布产物打包全部插件 exe；`AETHER_PLUGINS_DIR` 默认值随包布局。
-- **验收**：Windows 上 pipe 回环集成测试（可加进 CI 的 Windows job 跑
-  `cargo test --target x86_64-pc-windows-msvc --test <pipe回环>`）。
+- **已落地（2026-10-29）**：`crates/aether-daemon/src/transport.rs` 抽象了
+  「JSON lines 双向流」——Unix 走 socket 文件（0600），Windows 直接 FFI
+  kernel32 实现 named pipe（`\\.\pipe\aether-<user>`，默认 DACL 限同用户，
+  无新增依赖）；`server.rs/client.rs` 与 UI `src/backend.rs`、CLI
+  remote/import、native-host 的 `#[cfg(unix)]` 门全部移除，Windows 有真实
+  后端；`tests/transport.rs` 回环测试两平台都跑，CI Windows job 已加
+  `cargo test -p aether-daemon --test transport`。
+- **剩余**：
+  - Windows 桌面通知：`send_notification`（src/main.rs）在 Windows 静默。
+    优先 `notify-rust`（WinRT toast），依赖可接受就接线，否则保持诚实静默。
+  - 发布产物打包全部插件 exe；`default_plugins_dir`（aether-host）目前只有
+    Linux/相对路径候选，需加 Windows 安装目录候选。
+  - 本机无法交叉验证 Windows 编译（ring/rusqlite 需要 MSVC/mingw 工具链），
+    Windows 代码靠 CI 的 windows job check + transport 测试把关。
 
 ### 4.2 RPC over TCP（远程控制）
 

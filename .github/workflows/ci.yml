@@ -55,6 +55,9 @@ jobs:
         with:
           key: ci-windows-latest
       - run: cargo check --workspace --all-targets
+      # The pipe loopback is the acceptance test for the Windows transport
+      # (tests/transport.rs covers both platforms).
+      - run: cargo test -p aether-daemon --test transport
 
   macos:
     name: macOS check

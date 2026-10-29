@@ -1,4 +1,3 @@
-#[cfg(unix)]
 fn main() -> std::process::ExitCode {
     use aether_daemon::{run, DaemonConfig};
     use std::path::PathBuf;
@@ -56,12 +55,4 @@ fn main() -> std::process::ExitCode {
             std::process::ExitCode::FAILURE
         }
     }
-}
-
-#[cfg(not(unix))]
-fn main() {
-    eprintln!(
-        "aether-daemon: Unix sockets are required; Windows named pipes are not implemented yet"
-    );
-    std::process::exit(1);
 }

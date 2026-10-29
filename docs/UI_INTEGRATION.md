@@ -16,7 +16,11 @@ let socket = aether_daemon::client::default_socket();
 let mut client = Client::connect(&socket)?;
 ```
 
+> `socket` 在 Unix 是 socket 文件路径，在 Windows 是每用户命名管道名
+> （`\\.\pipe\aether-<用户名>`）；行协议两平台一致。
+
 daemon 应由 systemd user unit 启动（`systemctl --user enable --now aether-daemon`）。
+Windows 上没有 unit：由 UI/CLI 首次连接时自动拉起 `aether-daemon.exe`。
 UI 启动时如果连接失败，可以提示“后台服务未启动”，或执行 `aether-daemon`。
 
 ## 2. 首屏

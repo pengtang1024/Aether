@@ -1,4 +1,3 @@
-#[cfg(unix)]
 fn main() -> std::process::ExitCode {
     use std::io::{stdin, stdout};
 
@@ -34,10 +33,4 @@ fn main() -> std::process::ExitCode {
         }
     }
     std::process::ExitCode::SUCCESS
-}
-
-#[cfg(not(unix))]
-fn main() {
-    eprintln!("aether-native-host: Unix socket daemon required; Windows named pipes are not implemented yet");
-    std::process::exit(1);
 }

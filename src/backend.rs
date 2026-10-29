@@ -30,11 +30,7 @@ pub struct Snapshot {
     pub settings: Option<Value>,
 }
 
-#[cfg(unix)]
 pub use imp::Backend;
-
-#[cfg(not(unix))]
-pub use stub::Backend;
 
 /// A task that reached a terminal state, with everything the UI needs to
 /// notify or open it.
@@ -49,7 +45,6 @@ pub struct Finished {
     pub error: Option<String>,
 }
 
-#[cfg(unix)]
 mod imp {
     use std::collections::{HashMap, VecDeque};
     use std::path::{Path, PathBuf};
@@ -268,13 +263,14 @@ mod imp {
             return;
         }
         let download_dir = default_download_dir();
+        let daemon_name = format!("aether-daemon{}", std::env::consts::EXE_SUFFIX);
         let mut candidates = Vec::new();
         if let Ok(exe) = std::env::current_exe() {
             if let Some(dir) = exe.parent() {
-                candidates.push(dir.join("aether-daemon"));
+                candidates.push(dir.join(&daemon_name));
             }
         }
-        candidates.push(PathBuf::from("aether-daemon"));
+        candidates.push(PathBuf::from(&daemon_name));
         for candidate in candidates {
             let spawned = Process::new(&candidate)
                 .arg("--download-dir")
@@ -289,8 +285,13 @@ mod imp {
         }
     }
 
-    /// `XDG_DOWNLOAD_DIR` from `user-dirs.dirs`, else `~/Downloads`.
+    /// `XDG_DOWNLOAD_DIR` from `user-dirs.dirs`, else `~/Downloads`. On
+    /// Windows: the user profile's `Downloads`.
     fn default_download_dir() -> PathBuf {
+        #[cfg(windows)]
+        if let Some(home) = std::env::var_os("USERPROFILE") {
+            return PathBuf::from(home).join("Downloads");
+        }
         if let Some(home) = std::env::var_os("HOME") {
             let home = PathBuf::from(home);
             let config = std::env::var_os("XDG_CONFIG_HOME")
@@ -910,52 +911,6 @@ mod imp {
                 }),
                 "host.test"
             );
-        }
-    }
-}
-
-#[cfg(not(unix))]
-mod stub {
-    use super::Snapshot;
-
-    /// The daemon speaks over a Unix socket, so other platforms run the UI
-    /// without a backend until named pipes land.
-    pub struct Backend;
-
-    impl Backend {
-        pub fn spawn() -> Self {
-            Self
-        }
-
-        pub fn snapshot(&self) -> Snapshot {
-            Snapshot {
-                connected: false,
-                ..Snapshot::default()
-            }
-        }
-
-        pub fn drift(&self) -> f32 {
-            0.0
-        }
-
-        pub fn apply_action(&self, _id: i32, _action: i32) {}
-
-        pub fn add_task(&self, _url: &str, _path: &str, _speed_limit_kb: f32) {}
-
-        pub fn set_proxy(&self, _mode: &str, _url: &str) {}
-
-        pub fn set_setting(&self, _patch: serde_json::Value) {}
-
-        pub fn take_finished(&self, _out: &mut Vec<super::Finished>) {}
-
-        pub fn set_plugin_enabled(&self, _row: i32, _enabled: bool) {}
-
-        pub fn take_notice(&self) -> Option<String> {
-            None
-        }
-
-        pub fn now_ms(&self) -> i64 {
-            0
         }
     }
 }

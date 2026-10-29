@@ -78,9 +78,7 @@ fn run() -> Result<(), String> {
             let forced = option(&args, "--plugin");
             download(url, Path::new(&output), &root, forced.as_deref())
         }
-        #[cfg(unix)]
         "remote" => remote(&args[1..]),
-        #[cfg(unix)]
         "import" => {
             let source = args
                 .get(1)
@@ -446,7 +444,6 @@ fn usage() -> Result<(), String> {
 }
 
 /// Talk to a running daemon: the headless equivalent of the desktop UI.
-#[cfg(unix)]
 fn remote(args: &[String]) -> Result<(), String> {
     use aether_daemon::Client;
     use serde_json::{json, Value};
@@ -682,32 +679,17 @@ fn remote(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(unix)]
 fn remote_usage() -> &'static str {
     "\n  aether-cli remote <command> [--socket <path>] [--json]\n    ping | list [--json] | stats [--json] | plugins [--json]\n    add <url> [--plugin <id>] [--dir <dir>] [--priority <n>] [--settings <json>] [--json]\n    get <task-id> | logs <task-id> [--limit <n>] [--json]\n    pause|resume|cancel|rm <task-id>\n    enable|disable <plugin-id>\n    settings | set-settings <json> | resolve-proxy <url> | watch"
 }
 
-#[cfg(not(unix))]
-fn remote_usage() -> &'static str {
-    // The daemon is Unix-socket only.
-    ""
-}
-
-#[cfg(unix)]
 fn import_usage() -> &'static str {
     "\n  aether-cli import <file|-> [--socket <path>] [--dir <dir>]"
-}
-
-#[cfg(not(unix))]
-fn import_usage() -> &'static str {
-    // The daemon uses Unix sockets; import is unavailable on other platforms.
-    ""
 }
 
 /// Queue many URLs through the running daemon: one per line, `#` comments and
 /// blank lines ignored. Each add returns task_id/plugin_id/queued; failures
 /// are reported per URL and reflected in the exit code.
-#[cfg(unix)]
 fn import(source: &str, socket: &Path, dir: Option<&Path>) -> Result<(), String> {
     let text = if source == "-" {
         let mut buffer = String::new();

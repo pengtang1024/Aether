@@ -3,9 +3,6 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
-use std::net::Shutdown;
-use std::os::unix::fs::PermissionsExt;
-use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Component, Path, PathBuf};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
@@ -26,6 +23,7 @@ use serde_json::{json, Value};
 use crate::error::DaemonError;
 use crate::proto::{Request, Response};
 use crate::settings::{parse_hhmm, Limits, Settings, CONNECTIONS_DEFAULT, KEYS};
+use crate::transport::{Conn, Listener};
 
 pub struct DaemonConfig {
     pub download_dir: PathBuf,
@@ -172,8 +170,19 @@ struct RetrySchedule {
 pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
     let data_dir = config.download_dir.join(".aether");
     fs::create_dir_all(&data_dir)?;
+    // The endpoint is a socket file on Unix (its parent must exist) and a
+    // pipe name on Windows (no filesystem presence at all).
+    #[cfg(unix)]
     fs::create_dir_all(config.socket.parent().unwrap_or(Path::new(".")))?;
+    // Single-instance guard. Unix keys it off the socket path; a Windows pipe
+    // name has no directory, so the lock lives in the data dir and only
+    // serializes daemons that share a download root (the pipe name itself is
+    // per user, so a second daemon on the same user still gets rejected by
+    // the connect probe below).
+    #[cfg(unix)]
     let lock_path = config.socket.with_extension("lock");
+    #[cfg(windows)]
+    let lock_path = data_dir.join("daemon.lock");
     let lock = fs::OpenOptions::new()
         .create(true)
         .read(true)
@@ -182,15 +191,28 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
     lock.try_lock_exclusive()
         .map_err(|_| DaemonError::AlreadyRunning)?;
 
-    if config.socket.exists() {
-        if UnixStream::connect(&config.socket).is_ok() {
-            return Err(DaemonError::AlreadyRunning);
+    #[cfg(unix)]
+    {
+        if config.socket.exists() {
+            if Conn::connect(&config.socket).is_ok() {
+                return Err(DaemonError::AlreadyRunning);
+            }
+            let _ = fs::remove_file(&config.socket);
         }
-        let _ = fs::remove_file(&config.socket);
+    }
+    // A live pipe refuses a second FILE_FLAG_FIRST_PIPE_INSTANCE below, so
+    // the same probe is inherent on Windows.
+    #[cfg(windows)]
+    if Conn::connect(&config.socket).is_ok() {
+        return Err(DaemonError::AlreadyRunning);
     }
 
-    let listener = UnixListener::bind(&config.socket)?;
-    fs::set_permissions(&config.socket, fs::Permissions::from_mode(0o600))?;
+    let listener = Listener::bind(&config.socket)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&config.socket, fs::Permissions::from_mode(0o600))?;
+    }
 
     let registry = PluginRegistry::discover(&[config.plugins_dir.clone()])?;
     let mut manager = PluginManager::new(registry, &data_dir, config.host_version.clone());
@@ -320,6 +342,7 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
 
     state.manager.shutdown();
     drop(accept_thread);
+    #[cfg(unix)]
     let _ = fs::remove_file(&config.socket);
     Ok(())
 }
@@ -435,15 +458,15 @@ fn broadcast(state: &mut State, event: Value) {
         .retain(|subscriber| subscriber.send(event.clone()).is_ok());
 }
 
-fn accept_loop(listener: UnixListener, commands: Sender<Command>) {
-    for stream in listener.incoming() {
-        let Ok(stream) = stream else { continue };
+fn accept_loop(listener: Listener, commands: Sender<Command>) {
+    loop {
+        let Ok(conn) = listener.accept() else { break };
         let commands = commands.clone();
-        thread::spawn(move || client_loop(stream, commands));
+        thread::spawn(move || client_loop(conn, commands));
     }
 }
 
-fn client_loop(stream: UnixStream, commands: Sender<Command>) {
+fn client_loop(stream: Conn, commands: Sender<Command>) {
     let reader_stream = match stream.try_clone() {
         Ok(stream) => stream,
         Err(_) => return,
@@ -507,10 +530,10 @@ fn client_loop(stream: UnixStream, commands: Sender<Command>) {
         }
         line.clear();
     }
-    let _ = writer.shutdown(Shutdown::Both);
+    writer.shutdown();
 }
 
-fn write_response(writer: &mut UnixStream, response: &Response) -> std::io::Result<()> {
+fn write_response(writer: &mut Conn, response: &Response) -> std::io::Result<()> {
     serde_json::to_writer(&mut *writer, response).map_err(std::io::Error::other)?;
     writer.write_all(b"\n")?;
     writer.flush()

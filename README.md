@@ -347,7 +347,9 @@ Esc 关闭；下载空状态提供“清除筛选条件”，一次恢复全部�
 - 详情面板按图标设计，标签在悬停提示里；不展示真实分段图与 BT 节点
 - 没有系统托盘、剪贴板监听与多语言；协议关联由安装包注册；Windows 暂无
   桌面通知（需要额外依赖）
-- Windows/macOS 包只含 Host：daemon 依赖 Unix socket，命名管道尚未实现
+- Windows/macOS 包只含 Host + daemon：UI 与 daemon 之间已用命名管道
+  （Windows）/Unix socket（Unix）通信，但 Windows 安装包尚未随附插件 exe，
+  通知在 Windows 上保持静默
 - 窗口默认 900×600，最小 900×560；没有做手机/超窄窗口布局
 
 剩余特性的具体实施方案与开发环境要点（e2e 约定、Xvfb 冒烟配方、已知坑）

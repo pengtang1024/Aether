@@ -45,7 +45,6 @@ pub fn write_message<W: Write>(writer: &mut W, value: &Value) -> std::io::Result
     writer.flush()
 }
 
-#[cfg(unix)]
 pub fn handle_message(message: &Value) -> Value {
     let kind = message.get("type").and_then(Value::as_str).unwrap_or("add");
     match kind {
@@ -61,7 +60,6 @@ pub fn handle_message(message: &Value) -> Value {
     }
 }
 
-#[cfg(unix)]
 fn handle_add(message: &Value) -> Value {
     let Some(url) = message.get("url").and_then(Value::as_str) else {
         return json!({"ok": false, "error": "url is required"});
@@ -125,7 +123,6 @@ fn safe_scheme(url: &str) -> bool {
     )
 }
 
-#[cfg(unix)]
 fn connect() -> Result<aether_daemon::Client, String> {
     let socket = aether_daemon::client::default_socket();
     if let Ok(client) = aether_daemon::Client::connect(&socket) {
@@ -133,17 +130,19 @@ fn connect() -> Result<aether_daemon::Client, String> {
     }
 
     let daemon = std::env::var("AETHER_DAEMON").unwrap_or_else(|_| {
+        let daemon_name = format!("aether-daemon{}", std::env::consts::EXE_SUFFIX);
         let sibling = std::env::current_exe()
             .ok()
-            .and_then(|path| path.parent().map(|parent| parent.join("aether-daemon")))
+            .and_then(|path| path.parent().map(|parent| parent.join(daemon_name)))
             .filter(|path| path.is_file());
         sibling
             .map(|path| path.to_string_lossy().into_owned())
             .unwrap_or_else(|| "aether-daemon".into())
     });
-    let download_dir = std::env::var("AETHER_DOWNLOAD_DIR")
-        .or_else(|_| std::env::var("HOME").map(|home| format!("{home}/Downloads")))
-        .unwrap_or_else(|_| "downloads".into());
+    let home = std::env::var(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+        .unwrap_or_else(|_| ".".into());
+    let download_dir =
+        std::env::var("AETHER_DOWNLOAD_DIR").unwrap_or_else(|_| format!("{home}/Downloads"));
     let mut command = std::process::Command::new(daemon);
     command
         .arg("--download-dir")

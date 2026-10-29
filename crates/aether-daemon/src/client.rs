@@ -1,7 +1,6 @@
 //! Minimal synchronous client for the daemon socket.
 
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
@@ -14,6 +13,7 @@ use crate::client_types::PluginInfo;
 use crate::client_types::Stats;
 use crate::error::DaemonError;
 use crate::proto::{Request, Response};
+use crate::transport::Conn;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct AddResult {
@@ -32,17 +32,17 @@ pub struct AddResult {
 }
 
 pub struct Client {
-    reader: BufReader<UnixStream>,
-    writer: UnixStream,
+    reader: BufReader<Conn>,
+    writer: Conn,
     next_id: u64,
 }
 
 impl Client {
     pub fn connect(socket: &Path) -> Result<Self, DaemonError> {
-        let stream = UnixStream::connect(socket)?;
+        let conn = Conn::connect(socket)?;
         Ok(Self {
-            reader: BufReader::new(stream.try_clone()?),
-            writer: stream,
+            reader: BufReader::new(conn.try_clone()?),
+            writer: conn,
             next_id: 1,
         })
     }
@@ -356,7 +356,7 @@ impl Client {
 }
 
 pub struct Subscription {
-    _writer: UnixStream,
+    _writer: Conn,
     events: Receiver<Value>,
 }
 
@@ -368,13 +368,23 @@ impl Subscription {
     }
 }
 
+/// Where the daemon listens: a socket path on Unix, a per-user named pipe on
+/// Windows (`AETHER_SOCKET` overrides both).
 pub fn default_socket() -> PathBuf {
     if let Ok(value) = std::env::var("AETHER_SOCKET") {
         return PathBuf::from(value);
     }
-    if let Ok(runtime) = std::env::var("XDG_RUNTIME_DIR") {
-        return PathBuf::from(runtime).join("aether").join("daemon.sock");
+    #[cfg(windows)]
+    {
+        let user = std::env::var("USERNAME").unwrap_or_else(|_| "user".into());
+        return PathBuf::from(format!(r"\\.\pipe\aether-{user}"));
     }
-    let user = std::env::var("USER").unwrap_or_else(|_| "user".into());
-    std::env::temp_dir().join(format!("aether-{user}.sock"))
+    #[cfg(unix)]
+    {
+        if let Ok(runtime) = std::env::var("XDG_RUNTIME_DIR") {
+            return PathBuf::from(runtime).join("aether").join("daemon.sock");
+        }
+        let user = std::env::var("USER").unwrap_or_else(|_| "user".into());
+        std::env::temp_dir().join(format!("aether-{user}.sock"))
+    }
 }

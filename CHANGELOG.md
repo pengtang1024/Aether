@@ -7,6 +7,17 @@ versioning; 0.x releases may still change structure.
 
 ### Added
 
+- The daemon and UI now run on Windows. `aether-daemon` speaks JSON lines over
+  a per-user named pipe (`\\.\pipe\aether-<user>`, default DACL = same user,
+  no new dependency — kernel32 is bound directly in
+  `crates/aether-daemon/src/transport.rs`) instead of a Unix socket; the wire
+  contract in `docs/UI_INTEGRATION.md` is unchanged. The UI backend, the
+  daemon client, `aether-cli remote|import` and `aether-native-host` lost
+  their `#[cfg(unix)]` stubs, and a transport loopback test
+  (`crates/aether-daemon/tests/transport.rs`) runs on both platforms —
+  including in the CI Windows job. Desktop notifications remain silent on
+  Windows (honest gap; `notify-rust` is the candidate).
+
 - Dashboard and plugin management are real: the daemon serves `stats`
   (today/week volume, per-day bars, per-type storage split, disk usage, task
   and plugin counts, real paths) and

@@ -9,11 +9,13 @@
 aether-daemon
   ├─ PluginManager（插件进程 / 可选 cdylib）
   ├─ TaskStore（SQLite）
-  ├─ Unix socket server
+  ├─ IPC server（Unix socket / Windows named pipe，见 transport.rs）
   └─ 事件循环：进度/完成/失败/最终落盘
 ```
 
 - 单实例：socket + `flock` 锁；第二个实例直接失败。
+- Windows 上端点是每用户命名管道 `\\.\pipe\aether-<用户名>`，由默认 DACL
+  限定当前用户；协议行格式与 Unix 完全一致。
 - 默认 socket：
   - `$XDG_RUNTIME_DIR/aether/daemon.sock`
   - 回退 `/tmp/aether-<user>.sock`
@@ -282,12 +284,13 @@ daemon 是常驻入口，但“接管所有下载”还需要：
 3. **剪贴板监听/RSS**：Host 功能，默认关闭。
 4. **桌面 UI 连接 daemon**：Slint Host 作为 socket 客户端，不再直接持有插件进程。
 5. **权限与自动启动策略**：systemd user unit、首次启动授权、单用户 session。
-6. **多用户/远程**：当前只支持本机同用户 Unix socket；不做局域网 TCP。
+6. **多用户/远程**：当前只支持本机同用户（Unix socket 或 Windows 命名管道）；
+   不做局域网 TCP。
 
 ## 7. 安全边界
 
 - 不做 localhost TCP，避免网页/局域网访问。
-- socket 权限 0600；请求只能由同用户发起。
+- socket 权限 0600；Windows 管道走默认 DACL（仅同用户）；请求只能由同用户发起。
 - `add` 的 URL/settings 会传给第一方插件；插件仍受 Host 最终落盘路径校验。
 - cdylib 插件在 Host 进程内运行，daemon 默认只加载 `kind: "process"` 的插件；
   启用 cdylib 需显式配置并接受崩溃风险。
