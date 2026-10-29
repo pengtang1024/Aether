@@ -94,6 +94,11 @@ pub struct Settings {
     /// normalised to `None` by `set_settings`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rpc_secret: Option<String>,
+    /// ffmpeg binary for plugins that shell out (rtmp capture, media
+    /// remux). Injected into task settings at `add` time when the task
+    /// does not set its own `ffmpeg_path`; blank input clears it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ffmpeg_path: Option<String>,
 }
 
 /// The upper bound the http plugin honours for [`Settings::connections`]:
@@ -107,7 +112,7 @@ pub const CONNECTIONS_DEFAULT: u32 = 4;
 /// Every key `set_settings` accepts. The file is parsed with
 /// `deny_unknown_fields`, so the RPC rejects the same typos instead of
 /// silently storing nothing.
-pub const KEYS: [&str; 20] = [
+pub const KEYS: [&str; 21] = [
     "proxy",
     "user_agent",
     "ip_mode",
@@ -128,6 +133,7 @@ pub const KEYS: [&str; 20] = [
     "schedule_end",
     "rpc_listen",
     "rpc_secret",
+    "ffmpeg_path",
 ];
 
 /// The limits in force: `settings.json` wins, the boot configuration
@@ -648,6 +654,7 @@ mod tests {
             schedule_end: Some("07:00".into()),
             rpc_listen: Some("127.0.0.1:9090".into()),
             rpc_secret: Some("token".into()),
+            ffmpeg_path: Some("/usr/bin/ffmpeg".into()),
         };
         let object = serde_json::to_value(settings).unwrap();
         let object = object.as_object().unwrap();

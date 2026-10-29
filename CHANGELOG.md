@@ -7,6 +7,20 @@ versioning; 0.x releases may still change structure.
 
 ### Added
 
+- HLS/DASH downloads can be remuxed to another container after they finish:
+  the task-level `transcode_to` setting names the container and the media
+  plugin runs `ffmpeg -c copy` (container change only, no re-encode) with
+  `-progress pipe:1` parsed into the task's progress. A failed or missing
+  ffmpeg never costs the user the download — the original file is kept, the
+  task completes, and the reason (including ffmpeg's stderr tail) lands in
+  `plugin_state.transcode.note`; half-written output is removed. The new
+  daemon-wide `ffmpeg_path` setting is injected into task settings at add
+  time (a task-level value wins) and is shared with rtmp capture; the media
+  settings page gained the path row. Acceptance: fake-ffmpeg e2e
+  (`crates/aether-plugin-media/tests/transcode_e2e.rs`) asserting the argv,
+  exit 0 renaming, exit 1 keeping the original, a missing binary, and the
+  no-setting passthrough.
+
 - Browser takeover is now end-to-end wired. The extension attaches cookies to
   downloads only after the user enables it in the options page (the browser's
   own optional-permission prompt; off by default, never stored), interception

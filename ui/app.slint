@@ -62,6 +62,7 @@ export component AppWindow inherits Window {
     in-out property <float> settings-bt-upload-kbps: 512;
     in-out property <string> settings-bt-blocklist: "";
     in-out property <string> settings-bt-trackers: "";
+    in-out property <string> settings-media-ffmpeg: "";
     // UI-local preferences (settings page).
     in-out property <int> settings-start-page: 0;   // 0=主页, 1=下载列表, 2=上次页面
     in-out property <int> settings-after-done: 0;   // 0=不操作, 1=打开文件夹, 2=打开文件
@@ -500,6 +501,7 @@ export component AppWindow inherits Window {
                         bt-upload-kbps <=> root.settings-bt-upload-kbps;
                         bt-blocklist <=> root.settings-bt-blocklist;
                         bt-trackers <=> root.settings-bt-trackers;
+                        media-ffmpeg <=> root.settings-media-ffmpeg;
                         start-page <=> root.settings-start-page;
                         after-done <=> root.settings-after-done;
                         accent-index <=> root.settings-accent;

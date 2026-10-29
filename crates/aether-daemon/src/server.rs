@@ -1216,6 +1216,13 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
                     })?;
                 next.rpc_secret = text.filter(|text| !text.trim().is_empty());
             }
+            if let Some(value) = patch.get("ffmpeg_path") {
+                let text: Option<String> =
+                    serde_json::from_value(value.clone()).map_err(|error| {
+                        DaemonError::Protocol(format!("invalid ffmpeg_path: {error}"))
+                    })?;
+                next.ffmpeg_path = text.filter(|text| !text.trim().is_empty());
+            }
             next.validate()?;
 
             let network_before = state.settings.network();
@@ -1370,7 +1377,17 @@ fn add_task(state: &mut State, request: Request) -> Result<Value, DaemonError> {
 
     // -100..=100 keeps a single task from starving the queue forever.
     let priority = request.priority.unwrap_or(0).clamp(-100, 100);
-    let settings = request.settings;
+    let mut settings = request.settings;
+    // The daemon-wide ffmpeg path is a default, not an override: a task that
+    // names its own binary (or none at all) keeps/loses to its own choice,
+    // and the value is persisted so the record shows what will actually run.
+    if let Some(ffmpeg) = state.settings.ffmpeg_path.as_deref() {
+        if let Some(object) = settings.as_object_mut() {
+            object
+                .entry("ffmpeg_path")
+                .or_insert_with(|| serde_json::Value::String(ffmpeg.to_string()));
+        }
+    }
     state.store.create_task(&NewTask {
         id: task_id.clone(),
         url: url.clone(),

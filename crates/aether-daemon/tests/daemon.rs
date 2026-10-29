@@ -409,6 +409,53 @@ fn daemon_applies_scheduler_limits_from_settings() {
 }
 
 #[test]
+fn daemon_injects_the_global_ffmpeg_path_into_tasks() {
+    let Some(daemon) = spawn_daemon("ffmpeg", 1, None) else {
+        eprintln!("fake plugin binary is not built; skipping");
+        return;
+    };
+    let socket = daemon.socket.clone();
+
+    let mut client = connect(&socket);
+    client
+        .set_settings(json!({"ffmpeg_path": "/opt/ffmpeg/bin/ffmpeg"}))
+        .unwrap();
+
+    // A task without its own binary inherits the daemon-wide path, stored
+    // in its record so the detail page shows what will actually run.
+    let plain = client
+        .add("https://example.com/plain.bin", None, None)
+        .unwrap();
+    let plain_id = plain["task_id"].as_str().unwrap().to_string();
+    assert_reaches(&mut client, &plain_id, "completed", 300);
+    let record = client.task_record(&plain_id).unwrap();
+    assert_eq!(
+        record.settings["ffmpeg_path"], "/opt/ffmpeg/bin/ffmpeg",
+        "daemon ffmpeg_path must reach the task"
+    );
+
+    // A task-level choice wins over the global default.
+    let custom = client
+        .add_with_settings(
+            "https://example.com/custom.bin",
+            None,
+            None,
+            json!({"ffmpeg_path": "/home/user/bin/ffmpeg"}),
+        )
+        .unwrap();
+    let custom_id = custom["task_id"].as_str().unwrap().to_string();
+    assert_reaches(&mut client, &custom_id, "completed", 300);
+    let record = client.task_record(&custom_id).unwrap();
+    assert_eq!(
+        record.settings["ffmpeg_path"], "/home/user/bin/ffmpeg",
+        "task-level ffmpeg_path must not be overwritten"
+    );
+
+    client.shutdown().unwrap();
+    daemon.shutdown();
+}
+
+#[test]
 fn daemon_resume_restarts_a_failed_task() {
     let Some(daemon) = spawn_daemon("resume", 1, None) else {
         eprintln!("fake plugin binary is not built; skipping");

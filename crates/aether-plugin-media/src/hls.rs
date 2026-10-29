@@ -295,20 +295,30 @@ fn download_inner(
     }
 
     let _ = fs::remove_file(&state_path);
+    // Optional container remux (`transcode_to`): runs after the download is
+    // complete and never fails the task — on error the original file is
+    // kept and the note lands in plugin_state.
+    let downloaded = FileInfo {
+        relative_path: filename,
+        size: offset,
+        checksum: Some(Checksum {
+            algorithm: ChecksumAlgorithm::Sha256,
+            value: checksum,
+        }),
+    };
+    let (finished, transcode_note) =
+        crate::transcode::maybe_remux(sender, task, &paths.staging, &downloaded, progress);
+    let mut plugin_state = serde_json::json!({
+        "playlist": playlist_url.to_string(),
+        "segments": jobs.len(),
+    });
+    if let Some(note) = transcode_note {
+        plugin_state["transcode"] = serde_json::json!({"ok": false, "note": note});
+    }
     sender.send(&PluginEvent::Completed {
         task_id: task.task_id.clone(),
-        files: vec![FileInfo {
-            relative_path: filename,
-            size: offset,
-            checksum: Some(Checksum {
-                algorithm: ChecksumAlgorithm::Sha256,
-                value: checksum,
-            }),
-        }],
-        plugin_state: Some(serde_json::json!({
-            "playlist": playlist_url.to_string(),
-            "segments": jobs.len(),
-        })),
+        files: vec![finished],
+        plugin_state: Some(plugin_state),
     })?;
 
     Ok(())

@@ -400,6 +400,7 @@ fn refresh_rows(ui: &AppWindow, state: &Rc<RefCell<State>>) {
             );
             ui.set_settings_bt_blocklist(settings["bt_blocklist"].as_str().unwrap_or("").into());
             ui.set_settings_bt_trackers(settings["bt_trackers"].as_str().unwrap_or("").into());
+            ui.set_settings_media_ffmpeg(settings["ffmpeg_path"].as_str().unwrap_or("").into());
             // Scheduled window (daemon-side; HH:MM strings, blank = unset).
             ui.set_settings_schedule_on(settings["schedule_on"].as_bool().unwrap_or(false));
             ui.set_settings_schedule_start(
@@ -1258,6 +1259,11 @@ fn main() -> Result<(), slint::PlatformError> {
                         st.backend
                             .set_setting(serde_json::json!({"default_headers": value.as_str()}));
                         hint = Some("请求头已保存：空闲插件重启后生效".into());
+                    }
+                    "ffmpeg-path" => {
+                        st.backend
+                            .set_setting(serde_json::json!({"ffmpeg_path": value.as_str()}));
+                        hint = Some("ffmpeg 路径已保存：对之后开始的任务生效".into());
                     }
                     "ftp-passive" => {
                         st.backend.set_setting(serde_json::json!({

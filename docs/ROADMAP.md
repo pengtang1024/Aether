@@ -155,19 +155,25 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
 
 ### 4.4 媒体转码（ffmpeg 管线）
 
-- **现状**：media 插件是纯 Rust 的 HLS/DASH 下载+解密合并（不用 ffmpeg）；
-  rtmp 插件已有 `ffmpeg_path` settings key + `AETHER_FFMPEG` env；
-  UI 媒体页是能力说明卡。
-- **方案**：
-  - media 插件下载完成后按任务级 key `transcode_to`（容器名）spawn ffmpeg
-    做 remux（`-c copy`）或转码；进度从 ffmpeg `-progress pipe:1` 解析进
-    SharedProgress；失败保留原文件并在日志说明。
-  - 全局 `ffmpeg_path` 与 rtmp 的 key 语义对齐（daemon settings → 注入任务
-    settings 或 NetworkConfig，选后者需给 media 插件加 Init 读取）。
-  - UI 恢复 ffmpeg 路径行（rtmp/media 共用）+ 完成后转码开关（任务级语义要
-    如实描述）。
-- **验收**：假 ffmpeg 脚本 e2e（记录 argv、退出 0 → 任务完成、退出 1 →
-  保留原文件并 failed）。
+- **已落地（2026-10-29）**：
+  - media 插件新增 `transcode` 模块：HLS/DASH 下载完成后，任务级
+    `transcode_to`（容器名）触发 `ffmpeg -c copy` 转封装（不重编码）。
+    `-progress pipe:1` 的 `out_time` 解析进进度事件（UI 显示为处理中的
+    计数；没有字节总量可映射）。
+  - **失败永不毁文件**：ffmpeg 缺失/非零退出/无输出 → 保留原文件、任务
+    正常完成，原因（含 stderr 尾行）写进 `plugin_state.transcode.note`；
+    半写输出被清理。容器名做了白名单校验（≤8 字符字母数字），不进 shell。
+  - daemon settings 新增全局 `ffmpeg_path`（KEYS 第 21 键）：`add` 时注入
+    任务 settings（`entry().or_insert`——任务自带的不被覆盖），rtmp 与
+    media 共用同一语义（task.settings.ffmpeg_path > AETHER_FFMPEG > PATH）。
+  - UI 媒体页：ffmpeg 路径行（回车提交，提示「对之后开始的任务生效」），
+    HLS/DASH 描述更新为已支持转封装。
+  - 验收：`tests/transcode_e2e.rs` 假 ffmpeg e2e（4 用例：argv 断言
+    `-c copy`/`-progress pipe:1`/真实路径、退出 0 换名删原件、退出 1 保留
+    原件且 note 含 stderr、缺失二进制保留原件、无 `transcode_to` 不碰文件）
+    + daemon e2e 注入/覆盖用例 + 容器名校止单测。
+- **诚实的边界**：只做 `-c copy` 转封装（容器不兼容时 ffmpeg 会失败→保留
+  原件）；不做音视频分离合并、不重编码。直播 HLS 仍不支持。
 
 ### 4.5 托盘 / 剪贴板 / i18n
 

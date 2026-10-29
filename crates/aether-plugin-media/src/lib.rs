@@ -5,5 +5,6 @@ pub mod error;
 pub mod hls;
 pub mod http;
 pub mod plugin;
+pub mod transcode;
 
 pub use plugin::MediaPlugin;

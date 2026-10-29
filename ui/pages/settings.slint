@@ -570,6 +570,11 @@ component BtPanel inherits Rectangle {
 }
 
 component MediaPanel inherits Rectangle {
+    // Daemon-backed ffmpeg path, shared by rtmp capture and the media
+    // remux step; edits go out on `changed` (commit on Enter).
+    in-out property <string> ffmpeg-value: "";
+    callback changed(string, string);
+
     VerticalLayout {
         width: 100%;
         spacing: 16px;
@@ -584,7 +589,7 @@ component MediaPanel inherits Rectangle {
             SettingRow {
                 icon-source: AetherIcons.play;
                 title: "HLS / DASH 直链";
-                description: "粘贴 .m3u8 / .mpd 链接即可下载，AES 加密分段自动解密合并；网页嗅探、音视频分离合并与转码尚未实现";
+                description: "粘贴 .m3u8 / .mpd 链接即可下载，AES 加密分段自动解密合并；下载完成后可按任务转封装容器（transcode_to，仅 -c copy 不重编码）";
                 divider: false;
                 Text {
                     text: "已支持";
@@ -592,6 +597,26 @@ component MediaPanel inherits Rectangle {
                     font-size: Aether.text-caption;
                     font-weight: Aether.weight-medium;
                     vertical-alignment: center;
+                }
+            }
+        }
+
+        SectionCard {
+            icon-source: AetherIcons.tune;
+            title: "ffmpeg";
+            subtitle: "rtmp 直播录制与媒体转封装共用";
+
+            SettingRow {
+                icon-source: AetherIcons.info;
+                title: "ffmpeg 路径";
+                description: "留空使用 PATH 里的 ffmpeg（或 AETHER_FFMPEG 环境变量）；对之后开始的任务生效";
+                LineEdit {
+                    text <=> root.ffmpeg-value;
+                    min-width: Aether.field-md;
+                    max-width: Aether.field-md;
+                    placeholder-text: "ffmpeg";
+                    accepted => { root.changed("ffmpeg-path", self.text); }
+                    edited(text) => { if (text == "") { root.changed("ffmpeg-path", text); } }
                 }
             }
         }
@@ -1186,6 +1211,8 @@ export component SettingsPage inherits Rectangle {
     in-out property <float> bt-upload-kbps: 512;
     in-out property <string> bt-blocklist: "";
     in-out property <string> bt-trackers: "";
+    // Daemon-backed ffmpeg path (rtmp capture + media remux).
+    in-out property <string> media-ffmpeg: "";
     // UI-local preferences (mirrored by the window).
     in-out property <int> start-page: 0;
     in-out property <int> after-done: 0;
@@ -1300,7 +1327,10 @@ export component SettingsPage inherits Rectangle {
                     bt-trackers-value <=> root.bt-trackers;
                     changed(k, v) => { root.settings-changed(k, v); }
                 }
-                if root.tab == 4: MediaPanel { }
+                if root.tab == 4: MediaPanel {
+                    ffmpeg-value <=> root.media-ffmpeg;
+                    changed(k, v) => { root.settings-changed(k, v); }
+                }
                 if root.tab == 5: PluginPanel {
                     plugins-dir: root.plugins-dir;
                     changed(k, v) => { root.settings-changed(k, v); }
