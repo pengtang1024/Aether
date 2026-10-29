@@ -1096,7 +1096,7 @@ fn main() -> Result<(), slint::PlatformError> {
     }
     // Rust-side strings follow UiPrefs.lang; must precede any translated
     // push (extension status, refresh labels) below.
-    i18n::set_language(state.borrow().prefs.lang == "en");
+    i18n::set_language(state.borrow().prefs.lang.as_str());
 
     // UI-local preferences: push into the window (which applies accent /
     // motion / flow through apply-appearance) and pick the start page.
@@ -1122,11 +1122,11 @@ fn main() -> Result<(), slint::PlatformError> {
         // selects the bundled translation. Runs before the first render
         // so the window never flashes the wrong language.
         if let Err(error) =
-            slint::select_bundled_translation(if prefs.lang == "en" { "en" } else { "" })
+            slint::select_bundled_translation(if prefs.lang == "zh" { "" } else { &prefs.lang })
         {
             eprintln!("aether: language selection failed: {error:?}");
         }
-        ui.set_settings_language(if prefs.lang == "en" { 1 } else { 0 });
+        ui.set_settings_language(i18n::index_of(&prefs.lang) as i32);
     }
 
     // Initial data.
@@ -1558,24 +1558,34 @@ fn main() -> Result<(), slint::PlatformError> {
                     },
                     // Persisted locally, no daemon round-trip.
                     "language" => {
-                        let english = value.as_str() == "English";
-                        st.prefs.lang = if english { "en".into() } else { "zh".into() };
+                        // The ComboBox shows the display names; resolve the
+                        // language code through the shared table so the UI
+                        // list and the runtime cannot drift.
+                        let code = i18n::LANGUAGES
+                            .iter()
+                            .find(|(_, name)| *name == value.as_str())
+                            .map(|(code, _)| *code)
+                            .unwrap_or("zh");
+                        st.prefs.lang = code.to_string();
                         st.prefs.save();
-                        // Bundled translations re-evaluate on select; no
-                        // explicit update_all_translations call needed.
-                        if let Err(error) =
-                            slint::select_bundled_translation(if english { "en" } else { "" })
-                        {
+                        i18n::set_language(code);
+                        if let Err(error) = slint::select_bundled_translation(if code == "zh" {
+                            ""
+                        } else {
+                            code
+                        }) {
                             eprintln!("aether: language selection failed: {error:?}");
                         }
-                        i18n::set_language(english);
                         if let Some(ui) = ui_handle.upgrade() {
-                            ui.set_settings_language(if english { 1 } else { 0 });
+                            ui.set_settings_language(i18n::index_of(code) as i32);
                         }
-                        hint = Some(if english {
-                            "Language switched to English".into()
+                        hint = Some(if code == "zh" {
+                            "界面语言已切回简体中文".into()
                         } else {
-                            i18n::tr("界面语言已切回简体中文", "Switched back to Chinese").into()
+                            i18n::tr(
+                                "界面语言已切换（Rust 侧字符串仅完整支持中文与英文）",
+                                format!("Language switched to {code} (Rust-side strings cover Chinese and English)"),
+                            )
                         });
                     }
                     "theme" => {}

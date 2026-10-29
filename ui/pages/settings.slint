@@ -1020,7 +1020,7 @@ component AppearancePanel inherits Rectangle {
                 title: @tr("界面语言");
                 description: @tr("中文为内置源语言；切换立即生效");
                 ComboBox {
-                    model: ["简体中文", "English"];
+                    model: ["简体中文", "English", "日本語", "繁體中文"];
                     current-index <=> root.language-index;
                     min-width: Aether.field-md;
                     max-width: Aether.field-md;

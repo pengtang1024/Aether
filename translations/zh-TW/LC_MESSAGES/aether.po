@@ -1,0 +1,755 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: zh-TW\n"
+
+msgid "常规"
+msgstr "一般"
+
+msgid "启动与存储"
+msgstr "啟動與儲存"
+
+msgid "下载"
+msgstr "下載"
+
+msgid "下载列表"
+msgstr "下載清單"
+
+msgid "没有符合条件的任务"
+msgstr "沒有符合條件的任務"
+
+msgid "尝试切换筛选条件，或调整搜索关键词"
+msgstr "嘗試切換篩選條件，或調整搜尋關鍵詞"
+
+msgid "清除筛选条件"
+msgstr "清除篩選條件"
+
+msgid "实时速度"
+msgstr "即時速度"
+
+msgid "当前速度"
+msgstr "目前速度"
+
+msgid "实时更新"
+msgstr "即時更新"
+
+msgid "限速"
+msgstr "限速"
+
+msgid "任务"
+msgstr "任務"
+
+msgid "活跃任务"
+msgstr "工作中任務"
+
+msgid "实时下载中"
+msgstr "目前下載中"
+
+msgid "已完成"
+msgstr "已完成"
+
+msgid "暂停"
+msgstr "已暫停"
+
+msgid "失败"
+msgstr "失敗"
+
+msgid "种子"
+msgstr "種子"
+
+msgid "数据统计"
+msgstr "資料統計"
+
+msgid "本周下载"
+msgstr "本週下載"
+
+msgid "存储与分类"
+msgstr "儲存與分類"
+
+msgid "磁盘使用"
+msgstr "磁碟使用量"
+
+msgid "本周入库"
+msgstr "本週新增"
+
+msgid "视频"
+msgstr "影片"
+
+msgid "压缩包"
+msgstr "壓縮檔"
+
+msgid "应用"
+msgstr "應用程式"
+
+msgid "文档"
+msgstr "文件"
+
+msgid "系统与会话"
+msgstr "系統與工作階段"
+
+msgid "版本"
+msgstr "版本"
+
+msgid "引擎"
+msgstr "引擎"
+
+msgid "浏览器扩展"
+msgstr "瀏覽器擴充功能"
+
+msgid "插件"
+msgstr "外掛"
+
+msgid "协议"
+msgstr "協定"
+
+msgid "运行"
+msgstr "執行時間"
+
+msgid "下载设置"
+msgstr "下載設定"
+
+msgid "https://…（空格分隔可一次粘贴多个链接/磁力）"
+msgstr "https://…（空白分隔可一次貼上多個連結/磁力）"
+
+msgid "保存路径"
+msgstr "儲存路徑"
+
+msgid "分段数"
+msgstr "分段數"
+
+msgid "单任务限速"
+msgstr "單任務限速"
+
+msgid "备注"
+msgstr "備註"
+
+msgid "启动"
+msgstr "啟動"
+
+msgid "启动页面"
+msgstr "啟動頁面"
+
+msgid "每次打开 Aether 时显示的页面"
+msgstr "每次開啟 Aether 時顯示的頁面"
+
+msgid "存储"
+msgstr "儲存"
+
+msgid "默认下载目录"
+msgstr "預設下載資料夾"
+
+msgid "daemon 启动参数决定，新任务默认保存到这里"
+msgstr "由 daemon 啟動參數決定；新任務的預設儲存位置"
+
+msgid "剪贴板"
+msgstr "剪貼簿"
+
+msgid "检测下载链接"
+msgstr "偵測下載連結"
+
+msgid "并发与分段"
+msgstr "並行與分段"
+
+msgid "同时进行的下载数"
+msgstr "同時進行的下載數"
+
+msgid "超出后任务进入等待队列"
+msgstr "超出後任務進入等待佇列"
+
+msgid "每任务连接数"
+msgstr "單一任務連線數"
+
+msgid "HTTP(S) 单任务并行连接数，上限 16"
+msgstr "HTTP(S) 單任務平行連線數，上限 16"
+
+msgid "失败重试次数"
+msgstr "失敗重試次數"
+
+msgid "网络抖动或超时后自动重试"
+msgstr "網路抖動或逾時後自動重試"
+
+msgid "带宽"
+msgstr "頻寬"
+
+msgid "启用全局限速"
+msgstr "啟用全局限速"
+
+msgid "限制所有任务的合计带宽"
+msgstr "限制所有任務的合計頻寬"
+
+msgid "下载限速"
+msgstr "下載限速"
+
+msgid "完成后动作"
+msgstr "完成後動作"
+
+msgid "任务下载完成后的默认行为"
+msgstr "任務完成後的預設行為"
+
+msgid "代理"
+msgstr "代理"
+
+msgid "代理模式"
+msgstr "代理模式"
+
+msgid "跟随系统或为 Aether 单独配置"
+msgstr "跟隨系統或為 Aether 單獨設定"
+
+msgid "代理地址"
+msgstr "代理位址"
+
+msgid "支持 HTTP / SOCKS5；切到手动模式后生效"
+msgstr "支援 HTTP / SOCKS5；切到手動模式後生效"
+
+msgid "DNS 服务器"
+msgstr "DNS 伺服器"
+
+msgid "仅 HTTP(S) 生效；指定后失败即报错，不回退系统 DNS"
+msgstr "僅 HTTP(S) 生效；指定後失敗即回報，不回退系統 DNS"
+
+msgid "IP 协议"
+msgstr "IP 協定"
+
+msgid "仅 HTTP(S) 下载生效；BT / FTP 不受影响"
+msgstr "僅 HTTP(S) 下載生效；BT / FTP 不受影響"
+
+msgid "协议与请求"
+msgstr "協定與請求"
+
+msgid "留空使用 Aether 默认值；改动对空闲插件立即生效"
+msgstr "留空使用 Aether 預設值；改動對閒置外掛立即生效"
+
+msgid "自定义请求头"
+msgstr "自訂請求標頭"
+
+msgid "Key: Value，多条用分号分隔；仅 HTTP 族插件，任务级同名头优先"
+msgstr "Key: Value，多條用分號分隔；僅 HTTP 族外掛，任務級同名標頭優先"
+
+msgid "FTP 被动模式"
+msgstr "FTP 被動模式"
+
+msgid "兼容更多 FTP 服务器；关闭后使用主动模式"
+msgstr "相容更多 FTP 伺服器；關閉後使用主動模式"
+
+msgid "连接"
+msgstr "連線"
+
+msgid "监听端口"
+msgstr "監聽連接埠"
+
+msgid "需要放行时在路由器中转发"
+msgstr "需要放行時在路由器中轉發"
+
+msgid "通过分布式哈希表发现节点"
+msgstr "透過分散式雜湊表發現節點"
+
+msgid "做种"
+msgstr "做種"
+
+msgid "上传限速"
+msgstr "上傳限速"
+
+msgid "过滤与 Tracker"
+msgstr "篩選與 Tracker"
+
+msgid "屏蔽列表路径"
+msgstr "封鎖清單路徑"
+
+msgid "dat 格式黑名单文件或 URL；留空不启用"
+msgstr "dat 格式黑名單檔案或 URL；留空不啟用"
+
+msgid "Tracker 列表"
+msgstr "Tracker 清單"
+
+msgid "附加到所有种子；多条用分号分隔"
+msgstr "附加到所有種子；多條用分號分隔"
+
+msgid "媒体下载"
+msgstr "媒體下載"
+
+msgid "HLS / DASH 直链"
+msgstr "HLS / DASH 直連"
+
+msgid "粘贴 .m3u8 / .mpd 链接即可下载，AES 加密分段自动解密合并；下载完成后可按任务转封装容器（transcode_to，仅 -c copy 不重编码）"
+msgstr "貼上 .m3u8 / .mpd 連結即可下載，AES 加密分段自動解密合併；下載完成後可按任務轉封裝容器（transcode_to，僅 -c copy 不重編碼）"
+
+msgid "已支持"
+msgstr "已支援"
+
+msgid "ffmpeg 路径"
+msgstr "ffmpeg 路徑"
+
+msgid "留空使用 PATH 里的 ffmpeg（或 AETHER_FFMPEG 环境变量）；对之后开始的任务生效"
+msgstr "留空使用 PATH 中的 ffmpeg（或 AETHER_FFMPEG 環境變數）；對之後開始的任務生效"
+
+msgid "可更新"
+msgstr "可更新"
+
+msgid "插件库"
+msgstr "外掛庫"
+
+msgid "更新全部"
+msgstr "全部更新"
+
+msgid "插件引擎"
+msgstr "外掛引擎"
+
+msgid "自动更新插件"
+msgstr "自動更新外掛"
+
+msgid "daemon 每 6 小时按更新清单安装插件新版；需配置更新清单与签名公钥"
+msgstr "daemon 每 6 小時按更新清單安裝外掛新版；需設定更新清單與簽名金鑰"
+
+msgid "加载插件目录之外的文件"
+msgstr "載入外掛目錄之外的檔案"
+
+msgid "不做签名校验的直加载没有提供；请用上面的「安装插件」（会复制进插件目录并验签）"
+msgstr "沒有提供未簽名驗證的直接載入；請用上方的「安裝外掛」（會複製進目錄並驗簽）"
+
+msgid "不支持"
+msgstr "不支援"
+
+msgid "插件目录"
+msgstr "外掛目錄"
+
+msgid "本地插件的安装位置"
+msgstr "本機外掛的安裝位置"
+
+msgid "安装插件"
+msgstr "安裝外掛"
+
+msgid "插件包目录的绝对路径（含 plugin.json）；daemon 校验 manifest 签名与文件哈希后复制进插件目录"
+msgstr "外掛套件目錄的絕對路徑（含 plugin.json）；daemon 校驗 manifest 簽名與檔案雜湊後複製進外掛目錄"
+
+msgid "安装"
+msgstr "安裝"
+
+msgid "开发"
+msgstr "開發"
+
+msgid "开发者模式"
+msgstr "開發者模式"
+
+msgid "插件日志查看与调试入口（任务详情里已有每任务日志）"
+msgstr "外掛日誌與偵錯入口（任務詳情裡已有每任務日誌）"
+
+msgid "未实现"
+msgstr "未實現"
+
+msgid "重新加载插件"
+msgstr "重新載入外掛"
+
+msgid "不重启应用刷新本地插件"
+msgstr "不重啟應用程式刷新本機外掛"
+
+msgid "重新加载"
+msgstr "重新載入"
+
+msgid "计划任务"
+msgstr "排程下載"
+
+msgid "启用计划下载"
+msgstr "啟用排程下載"
+
+msgid "需要填好开始与结束时间"
+msgstr "需要填好開始與結束時間"
+
+msgid "开始时间"
+msgstr "開始時間"
+
+msgid "本机时间 HH:MM，例如 01:00"
+msgstr "本機時間 HH:MM，例如 01:00"
+
+msgid "结束时间"
+msgstr "結束時間"
+
+msgid "早于开始时间表示跨午夜，例如 22:00 - 07:00"
+msgstr "早於開始時間表示跨午夜，例如 22:00 - 07:00"
+
+msgid "通知"
+msgstr "通知"
+
+msgid "下载完成"
+msgstr "下載完成"
+
+msgid "完成后通过系统通知提醒（notify-send）"
+msgstr "完成後透過系統通知提醒（notify-send）"
+
+msgid "下载失败"
+msgstr "下載失敗"
+
+msgid "失败时提醒并附错误原因；手动取消不提醒"
+msgstr "失敗時提醒並附錯誤原因；手動取消不提醒"
+
+msgid "主题"
+msgstr "主題"
+
+msgid "界面语言"
+msgstr "介面語言"
+
+msgid "中文为内置源语言；切换立即生效"
+msgstr "中文為內建來源語言；切換立即生效"
+
+msgid "默认跟随系统，也可固定浅色或深色"
+msgstr "預設跟隨系統，也可固定淺色或深色"
+
+msgid "主色"
+msgstr "色彩強調"
+
+msgid "品牌强调色，按钮、进度与高亮同步换色"
+msgstr "品牌強調色，按鈕、進度與高亮同步換色"
+
+msgid "界面"
+msgstr "介面"
+
+msgid "背景流线"
+msgstr "背景流線"
+
+msgid "窗口边缘的低对比度 Aurora 装饰"
+msgstr "視窗邊緣的低對比度 Aurora 裝飾"
+
+msgid "界面动效"
+msgstr "介面動效"
+
+msgid "关闭后所有过渡立即完成（无障碍）"
+msgstr "關閉後所有轉場立即完成（無障礙）"
+
+msgid "路径"
+msgstr "路徑"
+
+msgid "数据库路径"
+msgstr "資料庫路徑"
+
+msgid "任务、历史与插件元数据"
+msgstr "任務、歷史與外掛中繼資料"
+
+msgid "第一方插件的安装位置"
+msgstr "第一方外掛的安裝位置"
+
+msgid "维护"
+msgstr "維護"
+
+msgid "重置界面偏好"
+msgstr "重置介面偏好"
+
+msgid "恢复外观与完成动作的默认值，不影响 daemon 与任务"
+msgstr "恢復外觀與完成動作的預設值，不影響 daemon 與任務"
+
+msgid "Rust + Slint · Material 3 · 原生桌面，无 WebView"
+msgstr "Rust + Slint · Material 3 · 原生桌面，無 WebView"
+
+msgid "检查更新"
+msgstr "檢查更新"
+
+msgid "更新"
+msgstr "更新"
+
+msgid "更新通道"
+msgstr "更新通道"
+
+msgid "稳定版优先，测试版获取新能力"
+msgstr "穩定版優先，測試版搶先體驗新功能"
+
+msgid "自动下载更新"
+msgstr "自動下載更新"
+
+msgid "在后台准备新版本"
+msgstr "在背景準備新版本"
+
+msgid "版本说明"
+msgstr "版本說明"
+
+msgid "查看变更、兼容性与已知问题"
+msgstr "查看變更、相容性與已知問題"
+
+msgid "支持"
+msgstr "支援"
+
+msgid "安装、插件、RPC 与常见问题"
+msgstr "安裝、外掛、RPC 與常見問題"
+
+msgid "社区"
+msgstr "社群"
+
+msgid "讨论、分享配置与插件"
+msgstr "討論、分享設定與外掛"
+
+msgid "反馈问题"
+msgstr "回報問題"
+
+msgid "报告 Bug 或提出功能建议"
+msgstr "報告 Bug 或提出功能建議"
+
+msgid "许可"
+msgstr "授權條款"
+
+msgid "设置中心"
+msgstr "設定中心"
+
+msgid "偏好、网络与扩展"
+msgstr "偏好、網路與擴充"
+
+msgid "启动位置与窗口行为"
+msgstr "啟動位置與視窗行為"
+
+msgid "下载目录"
+msgstr "下載資料夾"
+
+msgid "复制链接后提示一键下载"
+msgstr "複製連結後提示一鍵下載"
+
+msgid "决定下载速度和服务器压力"
+msgstr "決定下載速度與伺服器壓力"
+
+msgid "全局限速与智能调度"
+msgstr "全局限速與智慧調度"
+
+msgid "完成动作"
+msgstr "完成動作"
+
+msgid "让下载经过系统或自定义网络"
+msgstr "讓下載經過系統或自訂網路"
+
+msgid "兼容性与请求行为"
+msgstr "相容性與請求行為"
+
+msgid "端口与节点发现"
+msgstr "連接埠與節點發現"
+
+msgid "上传带宽，0 为不限速"
+msgstr "上傳頻寬，0 為不限速"
+
+msgid "屏蔽规则与私有 Tracker"
+msgstr "封鎖規則與私有 Tracker"
+
+msgid "已实现的能力"
+msgstr "已具備的能力"
+
+msgid "rtmp 直播录制与媒体转封装共用"
+msgstr "rtmp 直播錄製與媒體轉檔共用"
+
+msgid "插件目录、来源与更新"
+msgstr "外掛目錄、來源與更新"
+
+msgid "调试与重新加载"
+msgstr "偵錯與重新載入"
+
+msgid "时段外自动暂停队列，到点自动恢复"
+msgstr "時段外自動暫停佇列，到點自動恢復"
+
+msgid "任务结束时的系统通知"
+msgstr "任務結束時的系統通知"
+
+msgid "Aurora ink 视觉语言"
+msgstr "Aurora ink 視覺語言"
+
+msgid "背景与动效"
+msgstr "背景與動效"
+
+msgid "daemon 的真实数据位置"
+msgstr "daemon 的真實資料位置"
+
+msgid "恢复默认外观与偏好"
+msgstr "恢復預設外觀與偏好"
+
+msgid "版本通道与自动更新"
+msgstr "版本通道與自動更新"
+
+msgid "文档、社区、反馈与许可"
+msgstr "文件、社群、回饋與授權"
+
+msgid "剪贴板出现下载链接时弹出提示，点提示直接新建任务；仅在链接变化时检测，内容不离开本机"
+msgstr "剪貼簿出現下載連結時彈出提示，點提示直接新建任務；僅在連結變化時偵測，內容不離開本機"
+
+msgid "当前会话没有可用的剪贴板后端（远程/无图形会话），此功能不可用"
+msgstr "目前工作階段沒有可用的剪貼簿後端（遠端／無圖形），此功能不可用"
+
+msgid "共 "
+msgstr "共 "
+
+msgid "全部"
+msgstr "全部"
+
+msgid "下载中"
+msgstr "下載中"
+
+msgid "已暂停"
+msgstr "已暫停"
+
+msgid "活跃 "
+msgstr "活躍 "
+
+msgid "今日下载"
+msgstr "今日下載"
+
+msgid "今日上传"
+msgstr "今日上傳"
+
+msgid "峰值速度"
+msgstr "峰值速度"
+
+msgid "上传"
+msgstr "上傳"
+
+msgid "平均文件"
+msgstr "平均檔案"
+
+msgid "成功率"
+msgstr "成功率"
+
+msgid "并发、分段、限速与磁盘策略"
+msgstr "並行、分段、限速與磁碟策略"
+
+msgid "网络"
+msgstr "網路"
+
+msgid "代理、DNS、协议与请求头"
+msgstr "代理、DNS、協定與請求標頭"
+
+msgid "端口、节点发现与做种"
+msgstr "連接埠、節點發現與做種"
+
+msgid "媒体与浏览器"
+msgstr "媒體與瀏覽器"
+
+msgid "当前能力与边界"
+msgstr "現有能力與邊界"
+
+msgid "内置"
+msgstr "內建"
+
+msgid "已启用"
+msgstr "已啟用"
+
+msgid "计划与通知"
+msgstr "排程與通知"
+
+msgid "定时任务与桌面提醒"
+msgstr "定時任務與桌面提醒"
+
+msgid "外观"
+msgstr "外觀"
+
+msgid "主题、主色与动效"
+msgstr "主題、主色與動效"
+
+msgid "高级"
+msgstr "進階"
+
+msgid "路径与维护"
+msgstr "路徑與維護"
+
+msgid "重置"
+msgstr "重設"
+
+msgid "关于与支持"
+msgstr "關於與支援"
+
+msgid "版本、更新、文档与社群"
+msgstr "版本、更新、文件與社群"
+
+msgid "打开"
+msgstr "開啟"
+
+msgid "查看"
+msgstr "檢視"
+
+msgid "传输速度  ·  峰值 "
+msgstr "傳輸速度  ·  峰值 "
+
+msgid "分片进度  "
+msgstr "分段進度  "
+
+msgid "搜索"
+msgstr "搜尋"
+
+msgid "最近 60 秒"
+msgstr "最近 60 秒"
+
+msgid "主页"
+msgstr "首頁"
+
+msgid "设置"
+msgstr "設定"
+
+msgid "新建下载"
+msgstr "新增下載"
+
+msgid "使用文档"
+msgstr "使用文件"
+
+msgid "反馈"
+msgstr "回饋"
+
+msgid "实时速度  "
+msgstr "即時速度  "
+
+msgid "剩余时间  "
+msgstr "剩餘時間  "
+
+msgid "文件大小  "
+msgstr "檔案大小  "
+
+msgid "来源  "
+msgstr "來源  "
+
+msgid "保存位置  "
+msgstr "儲存位置  "
+
+msgid "备注  "
+msgstr "備註  "
+
+msgid "未连接"
+msgstr "未連線"
+
+msgid " 个已安装 · "
+msgstr " 個已安裝 · "
+
+msgid " 个运行中 · "
+msgstr " 個執行中 · "
+
+msgid " 个可更新"
+msgstr " 個可更新"
+
+msgid " 个内置 · "
+msgstr " 個內建 · "
+
+msgid " 个社区 · 独立进程运行"
+msgstr " 個社群 · 獨立運行"
+
+msgid "取消"
+msgstr "取消"
+
+msgid "开始下载"
+msgstr "開始下載"
+
+msgid "不限"
+msgstr "不限"
+
+msgid "低"
+msgstr "低"
+
+msgid "中"
+msgstr "中"
+
+msgid "高"
+msgstr "高"
+
+msgid " · 队列 "
+msgstr " · 佇列 "
+
+msgid " · 连接 24"
+msgstr " · 連線 24"
+
+msgid " · 剩余 "
+msgstr " · 剩餘 "
+
+msgid " 个任务 · 按最近添加排序"
+msgstr " 個任務 · 依最近新增排序"
+
+msgid "搜索任务名称或地址"
+msgstr "搜尋任務名稱或位址"
+
+msgid "下载地址"
+msgstr "下載網址"
+

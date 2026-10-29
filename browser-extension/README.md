@@ -33,5 +33,22 @@ template in `packaging/native-messaging/`.
   only sent with the request and never stored.
 - If Aether/native host is unavailable, the browser download is left untouched.
 
+## Store submission
+
+Build the upload artifact:
+
+```bash
+scripts/build-extension.sh          # writes dist/aether-extension-<version>.zip
+```
+
+Store copy (name, summaries, description, permission rationale) lives in
+`store-listing.md` — paste it into the Chrome Web Store / Edge / Firefox
+Add-ons forms. Submission itself is manual: it needs store accounts, and
+AMO additionally wants a privacy policy (start from the repository's
+`PRIVACY.md`).
+
+Development builds keep working alongside a store install: the native
+manifest is keyed to the extension ID you install with (step 4 above).
+
 This is a development build; store packaging/signing is tracked in
 `docs/BROWSER_INTEGRATION.md`.

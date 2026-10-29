@@ -17,7 +17,13 @@ versioning; 0.x releases may still change structure.
   same language: toasts, settings hints, daemon notices, relative times and
   ETAs, plugin descriptions and dashboard strings pair Chinese with English
   through i18n::tr(zh, en) at the call site, driven by one process-wide
-  flag that the language switch flips.
+  flag that the language switch flips. Two more languages ship complete:
+  日本語 and 繁體中文 (250 translated UI strings each via bundled gettext,
+  plus a single-row table for the Rust side whose missing rows fall back
+  to Chinese). Adding a language is three entries: a .po file, a table
+  column, and one item in the language list — all keyed from one place.
+  The browser extension also gained store packaging: `scripts/build-extension.sh`
+  builds the upload zip and `store-listing.md` carries the store copy.
 
 - A system tray for Linux (StatusNotifier over zbus, which was already in
   the dependency tree through Slint): left-click or the context menu's

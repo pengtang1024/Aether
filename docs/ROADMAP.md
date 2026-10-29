@@ -25,6 +25,7 @@
 | `3cc8d1c` | 托盘（Linux）：zbus StatusNotifierItem + dbusmenu 菜单（显示/退出），私有 bus 全链路实测含退出；无 bus/host 优雅降级 |
 | `79c2cdb` | i18n（中文优先）：全量 202 条 UI 串 @tr + en.po、select_bundled_translation 即时切换、设置→外观语言项；ComboBox 功能值不译 |
 | `f6ef273` | Rust 侧字符串表化：i18n::tr(zh,en) 内联对 + 全局语言位，toast/hint/notice/时间格式/插件描述/通知全迁；功能值保留 |
+| （多语言） | ja + zh-TW 全量（po 250 条 + Rust 单表多语言行）、语言下拉 4 项、扩展商店打包脚本+文案 |
 
 - **设置页现状**：10 个分类中每个控件要么真实生效、要么是诚实的能力说明卡，
   没有「点了没反应」或显示假值的控件。
@@ -245,7 +246,21 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
     @tr 残留扫描脚本验收：Slint 与 Rust 的用户可见中文串均已被 tr 覆盖
     （多行 tr 参数需逐行复核，扫描器会误报）。Xvfb 双语言截图核验
     英文主页 + 中文默认设置页。
-  - 已知小瑕疵：英文 "Medium" 被限速药丸宽度裁切（en 比 zh 宽）。
+  - 已知小瑕疵：英文 "Medium" 被限速药丸宽度裁切（en 比 zh 宽→已改译 "Med"）。
+  - **多语言已扩展（2026-10-30）**：日语（ja）+ 繁體中文（zh-TW）全量上线。
+    - Slint 侧：`translations/{ja,zh-TW}/LC_MESSAGES/aether.po`（250 条 msgid，
+      构建期打包），语言下拉扩为 4 项（经 `i18n::LANGUAGES` 单一来源，
+      display 名↔code 映射，防 UI 与运行时漂移）。
+    - Rust 侧：`src/i18n/table.rs` 单表多语言行 `(zh, ja, zhT)`——`tr(zh,en)`
+      签名不变，按 zh 源串查表，**空单元格/缺行回退中文**（不留空串）。
+      **范围规则：仅静态串入表**；`format!()` 先格式化再进 tr，key 是动态的
+      无法查表 → ja/zhT 下这些动态串（带值的提示/通知）回退中文——
+      要覆盖需改调用点结构（记为未来项）。
+    - Xvfb 三语截图核验：日语设置页+主页、繁中设置页（剪貼簿/資料夾/
+      儲存等台湾用语）✓。加语言配方：po 一个 + table 一列 + LANGUAGES 一项。
+  - 扩展商店打包：`scripts/build-extension.sh`（store 上传 zip，剔除内部
+    文档）+ `browser-extension/store-listing.md`（Chrome/Edge/AMO 文案与
+    权限理由）；上架本身是人工步骤（需商店账号，AMO 还需隐私政策）。
 
 ### 4.6 插件安装/更新接 daemon + manifest 签名
 

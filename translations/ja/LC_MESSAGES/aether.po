@@ -1,0 +1,755 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: ja\n"
+
+msgid "常规"
+msgstr "一般"
+
+msgid "启动与存储"
+msgstr "起動と保存"
+
+msgid "下载"
+msgstr "ダウンロード"
+
+msgid "下载列表"
+msgstr "ダウンロード一覧"
+
+msgid "没有符合条件的任务"
+msgstr "該当するタスクがありません"
+
+msgid "尝试切换筛选条件，或调整搜索关键词"
+msgstr "フィルタを変えるか、検索語を調整してください"
+
+msgid "清除筛选条件"
+msgstr "フィルタをクリア"
+
+msgid "实时速度"
+msgstr "リアルタイム速度"
+
+msgid "当前速度"
+msgstr "現在の速度"
+
+msgid "实时更新"
+msgstr "リアルタイム更新"
+
+msgid "限速"
+msgstr "速度制限"
+
+msgid "任务"
+msgstr "タスク"
+
+msgid "活跃任务"
+msgstr "アクティブなタスク"
+
+msgid "实时下载中"
+msgstr "現在ダウンロード中"
+
+msgid "已完成"
+msgstr "完了"
+
+msgid "暂停"
+msgstr "一時停止"
+
+msgid "失败"
+msgstr "失敗"
+
+msgid "种子"
+msgstr "シード"
+
+msgid "数据统计"
+msgstr "統計"
+
+msgid "本周下载"
+msgstr "今週のダウンロード"
+
+msgid "存储与分类"
+msgstr "ストレージと分類"
+
+msgid "磁盘使用"
+msgstr "ディスク使用量"
+
+msgid "本周入库"
+msgstr "今週の追加量"
+
+msgid "视频"
+msgstr "動画"
+
+msgid "压缩包"
+msgstr "アーカイブ"
+
+msgid "应用"
+msgstr "アプリ"
+
+msgid "文档"
+msgstr "ドキュメント"
+
+msgid "系统与会话"
+msgstr "システムとセッション"
+
+msgid "版本"
+msgstr "バージョン"
+
+msgid "引擎"
+msgstr "エンジン"
+
+msgid "浏览器扩展"
+msgstr "ブラウザ拡張"
+
+msgid "插件"
+msgstr "プラグイン"
+
+msgid "协议"
+msgstr "プロトコル"
+
+msgid "运行"
+msgstr "稼働時間"
+
+msgid "下载设置"
+msgstr "ダウンロード設定"
+
+msgid "下载地址"
+msgstr "ダウンロード URL"
+
+msgid "https://…（空格分隔可一次粘贴多个链接/磁力）"
+msgstr "https://…（複数リンクを空白区切りで一括貼り付け可）"
+
+msgid "保存路径"
+msgstr "保存先"
+
+msgid "分段数"
+msgstr "セグメント数"
+
+msgid "单任务限速"
+msgstr "タスクごとの速度制限"
+
+msgid "备注"
+msgstr "メモ"
+
+msgid "启动"
+msgstr "起動"
+
+msgid "启动页面"
+msgstr "スタートページ"
+
+msgid "每次打开 Aether 时显示的页面"
+msgstr "Aether 起動時に表示するページ"
+
+msgid "存储"
+msgstr "ストレージ"
+
+msgid "默认下载目录"
+msgstr "デフォルトの保存フォルダ"
+
+msgid "daemon 启动参数决定，新任务默认保存到这里"
+msgstr "デーモンの起動引数で決定。新規タスクの既定保存先"
+
+msgid "剪贴板"
+msgstr "クリップボード"
+
+msgid "检测下载链接"
+msgstr "ダウンロードリンクを検知"
+
+msgid "并发与分段"
+msgstr "同時実行とセグメント"
+
+msgid "同时进行的下载数"
+msgstr "同時に実行するダウンロード数"
+
+msgid "超出后任务进入等待队列"
+msgstr "上限を超えると待機キューへ"
+
+msgid "每任务连接数"
+msgstr "タスクあたりの接続数"
+
+msgid "HTTP(S) 单任务并行连接数，上限 16"
+msgstr "HTTP(S) タスクの並列接続数、上限 16"
+
+msgid "失败重试次数"
+msgstr "リトライ回数"
+
+msgid "网络抖动或超时后自动重试"
+msgstr "ネットワークエラーやタイムアウト後に自動リトライ"
+
+msgid "带宽"
+msgstr "帯域"
+
+msgid "启用全局限速"
+msgstr "グローバル速度制限を有効化"
+
+msgid "限制所有任务的合计带宽"
+msgstr "全タスクの合計帯域を制限"
+
+msgid "下载限速"
+msgstr "ダウンロード速度制限"
+
+msgid "完成后动作"
+msgstr "完了時の動作"
+
+msgid "任务下载完成后的默认行为"
+msgstr "タスク完了後の既定の挙動"
+
+msgid "代理"
+msgstr "プロキシ"
+
+msgid "代理模式"
+msgstr "プロキシモード"
+
+msgid "跟随系统或为 Aether 单独配置"
+msgstr "システムに従うか、Aether 用に個別設定"
+
+msgid "代理地址"
+msgstr "プロキシアドレス"
+
+msgid "支持 HTTP / SOCKS5；切到手动模式后生效"
+msgstr "HTTP / SOCKS5 に対応。手動モードに切り替えて有効"
+
+msgid "DNS 服务器"
+msgstr "DNS サーバー"
+
+msgid "仅 HTTP(S) 生效；指定后失败即报错，不回退系统 DNS"
+msgstr "HTTP(S) のみ対象。指定時は失敗を通知し、システム DNS にはフォールバックしません"
+
+msgid "仅 HTTP(S) 下载生效；BT / FTP 不受影响"
+msgstr "HTTP(S) ダウンロードのみ対象。BT / FTP は影響なし"
+
+msgid "协议与请求"
+msgstr "プロトコルとリクエスト"
+
+msgid "留空使用 Aether 默认值；改动对空闲插件立即生效"
+msgstr "空欄で Aether の既定値。アイドル中のプラグインにすぐ反映"
+
+msgid "自定义请求头"
+msgstr "カスタムヘッダー"
+
+msgid "Key: Value，多条用分号分隔；仅 HTTP 族插件，任务级同名头优先"
+msgstr "Key: Value。セミコ区切り。HTTP 系のみ。タスク個別の同名ヘッダーが優先"
+
+msgid "FTP 被动模式"
+msgstr "FTP パッシブモード"
+
+msgid "兼容更多 FTP 服务器；关闭后使用主动模式"
+msgstr "より多くの FTP サーバーに対応。オフでアクティブモード"
+
+msgid "连接"
+msgstr "接続"
+
+msgid "监听端口"
+msgstr "リスンポート"
+
+msgid "需要放行时在路由器中转发"
+msgstr "必要に応じてルーターで転送してください"
+
+msgid "通过分布式哈希表发现节点"
+msgstr "DHT でピアを発見"
+
+msgid "做种"
+msgstr "シード"
+
+msgid "上传限速"
+msgstr "アップロード速度制限"
+
+msgid "过滤与 Tracker"
+msgstr "フィルタとトラッカー"
+
+msgid "屏蔽列表路径"
+msgstr "ブロックリストのパス"
+
+msgid "dat 格式黑名单文件或 URL；留空不启用"
+msgstr "dat 形式のブラックリストまたは URL。空欄で無効"
+
+msgid "Tracker 列表"
+msgstr "トラッカーリスト"
+
+msgid "附加到所有种子；多条用分号分隔"
+msgstr "全シードに追加。セミコ区切り"
+
+msgid "媒体下载"
+msgstr "メディアダウンロード"
+
+msgid "HLS / DASH 直链"
+msgstr "HLS / DASH ダイレクトリンク"
+
+msgid "粘贴 .m3u8 / .mpd 链接即可下载，AES 加密分段自动解密合并；下载完成后可按任务转封装容器（transcode_to，仅 -c copy 不重编码）"
+msgstr ".m3u8 / .mpd リンクを貼り付けてダウンロード。暗号化セグメントは自動復号・結合。完了後にタスク単位でコンテナ変換が可能（transcode_to、-c copy のみ・再エンコードなし）"
+
+msgid "已支持"
+msgstr "対応済み"
+
+msgid "ffmpeg 路径"
+msgstr "ffmpeg のパス"
+
+msgid "留空使用 PATH 里的 ffmpeg（或 AETHER_FFMPEG 环境变量）；对之后开始的任务生效"
+msgstr "空欄で PATH の ffmpeg（または AETHER_FFMPEG）。以降のタスクに適用"
+
+msgid "可更新"
+msgstr "更新あり"
+
+msgid "插件库"
+msgstr "プラグインカタログ"
+
+msgid "更新全部"
+msgstr "すべて更新"
+
+msgid "插件引擎"
+msgstr "プラグインエンジン"
+
+msgid "自动更新插件"
+msgstr "プラグインを自動更新"
+
+msgid "daemon 每 6 小时按更新清单安装插件新版；需配置更新清单与签名公钥"
+msgstr "デーモンが6時間ごとに更新マニフェストから最新版を導入。更新 URL と署名鍵の設定が必要"
+
+msgid "加载插件目录之外的文件"
+msgstr "プラグインディレクトリ外のファイルを読み込む"
+
+msgid "不做签名校验的直加载没有提供；请用上面的「安装插件」（会复制进插件目录并验签）"
+msgstr "署名検証なしの直接読み込みはありません。「プラグインのインストール」を使用してください（ディレクトリへコピーし署名を検証します）"
+
+msgid "不支持"
+msgstr "非対応"
+
+msgid "插件目录"
+msgstr "プラグインディレクトリ"
+
+msgid "本地插件的安装位置"
+msgstr "ローカルプラグインの配置場所"
+
+msgid "安装插件"
+msgstr "プラグインのインストール"
+
+msgid "插件包目录的绝对路径（含 plugin.json）；daemon 校验 manifest 签名与文件哈希后复制进插件目录"
+msgstr "プラグインパッケージの絶対パス（plugin.json を含む）。デーモンが署名とファイルハッシュを検証してからコピーします"
+
+msgid "安装"
+msgstr "インストール"
+
+msgid "开发"
+msgstr "開発"
+
+msgid "开发者模式"
+msgstr "開発者モード"
+
+msgid "插件日志查看与调试入口（任务详情里已有每任务日志）"
+msgstr "プラグインログとデバッグの入口（タスク詳細にログあり）"
+
+msgid "未实现"
+msgstr "未実装"
+
+msgid "重新加载插件"
+msgstr "プラグインを再読み込み"
+
+msgid "不重启应用刷新本地插件"
+msgstr "アプリを再起動せずローカルを更新"
+
+msgid "重新加载"
+msgstr "再読み込み"
+
+msgid "计划任务"
+msgstr "スケジュールダウンロード"
+
+msgid "启用计划下载"
+msgstr "スケジュールを有効化"
+
+msgid "需要填好开始与结束时间"
+msgstr "開始と終了の時刻が必要です"
+
+msgid "开始时间"
+msgstr "開始時刻"
+
+msgid "本机时间 HH:MM，例如 01:00"
+msgstr "ローカル時刻 HH:MM（例 01:00）"
+
+msgid "结束时间"
+msgstr "終了時刻"
+
+msgid "早于开始时间表示跨午夜，例如 22:00 - 07:00"
+msgstr "開始より早い場合は日をまたぎます（例 22:00 - 07:00）"
+
+msgid "通知"
+msgstr "通知"
+
+msgid "下载完成"
+msgstr "ダウンロード完了"
+
+msgid "完成后通过系统通知提醒（notify-send）"
+msgstr "完了時にシステム通知（notify-send）"
+
+msgid "下载失败"
+msgstr "ダウンロード失敗"
+
+msgid "失败时提醒并附错误原因；手动取消不提醒"
+msgstr "失敗時に理由を付けて通知。手動キャンセルは通知しません"
+
+msgid "主题"
+msgstr "テーマ"
+
+msgid "界面语言"
+msgstr "表示言語"
+
+msgid "中文为内置源语言；切换立即生效"
+msgstr "中国語が組み込みのソース言語。切り替えは即時反映"
+
+msgid "默认跟随系统，也可固定浅色或深色"
+msgstr "システムに追従。ライト／ダークに固定も可"
+
+msgid "主色"
+msgstr "アクセントカラー"
+
+msgid "品牌强调色，按钮、进度与高亮同步换色"
+msgstr "ブランドカラー。ボタン・進捗・ハイライトに反映"
+
+msgid "界面"
+msgstr "インターフェース"
+
+msgid "背景流线"
+msgstr "背景フロー"
+
+msgid "窗口边缘的低对比度 Aurora 装饰"
+msgstr "ウィンドウ端の低コントラスト Aurora 装飾"
+
+msgid "界面动效"
+msgstr "UI アニメーション"
+
+msgid "关闭后所有过渡立即完成（无障碍）"
+msgstr "オフでトランジションが即時完了（アクセシビリティ）"
+
+msgid "路径"
+msgstr "パス"
+
+msgid "数据库路径"
+msgstr "データベースのパス"
+
+msgid "任务、历史与插件元数据"
+msgstr "タスク・履歴・プラグインメタデータ"
+
+msgid "第一方插件的安装位置"
+msgstr "第一次プラグインの配置場所"
+
+msgid "维护"
+msgstr "メンテナンス"
+
+msgid "重置界面偏好"
+msgstr "UI 設定をリセット"
+
+msgid "恢复外观与完成动作的默认值，不影响 daemon 与任务"
+msgstr "外観と完了動作を既定に戻します。デーモンとタスクには影響しません"
+
+msgid "Rust + Slint · Material 3 · 原生桌面，无 WebView"
+msgstr "Rust + Slint · Material 3 · ネイティブ UI、WebView なし"
+
+msgid "检查更新"
+msgstr "更新を確認"
+
+msgid "更新"
+msgstr "更新"
+
+msgid "更新通道"
+msgstr "更新チャンネル"
+
+msgid "稳定版优先，测试版获取新能力"
+msgstr "安定版優先、ベータで新機能を先行提供"
+
+msgid "自动下载更新"
+msgstr "更新を自動ダウンロード"
+
+msgid "在后台准备新版本"
+msgstr "バックグラウンドで新版を準備"
+
+msgid "版本说明"
+msgstr "リリースノート"
+
+msgid "查看变更、兼容性与已知问题"
+msgstr "変更点・互換性・既知の問題"
+
+msgid "支持"
+msgstr "サポート"
+
+msgid "安装、插件、RPC 与常见问题"
+msgstr "インストール・プラグイン・RPC・FAQ"
+
+msgid "社区"
+msgstr "コミュニティ"
+
+msgid "讨论、分享配置与插件"
+msgstr "設定やプラグインを共有・議論"
+
+msgid "反馈问题"
+msgstr "問題を報告"
+
+msgid "报告 Bug 或提出功能建议"
+msgstr "バグ報告や機能リクエスト"
+
+msgid "许可"
+msgstr "ライセンス"
+
+msgid "设置中心"
+msgstr "設定"
+
+msgid "偏好、网络与扩展"
+msgstr "設定・ネットワーク・拡張"
+
+msgid "启动位置与窗口行为"
+msgstr "起動場所とウィンドウ挙動"
+
+msgid "下载目录"
+msgstr "ダウンロードフォルダ"
+
+msgid "复制链接后提示一键下载"
+msgstr "リンクをコピーするとワンクリックで提案"
+
+msgid "决定下载速度和服务器压力"
+msgstr "ダウンロード速度とサーバー負荷を決定"
+
+msgid "全局限速与智能调度"
+msgstr "グローバル速度制限とスマート制御"
+
+msgid "完成动作"
+msgstr "完了時の動作"
+
+msgid "让下载经过系统或自定义网络"
+msgstr "システムまたは独自のネットワーク経由に"
+
+msgid "兼容性与请求行为"
+msgstr "互換性とリクエスト動作"
+
+msgid "端口与节点发现"
+msgstr "ポートとピア発見"
+
+msgid "上传带宽，0 为不限速"
+msgstr "アップロード帯域。0 は無制限"
+
+msgid "屏蔽规则与私有 Tracker"
+msgstr "ブロック規則とプライベートトラッカー"
+
+msgid "已实现的能力"
+msgstr "利用可能な機能"
+
+msgid "rtmp 直播录制与媒体转封装共用"
+msgstr "rtmp 録画とメディア再 mux で共有"
+
+msgid "插件目录、来源与更新"
+msgstr "プラグインの場所・ソース・更新"
+
+msgid "调试与重新加载"
+msgstr "デバッグと再読み込み"
+
+msgid "时段外自动暂停队列，到点自动恢复"
+msgstr "時間外はキューを一時停止、開始時刻に自動再開"
+
+msgid "任务结束时的系统通知"
+msgstr "タスク完了時のシステム通知"
+
+msgid "Aurora ink 视觉语言"
+msgstr "Aurora ink ビジュアル言語"
+
+msgid "背景与动效"
+msgstr "背景とアニメーション"
+
+msgid "daemon 的真实数据位置"
+msgstr "デーモンの実際のデータ配置場所"
+
+msgid "恢复默认外观与偏好"
+msgstr "既定の外観と設定に戻す"
+
+msgid "版本通道与自动更新"
+msgstr "リリースチャンネルと自動更新"
+
+msgid "文档、社区、反馈与许可"
+msgstr "ドキュメント・コミュニティ・フィードバック・ライセンス"
+
+msgid "剪贴板出现下载链接时弹出提示，点提示直接新建任务；仅在链接变化时检测，内容不离开本机"
+msgstr "ダウンロードリンクをコピーすると提案が出てワンクリックで登録。変化時のみ検知し、データはこのマシンから出ません"
+
+msgid "当前会话没有可用的剪贴板后端（远程/无图形会话），此功能不可用"
+msgstr "このセッションにクリップボードはありません（リモート／ヘッドレス）。利用できません"
+
+msgid "共 "
+msgstr "合計 "
+
+msgid "全部"
+msgstr "すべて"
+
+msgid "下载中"
+msgstr "ダウンロード中"
+
+msgid "已暂停"
+msgstr "一時停止"
+
+msgid "活跃 "
+msgstr "アクティブ "
+
+msgid "今日下载"
+msgstr "今日のダウンロード"
+
+msgid "今日上传"
+msgstr "今日のアップロード"
+
+msgid "峰值速度"
+msgstr "ピーク速度"
+
+msgid "上传"
+msgstr "アップロード"
+
+msgid "平均文件"
+msgstr "平均ファイルサイズ"
+
+msgid "成功率"
+msgstr "成功率"
+
+msgid "并发、分段、限速与磁盘策略"
+msgstr "同時実行・セグメント・速度制限・ディスク"
+
+msgid "网络"
+msgstr "ネットワーク"
+
+msgid "代理、DNS、协议与请求头"
+msgstr "プロキシ・DNS・プロトコル・ヘッダー"
+
+msgid "端口、节点发现与做种"
+msgstr "ポート・ピア発見・シード"
+
+msgid "媒体与浏览器"
+msgstr "メディアとブラウザ"
+
+msgid "当前能力与边界"
+msgstr "現状の機能と制約"
+
+msgid "内置"
+msgstr "内蔵"
+
+msgid "已启用"
+msgstr "有効"
+
+msgid "计划与通知"
+msgstr "スケジュールと通知"
+
+msgid "定时任务与桌面提醒"
+msgstr "タイマーとデスクトップ通知"
+
+msgid "外观"
+msgstr "外観"
+
+msgid "主题、主色与动效"
+msgstr "テーマ・カラー・アニメーション"
+
+msgid "高级"
+msgstr "詳細設定"
+
+msgid "路径与维护"
+msgstr "パスとメンテナンス"
+
+msgid "重置"
+msgstr "リセット"
+
+msgid "关于与支持"
+msgstr "情報とサポート"
+
+msgid "版本、更新、文档与社群"
+msgstr "バージョン・更新・ドキュメント・コミュニティ"
+
+msgid "打开"
+msgstr "開く"
+
+msgid "查看"
+msgstr "表示"
+
+msgid "传输速度  ·  峰值 "
+msgstr "転送速度  ·  ピーク "
+
+msgid "分片进度  "
+msgstr "チャンク進捗  "
+
+msgid "搜索"
+msgstr "検索"
+
+msgid "最近 60 秒"
+msgstr "直近 60 秒"
+
+msgid "主页"
+msgstr "ホーム"
+
+msgid "设置"
+msgstr "設定"
+
+msgid "新建下载"
+msgstr "新規ダウンロード"
+
+msgid "使用文档"
+msgstr "利用ドキュメント"
+
+msgid "反馈"
+msgstr "フィードバック"
+
+msgid "实时速度  "
+msgstr "リアルタイム速度  "
+
+msgid "剩余时间  "
+msgstr "残り時間  "
+
+msgid "文件大小  "
+msgstr "ファイルサイズ  "
+
+msgid "来源  "
+msgstr "ソース  "
+
+msgid "保存位置  "
+msgstr "保存先  "
+
+msgid "备注  "
+msgstr "メモ  "
+
+msgid "未连接"
+msgstr "未接続"
+
+msgid " 个已安装 · "
+msgstr " 件インストール · "
+
+msgid " 个运行中 · "
+msgstr " 件実行中 · "
+
+msgid " 个可更新"
+msgstr " 件更新可能"
+
+msgid " 个内置 · "
+msgstr " 内蔵 · "
+
+msgid " 个社区 · 独立进程运行"
+msgstr " コミュニティ · スタンドアロン"
+
+msgid "取消"
+msgstr "キャンセル"
+
+msgid "开始下载"
+msgstr "開始"
+
+msgid "不限"
+msgstr "無制限"
+
+msgid "低"
+msgstr "低"
+
+msgid "中"
+msgstr "中"
+
+msgid "高"
+msgstr "高"
+
+msgid " · 队列 "
+msgstr " · 待機 "
+
+msgid " · 连接 24"
+msgstr " · 接続 24"
+
+msgid " · 剩余 "
+msgstr " · 残り "
+
+msgid " 个任务 · 按最近添加排序"
+msgstr " 件のタスク · 最近の追加順"
+
+msgid "搜索任务名称或地址"
+msgstr "名前または URL で検索"
+
+msgid "IP 协议"
+msgstr "IP プロトコル"
+

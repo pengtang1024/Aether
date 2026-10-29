@@ -733,7 +733,7 @@ msgid "低"
 msgstr "Low"
 
 msgid "中"
-msgstr "Medium"
+msgstr "Med"
 
 msgid "高"
 msgstr "High"
