@@ -1,7 +1,7 @@
 # 路线图与会话交接
 
 > 面向后续会话/贡献者：现在在哪、下一步做什么、怎么做、别踩哪些坑。
-> 最后更新：2026-10-29（main @ `bfd5ae1`）。历史盲区清单见 `GAP_AUDIT.md`，
+> 最后更新：2026-10-29（main @ `79c2cdb`）。历史盲区清单见 `GAP_AUDIT.md`，
 > 本文跟踪其中已完成的部分与剩余特性的具体方案。
 
 ## 1. 当前状态
@@ -22,6 +22,8 @@
 | `3ed8af5` | 插件安装+签名：`files` 哈希映射 + canonical Ed25519 签名、`aether-plugin-sign`、install/rescan RPC（staging swap 回滚、禁用状态保留）、UI 路径安装行、假开关改说明文本 |
 | `b0f8a26` | 插件更新下载链：清单 `plugins` 条目、plugin_updates/update_all RPC（tar.gz 解包防护）、`plugin_auto_update` 键+6h pass、UI 更新全部/自动更新开关接真 |
 | `6fad6ef`+`bfd5ae1` | 供应链：Actions pin SHA、cargo-deny+CI job、SBOM 进 release、AppStream 更新、优先级老化、UI 多 URL 导入 |
+| `3cc8d1c` | 托盘（Linux）：zbus StatusNotifierItem + dbusmenu 菜单（显示/退出），私有 bus 全链路实测含退出；无 bus/host 优雅降级 |
+| `79c2cdb` | i18n（中文优先）：全量 202 条 UI 串 @tr + en.po、select_bundled_translation 即时切换、设置→外观语言项；ComboBox 功能值不译 |
 
 - **设置页现状**：10 个分类中每个控件要么真实生效、要么是诚实的能力说明卡，
   没有「点了没反应」或显示假值的控件。
