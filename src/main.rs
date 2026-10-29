@@ -371,6 +371,12 @@ fn refresh_rows(ui: &AppWindow, state: &Rc<RefCell<State>>) {
             );
             ui.set_settings_bt_blocklist(settings["bt_blocklist"].as_str().unwrap_or("").into());
             ui.set_settings_bt_trackers(settings["bt_trackers"].as_str().unwrap_or("").into());
+            // Scheduled window (daemon-side; HH:MM strings, blank = unset).
+            ui.set_settings_schedule_on(settings["schedule_on"].as_bool().unwrap_or(false));
+            ui.set_settings_schedule_start(
+                settings["schedule_start"].as_str().unwrap_or("").into(),
+            );
+            ui.set_settings_schedule_end(settings["schedule_end"].as_str().unwrap_or("").into());
             // Seed the proxy bookkeeping so a later mode switch pushes a
             // complete setting instead of guessing at the daemon's URL.
             let mode = proxy["mode"].as_str().unwrap_or("system");
@@ -783,6 +789,10 @@ struct UiPrefs {
     last_page: i32,
     /// 0 = 不操作, 1 = 打开所在文件夹, 2 = 打开文件.
     after_done: i32,
+    /// Desktop notification when a task completes.
+    notify_done: bool,
+    /// Desktop notification when a task fails (cancellations never notify).
+    notify_fail: bool,
 }
 
 impl Default for UiPrefs {
@@ -794,6 +804,8 @@ impl Default for UiPrefs {
             start_page: 0,
             last_page: 0,
             after_done: 0,
+            notify_done: true,
+            notify_fail: true,
         }
     }
 }
@@ -849,6 +861,39 @@ fn open_path(path: &std::path::Path) {
         command.arg(path);
         command
     };
+    let _ = command
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+}
+
+/// Best-effort desktop notification. Linux uses `notify-send` (libnotify);
+/// macOS uses a one-line AppleScript; other platforms stay silent (honestly
+/// noted in the README — a real toast API needs an extra dependency).
+fn send_notification(title: &str, body: &str) {
+    #[cfg(target_os = "linux")]
+    let mut command = {
+        let mut command = Command::new("notify-send");
+        command.arg("Aether").arg(title).arg(body);
+        command
+    };
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        // AppleScript string escaping: backslash and double quote.
+        let escape = |text: &str| text.replace('\\', "\\\\").replace('"', "\\\"");
+        let script = format!(
+            "display notification \"{}\" with title \"Aether {}\"",
+            escape(body),
+            escape(title)
+        );
+        let mut command = Command::new("osascript");
+        command.args(["-e", &script]);
+        command
+    };
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    return;
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     let _ = command
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
@@ -946,6 +991,8 @@ fn main() -> Result<(), slint::PlatformError> {
         ui.set_settings_flow(prefs.flow);
         ui.set_settings_start_page(prefs.start_page);
         ui.set_settings_after_done(prefs.after_done);
+        ui.set_settings_notify_done(prefs.notify_done);
+        ui.set_settings_notify_fail(prefs.notify_fail);
         let page = match prefs.start_page {
             1 => 1,
             2 => prefs.last_page.clamp(0, 2),
@@ -1221,6 +1268,47 @@ fn main() -> Result<(), slint::PlatformError> {
                             .set_setting(serde_json::json!({"bt_trackers": value.as_str()}));
                         hint = Some("Tracker 已保存：附加到之后的任务".into());
                     }
+                    "schedule-on" => {
+                        let enabled = value.as_str() == "true";
+                        let (start, end) = {
+                            let ui = ui_handle.upgrade();
+                            (
+                                ui.as_ref()
+                                    .map(|ui| ui.get_settings_schedule_start())
+                                    .unwrap_or_default()
+                                    .to_string(),
+                                ui.as_ref()
+                                    .map(|ui| ui.get_settings_schedule_end())
+                                    .unwrap_or_default()
+                                    .to_string(),
+                            )
+                        };
+                        if enabled && (start.trim().is_empty() || end.trim().is_empty()) {
+                            // Revert the switch: the daemon never heard about it.
+                            if let Some(ui) = ui_handle.upgrade() {
+                                ui.set_settings_schedule_on(false);
+                            }
+                            hint = Some("请先填写开始与结束时间".into());
+                        } else {
+                            st.backend
+                                .set_setting(serde_json::json!({"schedule_on": enabled}));
+                            hint = Some(if enabled {
+                                "计划已开启：时段外自动暂停队列".into()
+                            } else {
+                                "计划已关闭：队列不再按时间暂停".into()
+                            });
+                        }
+                    }
+                    "schedule-start" | "schedule-end" => {
+                        let key = if key.as_str() == "schedule-start" {
+                            "schedule_start"
+                        } else {
+                            "schedule_end"
+                        };
+                        st.backend
+                            .set_setting(serde_json::json!({key: value.as_str()}));
+                        hint = Some("时间已保存（HH:MM）".into());
+                    }
                     // Scheduler limits go through the same set_settings RPC;
                     // the daemon validates them and applies them to the
                     // running queue. Tasks already downloading keep the
@@ -1345,6 +1433,21 @@ fn main() -> Result<(), slint::PlatformError> {
                             ui.set_settings_after_done(st.prefs.after_done);
                         }
                     }
+                    "notify-done" | "notify-fail" => {
+                        let enabled = value.as_str() == "true";
+                        if key.as_str() == "notify-done" {
+                            st.prefs.notify_done = enabled;
+                            if let Some(ui) = ui_handle.upgrade() {
+                                ui.set_settings_notify_done(enabled);
+                            }
+                        } else {
+                            st.prefs.notify_fail = enabled;
+                            if let Some(ui) = ui_handle.upgrade() {
+                                ui.set_settings_notify_fail(enabled);
+                            }
+                        }
+                        st.prefs.save();
+                    }
                     "reset-settings" => {
                         st.prefs = UiPrefs::default();
                         st.prefs.save();
@@ -1354,6 +1457,8 @@ fn main() -> Result<(), slint::PlatformError> {
                             ui.set_settings_flow(true);
                             ui.set_settings_start_page(0);
                             ui.set_settings_after_done(0);
+                            ui.set_settings_notify_done(true);
+                            ui.set_settings_notify_fail(true);
                         }
                         hint = Some("界面偏好已恢复默认".into());
                     }
@@ -1504,18 +1609,37 @@ fn main() -> Result<(), slint::PlatformError> {
                     st.prefs.save();
                 }
                 let mut done = Vec::new();
-                st.backend.take_completed(&mut done);
+                st.backend.take_finished(&mut done);
                 let after = st.prefs.after_done;
+                let notify_done = st.prefs.notify_done;
+                let notify_fail = st.prefs.notify_fail;
                 drop(st);
-                for (dir, file) in done {
-                    match after {
-                        1 => open_path(std::path::Path::new(&dir)),
-                        2 => {
-                            if let Some(name) = file {
-                                open_path(&std::path::Path::new(&dir).join(name));
-                            }
+                for item in done {
+                    if item.done {
+                        if notify_done {
+                            send_notification("下载完成", &format!("「{}」已下载完成", item.name));
                         }
-                        _ => {}
+                        match after {
+                            1 => {
+                                if let Some(dir) = &item.dir {
+                                    open_path(std::path::Path::new(dir));
+                                }
+                            }
+                            2 => {
+                                if let (Some(dir), Some(file)) = (&item.dir, &item.file) {
+                                    open_path(&std::path::Path::new(dir).join(file));
+                                }
+                            }
+                            _ => {}
+                        }
+                    } else if notify_fail {
+                        let detail = item.error.as_deref().unwrap_or_default();
+                        let body = if detail.is_empty() {
+                            format!("「{}」下载失败", item.name)
+                        } else {
+                            format!("「{}」下载失败：{detail}", item.name)
+                        };
+                        send_notification("下载失败", &body);
                     }
                 }
             }

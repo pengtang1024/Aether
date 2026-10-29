@@ -839,29 +839,78 @@ component PluginPanel inherits Rectangle {
 }
 
 component SchedulePanel inherits Rectangle {
+    // Daemon-backed schedule + UI-local notification preferences, mirrored
+    // by the window.
+    in-out property <bool> schedule-on: false;
+    in-out property <string> schedule-start: "";
+    in-out property <string> schedule-end: "";
+    in-out property <bool> notify-done-on: true;
+    in-out property <bool> notify-fail-on: true;
+    callback changed(string, string);
+
     VerticalLayout {
         width: 100%;
         spacing: 16px;
 
-        PanelHeader { icon-source: AetherIcons.clock; title: "计划与通知"; subtitle: "当前能力与边界"; tone: Aether.live; }
+        PanelHeader { icon-source: AetherIcons.clock; title: "计划与通知"; subtitle: "定时任务与桌面提醒"; tone: Aether.live; }
+
+        SectionCard {
+            icon-source: AetherIcons.clock;
+            title: "计划任务";
+            subtitle: "时段外自动暂停队列，到点自动恢复";
+
+            SettingRow {
+                icon-source: AetherIcons.play;
+                title: "启用计划下载";
+                description: "需要填好开始与结束时间";
+                Switch { checked: root.schedule-on; toggled => { root.changed("schedule-on", self.checked ? "true" : "false"); } }
+            }
+            SettingRow {
+                icon-source: AetherIcons.clock;
+                title: "开始时间";
+                description: "本机时间 HH:MM，例如 01:00";
+                LineEdit {
+                    text <=> root.schedule-start;
+                    placeholder-text: "01:00";
+                    min-width: Aether.field-xs;
+                    max-width: Aether.field-xs;
+                    accepted => { root.changed("schedule-start", self.text); }
+                    edited(text) => { if (text == "") { root.changed("schedule-start", text); } }
+                }
+            }
+            SettingRow {
+                icon-source: AetherIcons.pause;
+                title: "结束时间";
+                description: "早于开始时间表示跨午夜，例如 22:00 - 07:00";
+                divider: false;
+                LineEdit {
+                    text <=> root.schedule-end;
+                    placeholder-text: "07:00";
+                    min-width: Aether.field-xs;
+                    max-width: Aether.field-xs;
+                    accepted => { root.changed("schedule-end", self.text); }
+                    edited(text) => { if (text == "") { root.changed("schedule-end", text); } }
+                }
+            }
+        }
 
         SectionCard {
             icon-source: AetherIcons.info;
-            title: "计划任务";
-            subtitle: "尚未实现";
+            title: "通知";
+            subtitle: "任务结束时的系统通知";
 
             SettingRow {
-                icon-source: AetherIcons.clock;
-                title: "定时启停与桌面通知";
-                description: "定时启停需要 daemon 侧调度器，桌面通知需要通知通道；两者都还没有实现，本页不再提供无效果的开关";
+                icon-source: AetherIcons.check;
+                title: "下载完成";
+                description: "完成后通过系统通知提醒（notify-send）";
+                Switch { checked: root.notify-done-on; toggled => { root.changed("notify-done", self.checked ? "true" : "false"); } }
+            }
+            SettingRow {
+                icon-source: AetherIcons.alert;
+                title: "下载失败";
+                description: "失败时提醒并附错误原因；手动取消不提醒";
                 divider: false;
-                Text {
-                    text: "未实现";
-                    color: Aether.on-surface-muted;
-                    font-size: Aether.text-caption;
-                    font-weight: Aether.weight-medium;
-                    vertical-alignment: center;
-                }
+                Switch { checked: root.notify-fail-on; toggled => { root.changed("notify-fail", self.checked ? "true" : "false"); } }
             }
         }
     }
@@ -1143,6 +1192,11 @@ export component SettingsPage inherits Rectangle {
     in-out property <int> accent-index: 0;
     in-out property <bool> motion-on: true;
     in-out property <bool> flow-on: true;
+    in-out property <bool> notify-done: true;
+    in-out property <bool> notify-fail: true;
+    in-out property <bool> schedule-on: false;
+    in-out property <string> schedule-start: "";
+    in-out property <string> schedule-end: "";
     // Daemon-backed scheduler limits (mirrored by the window).
     in-out property <int> settings-max-tasks: 0;
     in-out property <int> settings-max-connections: 1;
@@ -1253,7 +1307,14 @@ export component SettingsPage inherits Rectangle {
                     plugin-toggled(id, enabled) => { root.plugin-toggled(id, enabled); }
                     plugin-action(action) => { root.plugin-action(action); }
                 }
-                if root.tab == 6: SchedulePanel { }
+                if root.tab == 6: SchedulePanel {
+                    notify-done-on <=> root.notify-done;
+                    notify-fail-on <=> root.notify-fail;
+                    schedule-on <=> root.schedule-on;
+                    schedule-start <=> root.schedule-start;
+                    schedule-end <=> root.schedule-end;
+                    changed(k, v) => { root.settings-changed(k, v); }
+                }
                 if root.tab == 7: AppearancePanel {
                     theme-mode <=> root.theme-mode;
                     accent-index <=> root.accent-index;

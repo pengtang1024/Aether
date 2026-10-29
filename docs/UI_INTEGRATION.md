@@ -139,6 +139,17 @@ client.set_settings(json!({
 // BT 旋钮在插件会话创建时读取：运行中的种子保持原配置，空闲插件重启后
 // 对新任务生效（daemon 在这些键变化时停掉空闲插件进程）。
 
+// 计划窗口（本机时间 HH:MM；结束早于开始 = 跨午夜）。启用需要两个时间。
+client.set_settings(json!({
+    "schedule_on": true,
+    "schedule_start": "01:00",
+    "schedule_end": "07:00"
+}))?;
+// 时段外：新任务不启动（try_launch 被门控），运行/排队任务被「paused by
+// schedule」暂停；窗口开启时只有调度器暂停过的任务被恢复（用户手动暂停
+// 的不受影响）。窗口判断每次 set_settings 立即生效，另有 15s 周期 tick。
+// 时间格式非法、或启用时缺时间，返回错误且旧设置保持不变。
+
 // PAC：url 或 script 二选一
 client.set_settings(json!({"proxy": {"mode": "pac", "url": "http://wpad/wpad.dat"}}))?;
 // “测试这个 URL 会走哪个代理”

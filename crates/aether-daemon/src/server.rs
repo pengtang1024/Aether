@@ -25,7 +25,7 @@ use serde_json::{json, Value};
 
 use crate::error::DaemonError;
 use crate::proto::{Request, Response};
-use crate::settings::{Limits, Settings, CONNECTIONS_DEFAULT, KEYS};
+use crate::settings::{parse_hhmm, Limits, Settings, CONNECTIONS_DEFAULT, KEYS};
 
 pub struct DaemonConfig {
     pub download_dir: PathBuf,
@@ -116,6 +116,10 @@ struct State {
     live: HashSet<String>,
     /// Tasks whose cancel command is still being executed by their plugin.
     canceling: HashSet<String>,
+    /// Tasks the schedule paused (not the user); resumed when the window
+    /// opens again. In-memory on purpose: after a daemon restart they simply
+    /// stay paused until the user or the next window acts.
+    schedule_paused: HashSet<String>,
     /// Automatic retry schedule per failed task: attempt count and next start.
     retries: HashMap<String, RetrySchedule>,
     /// Persisted daemon settings: proxy, network behaviour (user agent, IP
@@ -253,6 +257,7 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
         retry_base_secs: config.retry_base_secs,
         live: HashSet::new(),
         canceling: HashSet::new(),
+        schedule_paused: HashSet::new(),
         retries: HashMap::new(),
         pac: settings.proxy.as_ref().and_then(ProxySetting::resolver),
         settings,
@@ -271,6 +276,7 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
     eprintln!("aether-daemon: listening on {}", config.socket.display());
     let mut shutdown = false;
     let mut last_idle_cleanup = std::time::Instant::now();
+    let mut last_schedule_tick = std::time::Instant::now();
     while !shutdown {
         // Idle: block on the command channel instead of polling plugins.
         if state.active.is_empty() {
@@ -289,6 +295,10 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
             }
             // Retry bookkeeping must run even when commands keep arriving.
             check_retries(&mut state);
+            if last_schedule_tick.elapsed() >= Duration::from_secs(15) {
+                last_schedule_tick = std::time::Instant::now();
+                tick_schedule(&mut state);
+            }
             continue;
         }
 
@@ -302,6 +312,10 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
             Err(error) => eprintln!("aether-daemon: plugin event error: {error}"),
         }
         check_retries(&mut state);
+        if last_schedule_tick.elapsed() >= Duration::from_secs(15) {
+            last_schedule_tick = std::time::Instant::now();
+            tick_schedule(&mut state);
+        }
     }
 
     state.manager.shutdown();
@@ -1001,6 +1015,25 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
                     })?;
                 next.bt_trackers = trackers.filter(|list| !list.trim().is_empty());
             }
+            if let Some(value) = patch.get("schedule_on") {
+                next.schedule_on = serde_json::from_value(value.clone()).map_err(|error| {
+                    DaemonError::Protocol(format!("invalid schedule_on: {error}"))
+                })?;
+            }
+            if let Some(value) = patch.get("schedule_start") {
+                let text: Option<String> =
+                    serde_json::from_value(value.clone()).map_err(|error| {
+                        DaemonError::Protocol(format!("invalid schedule_start: {error}"))
+                    })?;
+                next.schedule_start = text.filter(|text| !text.trim().is_empty());
+            }
+            if let Some(value) = patch.get("schedule_end") {
+                let text: Option<String> =
+                    serde_json::from_value(value.clone()).map_err(|error| {
+                        DaemonError::Protocol(format!("invalid schedule_end: {error}"))
+                    })?;
+                next.schedule_end = text.filter(|text| !text.trim().is_empty());
+            }
             next.validate()?;
 
             let network_before = state.settings.network();
@@ -1026,6 +1059,11 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
             // A raised cap starts waiting tasks immediately; a lowered one
             // lets the running ones finish — nothing is killed.
             promote_queued(state);
+            // A schedule change takes effect now, not at the next periodic
+            // tick: closing the window pauses, opening resumes.
+            if patch.keys().any(|key| key.starts_with("schedule_")) {
+                tick_schedule(state);
+            }
             // New network values reach plugins on their next spawn; running
             // downloads keep the clients they were started with. Idle plugin
             // processes are stopped right away so the very next task uses the
@@ -1236,6 +1274,11 @@ fn try_launch(
     staging: PathBuf,
     final_dir: PathBuf,
 ) -> Result<bool, DaemonError> {
+    // Outside the scheduled window nothing starts; the periodic tick pauses
+    // whatever is already running.
+    if !schedule_in_window(state) {
+        return Ok(false);
+    }
     if state.active.len() >= state.max_concurrent {
         return Ok(false);
     }
@@ -1299,6 +1342,162 @@ fn promote_queued(state: &mut State) {
                     .fail_task(&task.id, "internal", &error.to_string(), true);
                 continue;
             }
+        }
+    }
+}
+
+/// Whether the schedule lets tasks run at `now_minutes` (minutes since
+/// midnight). A window whose end is before its start wraps midnight. A
+/// disabled, incomplete or unparseable schedule always allows running: a
+/// hand-edited file must not stall the queue silently.
+pub(crate) fn schedule_active(
+    on: Option<bool>,
+    start: Option<&str>,
+    end: Option<&str>,
+    now_minutes: u32,
+) -> bool {
+    if on != Some(true) {
+        return true;
+    }
+    let parse = |text: Option<&str>| {
+        text.map(str::trim)
+            .filter(|text| !text.is_empty())
+            .and_then(parse_hhmm)
+    };
+    let (Some(start), Some(end)) = (parse(start), parse(end)) else {
+        return true;
+    };
+    if start <= end {
+        (start..end).contains(&now_minutes)
+    } else {
+        now_minutes >= start || now_minutes < end
+    }
+}
+
+fn schedule_in_window(state: &State) -> bool {
+    use chrono::Timelike;
+
+    let now = chrono::Local::now();
+    let now_minutes = now.hour() * 60 + now.minute();
+    schedule_active(
+        state.settings.schedule_on,
+        state.settings.schedule_start.as_deref(),
+        state.settings.schedule_end.as_deref(),
+        now_minutes,
+    )
+}
+
+/// Enforce the scheduled window: everything pauses when the window closes
+/// (and stays out of the launcher while it is closed); the tasks the
+/// scheduler paused resume when it opens again. User-paused tasks are never
+/// touched because only `schedule_paused` ids are resumed.
+fn tick_schedule(state: &mut State) {
+    if schedule_in_window(state) {
+        let paused: Vec<String> = state.schedule_paused.drain().collect();
+        for task_id in paused {
+            resume_scheduled(state, &task_id);
+        }
+        return;
+    }
+    // Snapshot first: pausing mutates `active` and the store.
+    let mut candidates = state.active.clone();
+    if let Ok(tasks) = state.store.list_tasks(500) {
+        candidates.extend(
+            tasks
+                .into_iter()
+                .filter(|task| task.state == TaskState::Queued)
+                .map(|task| task.id),
+        );
+    }
+    for task_id in candidates {
+        if !state.schedule_paused.insert(task_id.clone()) {
+            continue;
+        }
+        let Ok(Some(task)) = state.store.task(&task_id) else {
+            state.schedule_paused.remove(&task_id);
+            continue;
+        };
+        match task.state {
+            TaskState::Running => {
+                let _ = state.manager.send(
+                    &task.plugin_id,
+                    &HostCommand::Pause {
+                        task_id: task_id.clone(),
+                    },
+                );
+                let _ = state.store.set_state(&task_id, TaskState::Paused);
+                state.active.remove(&task_id);
+                let _ = state
+                    .store
+                    .append_log(&task_id, "info", "paused by schedule", None);
+                broadcast(
+                    state,
+                    json!({"event": "task_state", "task_id": task_id, "state": "paused"}),
+                );
+            }
+            TaskState::Queued => {
+                let _ = state.store.set_state(&task_id, TaskState::Paused);
+                let _ = state
+                    .store
+                    .append_log(&task_id, "info", "paused by schedule", None);
+                broadcast(
+                    state,
+                    json!({"event": "task_state", "task_id": task_id, "state": "paused"}),
+                );
+            }
+            // Anything else raced us (finished / failed / user pause).
+            _ => {
+                state.schedule_paused.remove(&task_id);
+            }
+        }
+    }
+}
+
+/// Resume one task the schedule paused: live plugin executions resume in
+/// place, cold ones go through the launcher (which the open window allows).
+fn resume_scheduled(state: &mut State, task_id: &str) {
+    let Ok(Some(task)) = state.store.task(task_id) else {
+        return;
+    };
+    if task.state != TaskState::Paused {
+        return;
+    }
+    if state.live.contains(task_id) {
+        let _ = state.manager.send(
+            &task.plugin_id,
+            &HostCommand::Resume {
+                task_id: task_id.to_string(),
+            },
+        );
+        let _ = state.store.set_state(task_id, TaskState::Running);
+        state.active.insert(task_id.to_string());
+        let _ = state
+            .store
+            .append_log(task_id, "info", "resumed by schedule", None);
+        broadcast(
+            state,
+            json!({"event": "task_state", "task_id": task_id, "state": "running"}),
+        );
+        return;
+    }
+    match start_from_record(state, &task) {
+        Ok(true) => {
+            let _ = state
+                .store
+                .append_log(task_id, "info", "resumed by schedule", None);
+        }
+        // At capacity: back to the queue, the next promotion picks it up.
+        Ok(false) => {
+            let _ = state.store.set_state(task_id, TaskState::Queued);
+            broadcast(
+                state,
+                json!({"event": "task_state", "task_id": task_id, "state": "queued"}),
+            );
+        }
+        Err(error) => {
+            let _ = state
+                .store
+                .fail_task(task_id, "internal", &error.to_string(), true);
         }
     }
 }
@@ -1754,4 +1953,58 @@ fn task_id(request: &Request) -> Result<String, DaemonError> {
         .task_id
         .clone()
         .ok_or_else(|| DaemonError::Protocol("task_id is required".into()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::schedule_active;
+
+    #[test]
+    fn schedule_window_decides_by_clock_time() {
+        let window = (Some(true), Some("01:00"), Some("07:00"));
+
+        // Inside the window.
+        assert!(schedule_active(window.0, window.1, window.2, 60));
+        assert!(schedule_active(window.0, window.1, window.2, 6 * 60 + 59));
+        // Outside the window.
+        assert!(!schedule_active(window.0, window.1, window.2, 0));
+        assert!(!schedule_active(window.0, window.1, window.2, 7 * 60));
+        assert!(!schedule_active(window.0, window.1, window.2, 12 * 60));
+
+        // Overnight windows (end < start) wrap midnight.
+        assert!(schedule_active(
+            Some(true),
+            Some("22:00"),
+            Some("07:00"),
+            23 * 60
+        ));
+        assert!(schedule_active(
+            Some(true),
+            Some("22:00"),
+            Some("07:00"),
+            2 * 60
+        ));
+        assert!(!schedule_active(
+            Some(true),
+            Some("22:00"),
+            Some("07:00"),
+            12 * 60
+        ));
+
+        // Disabled or incomplete schedules never stall the queue.
+        assert!(schedule_active(None, Some("01:00"), Some("07:00"), 12 * 60));
+        assert!(schedule_active(
+            Some(false),
+            Some("01:00"),
+            Some("07:00"),
+            12 * 60
+        ));
+        assert!(schedule_active(Some(true), Some("01:00"), None, 12 * 60));
+        assert!(schedule_active(
+            Some(true),
+            Some("bad"),
+            Some("07:00"),
+            12 * 60
+        ));
+    }
 }

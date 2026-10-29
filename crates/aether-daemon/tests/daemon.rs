@@ -1591,6 +1591,74 @@ fn daemon_applies_default_headers_to_http_tasks() {
 }
 
 #[test]
+fn daemon_schedule_gates_task_starts() {
+    let Some(daemon) = spawn_http_daemon("schedule") else {
+        eprintln!("http plugin binary is not built; skipping");
+        return;
+    };
+    let socket = daemon.socket.clone();
+    let Some(stub) = spawn_http_stub(IpAddr::from([127, 0, 0, 1])) else {
+        eprintln!("cannot bind the http stub; skipping");
+        return;
+    };
+    let mut client = connect(&socket);
+
+    // A window starting 12 hours from now can never contain now, whatever
+    // time the CI happens to run.
+    use chrono::Timelike;
+    let now = chrono::Local::now();
+    let now_minutes = now.hour() * 60 + now.minute();
+    let fmt = |minutes: u32| format!("{:02}:{:02}", minutes / 60, minutes % 60);
+    client
+        .set_settings(json!({
+            "schedule_on": true,
+            "schedule_start": fmt((now_minutes + 720) % 1440),
+            "schedule_end": fmt((now_minutes + 780) % 1440),
+        }))
+        .unwrap();
+
+    // A bad time is rejected outright.
+    assert!(client
+        .set_settings(json!({"schedule_start": "25:00"}))
+        .is_err());
+
+    // Outside the window the task stays queued and the stub sees nothing.
+    let added = client
+        .add(
+            &format!("http://127.0.0.1:{}/scheduled.bin", stub.addr.port()),
+            None,
+            None,
+        )
+        .unwrap();
+    let task_id = added["task_id"].as_str().unwrap().to_string();
+    // The add probe legitimately touches the stub; the download must not.
+    clear_requests(&stub);
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+    assert_eq!(
+        task_state(&mut client, &task_id),
+        "queued",
+        "the schedule did not gate the launch"
+    );
+    assert!(
+        stub.requests.lock().unwrap().is_empty(),
+        "the plugin was started outside the window"
+    );
+
+    // Disabling the schedule lifts the gate at once and the task runs.
+    client
+        .set_settings(json!({
+            "schedule_on": false,
+            "schedule_start": fmt((now_minutes + 720) % 1440),
+            "schedule_end": fmt((now_minutes + 780) % 1440),
+        }))
+        .unwrap();
+    assert_reaches(&mut client, &task_id, "completed", 300);
+
+    client.shutdown().unwrap();
+    daemon.shutdown();
+}
+
+#[test]
 fn daemon_hands_dns_servers_to_http_plugins() {
     let Some(daemon) = spawn_http_daemon("dns") else {
         eprintln!("http plugin binary is not built; skipping");

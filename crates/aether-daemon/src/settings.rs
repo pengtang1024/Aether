@@ -75,6 +75,16 @@ pub struct Settings {
     /// Extra trackers for every torrent, separated by newlines or semicolons.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bt_trackers: Option<String>,
+    /// Scheduled download window: when enabled and both times are set, the
+    /// daemon only launches and keeps running tasks inside the window.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedule_on: Option<bool>,
+    /// Window start, `"HH:MM"` in the daemon host's local time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedule_start: Option<String>,
+    /// Window end, `"HH:MM"`. `end < start` means the window wraps midnight.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedule_end: Option<String>,
 }
 
 /// The upper bound the http plugin honours for [`Settings::connections`]:
@@ -88,7 +98,7 @@ pub const CONNECTIONS_DEFAULT: u32 = 4;
 /// Every key `set_settings` accepts. The file is parsed with
 /// `deny_unknown_fields`, so the RPC rejects the same typos instead of
 /// silently storing nothing.
-pub const KEYS: [&str; 15] = [
+pub const KEYS: [&str; 18] = [
     "proxy",
     "user_agent",
     "ip_mode",
@@ -104,6 +114,9 @@ pub const KEYS: [&str; 15] = [
     "bt_upload_bps",
     "bt_blocklist",
     "bt_trackers",
+    "schedule_on",
+    "schedule_start",
+    "schedule_end",
 ];
 
 /// The limits in force: `settings.json` wins, the boot configuration
@@ -127,6 +140,16 @@ fn split_list(text: Option<&str>) -> Option<Vec<String>> {
         .map(ToOwned::to_owned)
         .collect::<Vec<_>>();
     (!entries.is_empty()).then_some(entries)
+}
+
+/// Parse `"HH:MM"` into minutes since midnight; `None` for anything the user
+/// could not have meant as a clock time.
+pub fn parse_hhmm(text: &str) -> Option<u32> {
+    let text = text.trim();
+    let (hours, minutes) = text.split_once(':')?;
+    let hours: u32 = hours.trim().parse().ok()?;
+    let minutes: u32 = minutes.trim().parse().ok()?;
+    (hours < 24 && minutes < 60).then_some(hours * 60 + minutes)
 }
 
 impl Settings {
@@ -262,6 +285,35 @@ impl Settings {
         if self.bt_listen_port == Some(0) {
             return Err(DaemonError::Protocol(
                 "bt_listen_port must be 1..=65535".into(),
+            ));
+        }
+        let schedule_start = self
+            .schedule_start
+            .as_deref()
+            .map(str::trim)
+            .filter(|text| !text.is_empty());
+        let schedule_end = self
+            .schedule_end
+            .as_deref()
+            .map(str::trim)
+            .filter(|text| !text.is_empty());
+        if let Some(text) = schedule_start {
+            if parse_hhmm(text).is_none() {
+                return Err(DaemonError::Protocol(format!(
+                    "schedule_start must be HH:MM, got {text:?}"
+                )));
+            }
+        }
+        if let Some(text) = schedule_end {
+            if parse_hhmm(text).is_none() {
+                return Err(DaemonError::Protocol(format!(
+                    "schedule_end must be HH:MM, got {text:?}"
+                )));
+            }
+        }
+        if self.schedule_on == Some(true) && (schedule_start.is_none() || schedule_end.is_none()) {
+            return Err(DaemonError::Protocol(
+                "schedule_on needs schedule_start and schedule_end".into(),
             ));
         }
         Ok(())
@@ -551,6 +603,9 @@ mod tests {
             bt_upload_bps: Some(1024),
             bt_blocklist: Some("/tmp/blocklist.dat".into()),
             bt_trackers: Some("udp://tracker.test:80/announce".into()),
+            schedule_on: Some(true),
+            schedule_start: Some("01:00".into()),
+            schedule_end: Some("07:00".into()),
         };
         let object = serde_json::to_value(settings).unwrap();
         let object = object.as_object().unwrap();
@@ -617,5 +672,48 @@ mod tests {
         };
         assert!(bad_headers.validate().is_err());
         assert!(Settings::default().validate().is_ok());
+    }
+
+    #[test]
+    fn validates_the_schedule_window() {
+        // HH:MM parsing accepts real clock times only.
+        assert_eq!(super::parse_hhmm("01:00"), Some(60));
+        assert_eq!(super::parse_hhmm(" 23:59 "), Some(23 * 60 + 59));
+        assert_eq!(super::parse_hhmm("24:00"), None);
+        assert_eq!(super::parse_hhmm("12:60"), None);
+        assert_eq!(super::parse_hhmm("7:5"), Some(7 * 60 + 5));
+        assert_eq!(super::parse_hhmm("midnight"), None);
+
+        // Enabling the schedule without both times cannot work.
+        let incomplete = Settings {
+            schedule_on: Some(true),
+            schedule_start: Some("01:00".into()),
+            ..Settings::default()
+        };
+        assert!(incomplete.validate().is_err());
+
+        // Storing times without enabling the window is fine (draft state).
+        let draft = Settings {
+            schedule_start: Some("01:00".into()),
+            schedule_end: Some("07:00".into()),
+            ..Settings::default()
+        };
+        draft.validate().unwrap();
+
+        let bad_time = Settings {
+            schedule_on: Some(true),
+            schedule_start: Some("25:00".into()),
+            schedule_end: Some("07:00".into()),
+            ..Settings::default()
+        };
+        assert!(bad_time.validate().is_err());
+
+        let full = Settings {
+            schedule_on: Some(true),
+            schedule_start: Some("01:00".into()),
+            schedule_end: Some("07:00".into()),
+            ..Settings::default()
+        };
+        full.validate().unwrap();
     }
 }

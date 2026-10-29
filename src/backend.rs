@@ -36,6 +36,19 @@ pub use imp::Backend;
 #[cfg(not(unix))]
 pub use stub::Backend;
 
+/// A task that reached a terminal state, with everything the UI needs to
+/// notify or open it.
+#[derive(Debug, Clone)]
+pub struct Finished {
+    pub done: bool,
+    pub name: String,
+    /// Download directory (present for completions).
+    pub dir: Option<String>,
+    /// File name inside `dir` (present for completions).
+    pub file: Option<String>,
+    pub error: Option<String>,
+}
+
 #[cfg(unix)]
 mod imp {
     use std::collections::{HashMap, VecDeque};
@@ -51,7 +64,7 @@ mod imp {
     use aether_daemon::{DaemonError, PluginInfo, Stats, StoredTask, TaskState};
     use serde_json::{json, Value};
 
-    use super::Snapshot;
+    use super::{Finished, Snapshot};
     use crate::model::{Status, Task, CHUNK_COUNT, HISTORY_LEN};
 
     enum Command {
@@ -81,7 +94,7 @@ mod imp {
     struct Shared {
         snapshot: Snapshot,
         notice: Option<String>,
-        completed: Vec<(String, Option<String>)>,
+        completed: Vec<Finished>,
     }
 
     pub struct Backend {
@@ -160,11 +173,9 @@ mod imp {
             self.shared.lock().unwrap().notice.take()
         }
 
-        /// Drain completed tasks (download dir + file name) since the last
-        /// call; the UI uses them for the "after done" action.
-        pub fn take_completed(&self, out: &mut Vec<(String, Option<String>)>) {
-            // Queue lives on the worker; expose it through the shared snapshot
-            // channel below.
+        /// Drain finished tasks (completed or failed) since the last call;
+        /// the UI uses them for the after-done action and notifications.
+        pub fn take_finished(&self, out: &mut Vec<Finished>) {
             let mut guard = self.shared.lock().unwrap();
             out.append(&mut guard.completed);
         }
@@ -201,9 +212,9 @@ mod imp {
         plugins: Vec<PluginInfo>,
         /// Daemon settings, from `get_settings` and `settings_changed` events.
         settings: Option<Value>,
-        /// Completed tasks (download dir + optional file name), drained by
-        /// the UI to run the user's "after done" action.
-        completed: VecDeque<(String, Option<String>)>,
+        /// Finished tasks (completed or failed), drained by the UI to run the
+        /// "after done" action and the desktop notification.
+        completed: VecDeque<Finished>,
     }
 
     fn worker(receiver: Receiver<Command>, shared: Arc<Mutex<Shared>>) {
@@ -585,16 +596,22 @@ mod imp {
                         record.state = TaskState::Completed;
                         record.speed_bps = 0;
                         record.downloaded = record.total.unwrap_or(record.downloaded);
-                        let dir = record
-                            .target_dir
-                            .clone()
-                            .unwrap_or_else(|| self.download_dir.clone());
+                        let dir = record.target_dir.clone().or_else(|| {
+                            (!self.download_dir.is_empty()).then(|| self.download_dir.clone())
+                        });
                         let file = record
                             .filename
                             .clone()
                             .or_else(|| Some(name_from_url(&record.url)));
+                        let name = file.clone().unwrap_or_else(|| name_from_url(&record.url));
                         if self.completed.len() < 32 {
-                            self.completed.push_back((dir, file));
+                            self.completed.push_back(Finished {
+                                done: true,
+                                name,
+                                dir,
+                                file,
+                                error: None,
+                            });
                         }
                     }
                     self.needs_refresh = true;
@@ -615,6 +632,21 @@ mod imp {
                             .filter(|message| !message.is_empty())
                             .map(ToOwned::to_owned)
                             .or_else(|| Some("下载失败".into()));
+                        // Cancellations are the user's own doing; only real
+                        // failures earn a desktop notification.
+                        if !canceled && self.completed.len() < 32 {
+                            let name = record
+                                .filename
+                                .clone()
+                                .unwrap_or_else(|| name_from_url(&record.url));
+                            self.completed.push_back(Finished {
+                                done: false,
+                                name,
+                                dir: None,
+                                file: None,
+                                error: record.error_message.clone(),
+                            });
+                        }
                     }
                 }
                 "retry_scheduled" => {
@@ -914,7 +946,7 @@ mod stub {
 
         pub fn set_setting(&self, _patch: serde_json::Value) {}
 
-        pub fn take_completed(&self, _out: &mut Vec<(String, Option<String>)>) {}
+        pub fn take_finished(&self, _out: &mut Vec<super::Finished>) {}
 
         pub fn set_plugin_enabled(&self, _row: i32, _enabled: bool) {}
 

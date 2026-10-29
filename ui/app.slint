@@ -68,6 +68,11 @@ export component AppWindow inherits Window {
     in-out property <int> settings-accent: 0;       // preset index, see apply-appearance()
     in-out property <bool> settings-motion: true;
     in-out property <bool> settings-flow: true;
+    in-out property <bool> settings-notify-done: true;
+    in-out property <bool> settings-notify-fail: true;
+    in-out property <bool> settings-schedule-on: false;
+    in-out property <string> settings-schedule-start: "";
+    in-out property <string> settings-schedule-end: "";
     // Scheduler limits mirrored from the daemon (settings page).
     in-out property <int> settings-max-tasks: 0;        // index into 3/5/10/16
     in-out property <int> settings-max-connections: 1;  // index into 2/4/8/16
@@ -500,6 +505,11 @@ export component AppWindow inherits Window {
                         accent-index <=> root.settings-accent;
                         motion-on <=> root.settings-motion;
                         flow-on <=> root.settings-flow;
+                        notify-done <=> root.settings-notify-done;
+                        notify-fail <=> root.settings-notify-fail;
+                        schedule-on <=> root.settings-schedule-on;
+                        schedule-start <=> root.settings-schedule-start;
+                        schedule-end <=> root.settings-schedule-end;
                         settings-max-tasks <=> root.settings-max-tasks;
                         settings-max-connections <=> root.settings-max-connections;
                         settings-retry <=> root.settings-retry;
