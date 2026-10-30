@@ -1,13 +1,14 @@
 # 路线图与会话交接
 
 > 面向后续会话/贡献者：现在在哪、下一步做什么、怎么做、别踩哪些坑。
-> 最后更新：2026-10-30（main @ `ef9c4f0`，0.2.1 已发布）。历史盲区清单见 `GAP_AUDIT.md`，
+> 最后更新：2026-10-31（main @ `2e94d9f`，0.2.2 已发布）。历史盲区清单见 `GAP_AUDIT.md`，
 > 本文跟踪其中已完成的部分与剩余特性的具体方案。
 
 ## 1. 当前状态
 
-- **0.2.1 已发布**（tag v0.2.1，2026-10-30）。设置页诚实化、RPC 配置与
-  真实更新检查进入正式发布；0.2.0 之后合入的波次：
+- **0.2.2 已发布**（tag v0.2.2，2026-10-30）。检查更新现在会弹出最终结果
+  （最新/可下载/已下载/错误，含 150s 超时保护）；0.2.1 于同日发布，带来设置页
+  诚实化、RPC 配置与真实更新检查。0.2.0 之后合入的波次：
 
 | 提交 | 内容 |
 | --- | --- |
@@ -33,6 +34,7 @@
 | `1d75cd5` | Windows 桌面通知（notify-rust toast + HKCU AUMID 一次注册，失败回退内置归属）+ Windows 发布产物补齐（daemon/CLI/native-host + 16 插件 exe 进 zip/安装器 `{app}\plugins`）+ default_plugins_dir exe 同级候选 |
 | `716896e` | 托盘平台分发（tray.rs → tray_sni.rs + tray_windows.rs 零依赖 Shell_NotifyIconW FFI）、zbus 移 unix-only、CI Windows 跑 bin 测试 |
 | `6ca28b8` | 设置开关全部改双向绑定（计划/自启回弹可见）、高级页新增 RPC 配置（监听/令牌/清除/状态），TCP + token 实测 |
+| `2e94d9f` | 0.2.2 发版：检查更新完成后 toast 最终状态（此前只有小字变化）；Linux deb/AppImage + Windows 产物，macOS DMG 构建失败缺席 |
 | `ef9c4f0` | 0.2.1 发版：版本号、release notes、签名清单；Linux deb/AppImage + Windows 产物，macOS DMG 因 runner 取消缺席 |
 | `582faa8` | 设置页逐项审查：`update_check` RPC + `app_auto_update` 键（自动下载开关成真）、关于页真实打开文档/社区/反馈/版本说明/许可、PAC 回弹、重置补语言与主题；新增 `docs/SETTINGS_AUDIT.md` |
 
