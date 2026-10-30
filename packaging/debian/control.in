@@ -8,7 +8,8 @@ Recommends: fonts-noto-cjk
 Section: net
 Priority: optional
 Homepage: https://github.com/pengtang1024/Aether
-Description: Native Material 3 download manager mockup
- Aether is a native desktop download manager UI mockup built with Rust and
- Slint. It uses Slint's Material 3 widget set and contains no WebView,
- networking or persistence.
+Description: Native Material 3 download manager
+ Aether is a native desktop download manager built with Rust and Slint.
+ It uses Slint's Material 3 widget set and contains no WebView. Downloads
+ run through sandboxed first-party plugins (HTTP/FTP/BT/media/cloud), with
+ a background daemon, signed plugin updates and a status-area tray.
