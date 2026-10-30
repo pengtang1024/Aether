@@ -1,7 +1,7 @@
 # 路线图与会话交接
 
 > 面向后续会话/贡献者：现在在哪、下一步做什么、怎么做、别踩哪些坑。
-> 最后更新：2026-10-29（main @ `79c2cdb`）。历史盲区清单见 `GAP_AUDIT.md`，
+> 最后更新：2026-10-30（main @ `582faa8`）。历史盲区清单见 `GAP_AUDIT.md`，
 > 本文跟踪其中已完成的部分与剩余特性的具体方案。
 
 ## 1. 当前状态
@@ -31,7 +31,7 @@
 | `ee2ab81` | 单实例锁（fs2/配置目录锁文件，第二实例通知后退出）、关闭到托盘（仅托盘真实可用时；Linux 托盘无 watcher 改为诚实返回 None）、开机自启（Linux XDG / Windows HKCU Run / macOS LaunchAgent，状态以 OS 为准） |
 | `1d75cd5` | Windows 桌面通知（notify-rust toast + HKCU AUMID 一次注册，失败回退内置归属）+ Windows 发布产物补齐（daemon/CLI/native-host + 16 插件 exe 进 zip/安装器 `{app}\plugins`）+ default_plugins_dir exe 同级候选 |
 | `716896e` | 托盘平台分发（tray.rs → tray_sni.rs + tray_windows.rs 零依赖 Shell_NotifyIconW FFI）、zbus 移 unix-only、CI Windows 跑 bin 测试 |
-| `<待 pin>` | 设置页逐项审查：`update_check` RPC + `app_auto_update` 键（自动下载开关成真）、关于页真实打开文档/社区/反馈/版本说明/许可、PAC 回弹、重置补语言与主题；新增 `docs/SETTINGS_AUDIT.md` |
+| `582faa8` | 设置页逐项审查：`update_check` RPC + `app_auto_update` 键（自动下载开关成真）、关于页真实打开文档/社区/反馈/版本说明/许可、PAC 回弹、重置补语言与主题；新增 `docs/SETTINGS_AUDIT.md` |
 
 - **设置页现状**：10 个分类中每个控件要么真实生效、要么是诚实的能力说明卡，
   没有「点了没反应」或显示假值的控件。逐项落点与边界见
