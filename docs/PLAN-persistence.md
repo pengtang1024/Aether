@@ -28,3 +28,10 @@
 - 本机 e2e：daemon 起 → db-check=ok → backup 文件用 python sqlite3 打开
   （6 表 + integrity ok）→ set rpc_secret 后 diag 显示 `<redacted>`、16 插件。
 - 门禁：fmt → workspace test → windows-gnu 交叉 check → push → CI → pin。
+
+## 实施结果（2026-10-30）
+
+- 全部落地（`8406446`，CI 三平台全绿）。本机 e2e：daemon 起 → db-check=ok →
+  backup 文件 python sqlite3 打开（6 表、integrity ok）→ set rpc_secret 后
+  diag 输出 `<redacted>` 与 16 插件。
+- 测试修正：`logs()` 是最旧在前，保留断言改为 first="line 20" / last="line 519"。
