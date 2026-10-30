@@ -2309,43 +2309,65 @@ mod notification_tests {
 
 #[cfg(test)]
 mod update_status_tests {
-    use serde_json::json;
+    use serde_json::{json, Value};
 
     use super::update_status_text;
+
+    /// The process language is global and other test threads flip it, so a
+    /// line is accepted in either language instead of setting the flag here
+    /// (ja/zh-TW fall back to the Chinese string for Rust-side strings).
+    fn assert_line(update: Option<Value>, zh: &str, en: &str) {
+        let text = update_status_text(update.as_ref());
+        assert!(
+            text == zh || text == en,
+            "expected {zh:?} or {en:?}, got {text:?}"
+        );
+    }
 
     /// The About panel renders exactly one line per daemon state; a missing
     /// source must read as "not configured", never as "up to date".
     #[test]
     fn every_update_state_has_a_line() {
-        super::i18n::set_language("en");
-        assert_eq!(
-            update_status_text(None),
-            "No update source (the daemon needs --update-url and the public key)"
+        assert_line(
+            None,
+            "未配置更新源（daemon 需要 --update-url 与更新公钥）",
+            "No update source (the daemon needs --update-url and the public key)",
         );
-        assert_eq!(
-            update_status_text(Some(&json!({"status": "checking"}))),
-            "Checking for updates…"
+        assert_line(
+            Some(json!({"status": "checking"})),
+            "正在检查更新…",
+            "Checking for updates…",
         );
-        assert!(update_status_text(Some(&json!({"status": "idle"}))).contains("6 hours"));
-        assert!(
-            update_status_text(Some(&json!({"status": "up_to_date"}))).starts_with("Up to date")
+        assert_line(
+            Some(json!({"status": "idle"})),
+            "等待首次后台检查（每 6 小时一次）",
+            "Waiting for the first background check (every 6 hours)",
         );
-        assert_eq!(
-            update_status_text(Some(&json!({"status": "available", "latest": "0.3.0"}))),
-            "Version 0.3.0 is available; automatic downloads are off"
+        let version = env!("CARGO_PKG_VERSION");
+        assert_line(
+            Some(json!({"status": "up_to_date"})),
+            &format!("已是最新版本 {version}"),
+            &format!("Up to date ({version})"),
         );
-        assert_eq!(
-            update_status_text(Some(&json!({"status": "ready", "latest": "0.3.0"}))),
-            "Version 0.3.0 downloaded; restart to apply"
+        assert_line(
+            Some(json!({"status": "available", "latest": "0.3.0"})),
+            "发现新版本 0.3.0，自动下载已关闭",
+            "Version 0.3.0 is available; automatic downloads are off",
         );
-        assert_eq!(
-            update_status_text(Some(&json!({"status": "error", "error": "timeout"}))),
-            "Check failed: timeout"
+        assert_line(
+            Some(json!({"status": "ready", "latest": "0.3.0"})),
+            "新版本 0.3.0 已下载，重启后生效",
+            "Version 0.3.0 downloaded; restart to apply",
         );
-        assert_eq!(
-            update_status_text(Some(&json!({"status": "what"}))),
-            "Unknown update state"
+        assert_line(
+            Some(json!({"status": "error", "error": "timeout"})),
+            "检查失败：timeout",
+            "Check failed: timeout",
         );
-        super::i18n::set_language("zh");
+        assert_line(
+            Some(json!({"status": "what"})),
+            "更新状态未知",
+            "Unknown update state",
+        );
     }
 }
