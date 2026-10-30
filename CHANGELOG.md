@@ -5,6 +5,8 @@ versioning; 0.x releases may still change structure.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-30
+
 ### Added
 
 - Settings can now actually check for app updates. A new `update_check` RPC

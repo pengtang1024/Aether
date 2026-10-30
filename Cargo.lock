@@ -145,7 +145,7 @@ dependencies = [
 
 [[package]]
 name = "aether"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "aether-daemon",
  "arboard",
@@ -160,7 +160,7 @@ dependencies = [
 
 [[package]]
 name = "aether-cli"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "aether-daemon",
  "aether-host",
@@ -170,7 +170,7 @@ dependencies = [
 
 [[package]]
 name = "aether-daemon"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "aether-host",
  "aether-plugin-sdk",
@@ -188,7 +188,7 @@ dependencies = [
 
 [[package]]
 name = "aether-host"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "aether-plugin-abi",
  "aether-plugin-sdk",
@@ -204,7 +204,7 @@ dependencies = [
 
 [[package]]
 name = "aether-native-host"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "aether-daemon",
  "serde",
@@ -213,7 +213,7 @@ dependencies = [
 
 [[package]]
 name = "aether-plugin-abi"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "aether-plugin-sdk",
 ]
@@ -374,7 +374,7 @@ dependencies = [
 
 [[package]]
 name = "aether-plugin-sdk"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "rmp-serde",
  "semver",
@@ -420,7 +420,7 @@ dependencies = [
 
 [[package]]
 name = "aether-update"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "aether-plugin-sdk",
  "base64 0.22.1",
