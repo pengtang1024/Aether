@@ -66,8 +66,13 @@ pub fn tr(zh: impl Into<String>, en: impl Into<String>) -> String {
 mod tests {
     use super::*;
 
+    /// The language is process-global; the tests below all mutate it, so
+    /// they must not overlap (CI caught one flipping the flag mid-assert).
+    static LANG_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn defaults_to_chinese_and_switches() {
+        let _guard = LANG_LOCK.lock().unwrap_or_else(|error| error.into_inner());
         set_language("zh");
         assert_eq!(tr("已添加下载任务", "Download queued"), "已添加下载任务");
         set_language("en");
@@ -81,6 +86,7 @@ mod tests {
 
     #[test]
     fn table_languages_resolve_and_fall_back() {
+        let _guard = LANG_LOCK.lock().unwrap_or_else(|error| error.into_inner());
         // A row-backed string picks up its table translation…
         let sample = table::rows().next().expect("table must not be empty");
         set_language("ja");
@@ -95,6 +101,7 @@ mod tests {
 
     #[test]
     fn language_codes_map_to_switch_indices() {
+        let _guard = LANG_LOCK.lock().unwrap_or_else(|error| error.into_inner());
         // Tests run in parallel over one process-global: always set before
         // asserting so sibling tests' flips never leak in.
         set_language("ja");
