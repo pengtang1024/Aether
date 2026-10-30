@@ -5,6 +5,14 @@ versioning; 0.x releases may still change structure.
 
 ## [Unreleased]
 
+### Fixed
+
+- "Check for updates" now reports the result. The check runs on a worker
+  thread, so the initial toast only said "checking…"; when it finished, the
+  toast vanished and the small status line flipped back silently. The UI now
+  watches the daemon's state and toasts the final outcome (up to date,
+  available, downloaded, or the error), with a 150 s timeout guard.
+
 ## [0.2.1] - 2026-10-30
 
 ### Added

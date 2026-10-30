@@ -81,6 +81,15 @@ struct State {
     clipboard_control: Option<clipboard::ClipboardControl>,
     /// URL staged by the latest detection; the toast action opens it.
     clipboard_url: Option<String>,
+    /// A user-triggered update check that has not reported its result yet.
+    update_watch: Option<UpdateWatch>,
+}
+
+/// Tracks one on-demand update check so the UI can toast the final state
+/// instead of leaving "checking…" hanging forever.
+struct UpdateWatch {
+    since: Instant,
+    saw_checking: bool,
 }
 
 impl State {
@@ -108,6 +117,7 @@ impl State {
             clipboard: None,
             clipboard_control: None,
             clipboard_url: None,
+            update_watch: None,
             plugins: Vec::new(),
             plugins_sig: String::new(),
             started: Instant::now(),
@@ -2198,7 +2208,14 @@ fn main() -> Result<(), slint::PlatformError> {
                             "No update source: the daemon needs --update-url and the public key",
                         )
                     } else {
-                        state.borrow().backend.check_update();
+                        {
+                            let mut st = state.borrow_mut();
+                            st.backend.check_update();
+                            st.update_watch = Some(UpdateWatch {
+                                since: Instant::now(),
+                                saw_checking: false,
+                            });
+                        }
                         i18n::tr("正在检查更新…", "Checking for updates…")
                     }
                 }
@@ -2287,6 +2304,51 @@ fn main() -> Result<(), slint::PlatformError> {
                 }
             }
             refresh_rows(&ui, &state);
+            // A user-triggered check is asynchronous: wait until the daemon
+            // leaves `checking`, then toast the real result. Without this the
+            // "checking…" toast vanished and the panel silently flipped back.
+            {
+                let outcome = {
+                    let mut st = state.borrow_mut();
+                    let update = st
+                        .backend
+                        .snapshot()
+                        .stats
+                        .as_ref()
+                        .and_then(|stats| stats.update.clone());
+                    match (st.update_watch.as_mut(), update) {
+                        (None, _) => None,
+                        (Some(watch), None) => {
+                            if watch.since.elapsed() > Duration::from_secs(150) {
+                                st.update_watch = None;
+                                Some(i18n::tr(
+                                    "检查更新超时：daemon 没有返回状态",
+                                    "Update check timed out: the daemon reported no state",
+                                ))
+                            } else {
+                                None
+                            }
+                        }
+                        (Some(watch), Some(update)) => {
+                            let status = update["status"].as_str().unwrap_or("");
+                            if status == "checking" {
+                                watch.saw_checking = true;
+                                None
+                            } else if watch.saw_checking
+                                || watch.since.elapsed() > Duration::from_secs(2)
+                            {
+                                st.update_watch = None;
+                                Some(update_status_text(Some(&update)))
+                            } else {
+                                None
+                            }
+                        }
+                    }
+                };
+                if let Some(message) = outcome {
+                    show_toast(&ui, &state, &message);
+                }
+            }
             if drawer_open {
                 refresh_detail(&ui, &state);
             }
