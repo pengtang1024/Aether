@@ -5,6 +5,8 @@ versioning; 0.x releases may still change structure.
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-10-30
+
 ### Fixed
 
 - "Check for updates" now reports the result. The check runs on a worker
