@@ -58,3 +58,10 @@ Name: "{autodesktop}\Aether"; Filename: "{app}\aether.exe"; IconFilename: "{app}
 
 [Run]
 Filename: "{app}\aether.exe"; Description: "{cm:LaunchProgram,Aether}"; Flags: nowait postinstall skipifsilent
+
+; Plugins and license texts are installer-owned: remove them on uninstall
+; even if a plugin was added or replaced after installation. User data
+; (config, downloads) is never touched.
+[UninstallDelete]
+Type: filesandordirs; Name: "{app}\plugins"
+Type: filesandordirs; Name: "{app}\licenses"

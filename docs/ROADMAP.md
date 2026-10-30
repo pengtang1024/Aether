@@ -26,6 +26,7 @@
 | `79c2cdb` | i18n（中文优先）：全量 202 条 UI 串 @tr + en.po、select_bundled_translation 即时切换、设置→外观语言项；ComboBox 功能值不译 |
 | `f6ef273` | Rust 侧字符串表化：i18n::tr(zh,en) 内联对 + 全局语言位，toast/hint/notice/时间格式/插件描述/通知全迁；功能值保留 |
 | `c1d1bcd` | ja + zh-TW 全量（po 250 条 + Rust 单表多语言行）、语言下拉 4 项、扩展商店打包脚本+文案 |
+| （持久化/可观测） | 在线 DB 备份（rusqlite backup feature）+ PRAGMA integrity_check、`aether-cli diag` 脱敏诊断包（rpc_secret/headers/proxy userinfo 掩码）、每任务日志上限 500 行、Inno 卸载清理 plugins/licenses |
 | `6481b84` | 清单 `rollout` 稳定分桶灰度（签名覆盖，需重签调档）、make-update-manifest.py 自动生成清单（AppImage 优先/版本校验/未签名即丢弃）、`aether-cli export/import` 设置+任务迁移（不导出凭据，`--settings` 显式应用） |
 | `ee2ab81` | 单实例锁（fs2/配置目录锁文件，第二实例通知后退出）、关闭到托盘（仅托盘真实可用时；Linux 托盘无 watcher 改为诚实返回 None）、开机自启（Linux XDG / Windows HKCU Run / macOS LaunchAgent，状态以 OS 为准） |
 | `1d75cd5` | Windows 桌面通知（notify-rust toast + HKCU AUMID 一次注册，失败回退内置归属）+ Windows 发布产物补齐（daemon/CLI/native-host + 16 插件 exe 进 zip/安装器 `{app}\plugins`）+ default_plugins_dir exe 同级候选 |
@@ -457,6 +458,25 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
     `../Resources/plugins`（bundle）→ `plugins`（便携）→ /usr/lib →
     build/plugins → plugins；unix 非 mac 顺序不变。release 流水线首次
     实跑在下一个 release 分支（macOS 无本地运行环境，如实标注）。
+
+### 4.11 持久化与可观测性
+
+- **已落地（2026-10-30，`<hash3>`）**：来自 GAP_AUDIT #5/#15 中不依赖外部
+  条件的两项。
+  - **在线备份 + 完整性检查**：rusqlite `backup` feature（树内 crate，无新增
+    依赖）；`TaskStore::backup_to`（SQLite backup API，daemon 运行中安全复制）
+    与 `integrity_check`（PRAGMA）；RPC `backup {path}` / `db_check`；CLI
+    `remote backup <dest>` / `remote db-check`。恢复 = 停 daemon 换
+    `aether.db`。测试：内存库→备份→重开→任务数与 integrity 断言。
+  - **日志保留上限**：`append_log` 同事务剪枝，每任务仅留最新
+    `TASK_LOG_LIMIT=500` 行，话痨插件无法撑爆 DB；UI/CLI 读同一尾部；测试
+    520→500 且最旧被删。
+  - **诊断包**：`aether-cli diag <file|->` 输出 `aether-diagnostics/1`（版本/
+    平台/daemon 版本/settings 脱敏/任务计数/插件清单）；脱敏 `rpc_secret`、
+    `headers`、proxy.url userinfo；**不含任务 URL 与任务级 settings**；单测
+    覆盖脱敏，e2e 验证 16 插件与 `<redacted>`。
+  - **卸载清理**：Inno `[UninstallDelete]` 删除 `{app}\plugins` 与
+    `{app}\licenses`（安装器自有），用户配置/下载不动。
 
 ## 5. 发布流程摘要
 

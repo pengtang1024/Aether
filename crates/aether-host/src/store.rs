@@ -142,6 +142,9 @@ impl StoredFile {
     }
 }
 
+/// Log lines kept per task; older lines are pruned on append.
+pub const TASK_LOG_LIMIT: i64 = 500;
+
 pub struct TaskStore {
     connection: Connection,
 }
@@ -488,7 +491,34 @@ impl TaskStore {
                 now_ms()
             ],
         )?;
+        // Bound the log table: a chatty plugin must not grow the database
+        // forever. Keep the newest lines per task; the UI reads the same tail.
+        self.connection.execute(
+            "DELETE FROM task_logs WHERE task_id = ?1 AND id NOT IN (
+                 SELECT id FROM task_logs WHERE task_id = ?1 ORDER BY id DESC LIMIT ?2)",
+            params![task_id, TASK_LOG_LIMIT],
+        )?;
         Ok(())
+    }
+
+    /// Copy the database to `path` with SQLite's online backup API — safe
+    /// while the daemon keeps writing (readers never block it for long).
+    pub fn backup_to(&self, path: impl AsRef<Path>) -> Result<(), StoreError> {
+        let path = path.as_ref();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let mut destination = Connection::open(path)?;
+        let backup = rusqlite::backup::Backup::new(&self.connection, &mut destination)?;
+        backup.run_to_completion(256, std::time::Duration::from_millis(5), None)?;
+        Ok(())
+    }
+
+    /// SQLite's own consistency check: `"ok"` or the first reported problem.
+    pub fn integrity_check(&self) -> Result<String, StoreError> {
+        Ok(self
+            .connection
+            .query_row("PRAGMA integrity_check", [], |row| row.get(0))?)
     }
 
     /// The queued task that should run next. Priority is aged: every five
@@ -728,6 +758,45 @@ pub enum StoreError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn backup_round_trips_a_task() {
+        let mut store = TaskStore::open_in_memory().expect("memory store");
+        store.create_task(&new_task("t-backup")).expect("create");
+        let path = std::env::temp_dir().join(format!(
+            "aether-backup-{}-{}.db",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        store.backup_to(&path).expect("backup");
+        let restored = TaskStore::open(&path).expect("backup opens");
+        assert_eq!(restored.list_tasks(10).expect("list").len(), 1);
+        assert_eq!(restored.integrity_check().expect("check"), "ok");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn logs_are_capped_per_task() {
+        let mut store = TaskStore::open_in_memory().expect("memory store");
+        store.create_task(&new_task("t-logs")).expect("create");
+        for index in 0..(TASK_LOG_LIMIT + 20) {
+            store
+                .append_log("t-logs", "info", &format!("line {index}"), None)
+                .expect("append");
+        }
+        let logs = store.logs("t-logs", 10_000).expect("logs");
+        assert_eq!(logs.len(), TASK_LOG_LIMIT as usize, "old lines are pruned");
+        // logs() is oldest-first: the first kept line is 20 of 0..=519.
+        assert!(logs.first().unwrap().message.contains("line 20"));
+        assert!(logs
+            .last()
+            .unwrap()
+            .message
+            .contains(&format!("line {}", TASK_LOG_LIMIT + 19)));
+    }
 
     fn new_task(id: &str) -> NewTask {
         NewTask {

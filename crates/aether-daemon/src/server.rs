@@ -1121,6 +1121,16 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
                 }
             }))
         }
+        "db_check" => Ok(json!({ "result": state.store.integrity_check()? })),
+        "backup" => {
+            let path = request
+                .settings
+                .get("path")
+                .and_then(|value| value.as_str())
+                .ok_or_else(|| DaemonError::Protocol("backup needs a path".into()))?;
+            state.store.backup_to(path)?;
+            Ok(json!({ "path": path }))
+        }
         "get_settings" => Ok(json!({ "settings": state.settings })),
         "set_settings" => {
             // Partial update: only keys that are present change. `proxy: null`

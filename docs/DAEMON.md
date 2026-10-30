@@ -88,6 +88,8 @@ aether-cli remote pause|resume|cancel|rm <task-id>
 aether-cli remote settings | set-settings '{"proxy":{"mode":"pac","url":"..."}}'
 aether-cli remote resolve-proxy https://example.com/file.zip
 aether-cli remote watch        # 每行一条 JSON 事件，Ctrl-C 退出
+aether-cli remote db-check     # PRAGMA integrity_check（ok = 健康）
+aether-cli remote backup <dest> # 在线备份数据库到 dest（daemon 无需停机）
 ```
 
 - `add` 的 `--settings` 是插件设置 JSON（如 `{"connections":8}`）。
@@ -113,6 +115,22 @@ aether-cli import backup.json --settings # 同时应用导出的 daemon settings
   `--dir` 覆盖导出里的 `target_dir`；`--settings` 不传时 daemon 配置保持不变。
 - 任务按导出顺序逐条 `add`（保留 plugin_id/priority），失败逐条报告并以非零
   退出码结束。
+
+### 3.3 诊断包与日志保留
+
+```bash
+aether-cli diag report.json     # 或 - 输出到 stdout
+```
+
+- 格式 `aether-diagnostics/1`：版本/平台/daemon 版本、settings（脱敏）、任务计数
+  （按状态）、插件清单（id/version/enabled/protocols）。**不含任务 URL 与任务级
+  settings**。
+- 脱敏规则：`rpc_secret` 与自定义请求头 `headers` → `<redacted>`；proxy.url
+  含 userinfo → `<redacted-userinfo>`。其余字段原样，便于定位环境问题。
+- 每任务日志保留最新 500 行（`TASK_LOG_LIMIT`，append 时同事务剪枝），防止
+  话痨插件把数据库写爆；UI/CLI 读到的都是同一尾部。
+- 数据库可在线备份：`remote backup <dest>` 走 SQLite backup API，daemon 运行中
+  复制安全；恢复时停 daemon 后用备份文件替换 `aether.db`。
 
 ## 4. 恢复与状态
 

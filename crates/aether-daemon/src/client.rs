@@ -263,6 +263,22 @@ impl Client {
 
     /// Daemon settings, currently `{"proxy": {...}}` (or an empty object when
     /// no proxy is configured).
+    /// Copy the daemon database to `path` (SQLite online backup).
+    pub fn backup(&mut self, path: &Path) -> Result<Value, DaemonError> {
+        let path = path.to_string_lossy().into_owned();
+        self.call("backup", None, None, None, None, json!({ "path": path }))
+    }
+
+    /// SQLite integrity check; `"ok"` means the database is healthy.
+    pub fn db_check(&mut self) -> Result<String, DaemonError> {
+        let value = self.call("db_check", None, None, None, None, json!({}))?;
+        Ok(value
+            .get("result")
+            .and_then(|result| result.as_str())
+            .unwrap_or_default()
+            .to_string())
+    }
+
     pub fn settings(&mut self) -> Result<Value, DaemonError> {
         let value = self.call("get_settings", None, None, None, None, json!({}))?;
         Ok(value.get("settings").cloned().unwrap_or(Value::Null))

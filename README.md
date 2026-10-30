@@ -357,6 +357,9 @@ Esc 关闭；下载空状态提供“清除筛选条件”，一次恢复全部�
   插件 exe（`{app}\plugins`，daemon 按 exe 同级解析）；macOS `.app` 同样
   随附四个二进制（universal）与 `Contents/Resources/plugins`，daemon 按
   bundle 布局解析插件目录
+- 数据库可在线备份（`aether-cli remote backup <dest>`）与完整性检查
+  （`remote db-check`）；`aether-cli diag` 生成脱敏诊断包（版本/设置/任务计数/
+  插件清单，凭据与 URL 不外带）；每任务日志保留最新 500 行
 - 无障碍：Slint 开启 AccessKit 桥，导航/筛选/任务行/图标按钮/进度条带
   role、label、checked/value 语义；屏幕阅读器真机验证（NVDA/Orca）尚未做，
   仓库没有对应运行环境

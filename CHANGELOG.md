@@ -52,6 +52,17 @@ versioning; 0.x releases may still change structure.
   compile it. macOS stays out on purpose: an NSStatusItem needs objc2 and
   this repo's macOS CI is check-only, leaving no way to verify it.
 
+- Persistence and support tooling: the daemon database can be backed up
+  online (`aether-cli remote backup <dest>`, SQLite backup API — no daemon
+  downtime) and checked for consistency (`remote db-check`). `aether-cli
+  diag` writes an `aether-diagnostics/1` bundle with versions, redacted
+  settings, per-state task counts and the plugin inventory; RPC secrets,
+  custom headers and proxy userinfo are masked, task URLs and task-level
+  settings never leave the machine. Task logs are now capped at the newest
+  500 lines per task so a chatty plugin cannot grow the database without
+  bound. The Windows uninstaller also removes the installer-owned plugins
+  and license folders, leaving user data alone.
+
 - Accessibility groundwork: the UI now builds with Slint's AccessKit
   bridge. Custom controls carry real semantics instead of being invisible
   to assistive tech — navigation and settings items are buttons with

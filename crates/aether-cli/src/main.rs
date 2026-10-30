@@ -90,6 +90,15 @@ fn run() -> Result<(), String> {
             let apply_settings = args.iter().any(|arg| arg == "--settings");
             import(source, &socket, dir.as_deref(), apply_settings)
         }
+        "diag" => {
+            let target = args
+                .get(1)
+                .ok_or("diag needs a file path or - for stdout")?;
+            let socket = option(&args, "--socket")
+                .map(PathBuf::from)
+                .unwrap_or_else(aether_daemon::client::default_socket);
+            diag(target, &socket)
+        }
         "export" => {
             let target = args
                 .get(1)
@@ -700,6 +709,20 @@ fn remote(args: &[String]) -> Result<(), String> {
                 serde_json::to_string_pretty(&resolved).map_err(|error| error.to_string())?
             );
         }
+        "db-check" => {
+            let result = client.db_check().map_err(|error| error.to_string())?;
+            println!("{result}");
+        }
+        "backup" => {
+            let path = args
+                .get(1)
+                .filter(|value| !value.starts_with("--"))
+                .ok_or("remote backup needs a destination path")?;
+            let value = client
+                .backup(Path::new(path))
+                .map_err(|error| error.to_string())?;
+            println!("{value}");
+        }
         "watch" => {
             // One JSON event per line; stop with Ctrl-C.
             let subscription = client.subscribe().map_err(|error| error.to_string())?;
@@ -715,11 +738,12 @@ fn remote(args: &[String]) -> Result<(), String> {
 }
 
 fn remote_usage() -> &'static str {
-    "\n  aether-cli remote <command> [--socket <path|ip:port>] [--token <rpc-token>] [--json]\n    ping | list [--json] | stats [--json] | plugins [--json]\n    add <url> [--plugin <id>] [--dir <dir>] [--priority <n>] [--settings <json>] [--json]\n    get <task-id> | logs <task-id> [--limit <n>] [--json]\n    pause|resume|cancel|rm <task-id>\n    enable|disable <plugin-id>\n    settings | set-settings <json> | resolve-proxy <url> | watch\n  ip:port (or tcp://ip:port) selects RPC over TCP; token from --token or AETHER_RPC_TOKEN"
+    "\n  aether-cli remote <command> [--socket <path|ip:port>] [--token <rpc-token>] [--json]\n    ping | list [--json] | stats [--json] | plugins [--json]\n    add <url> [--plugin <id>] [--dir <dir>] [--priority <n>] [--settings <json>] [--json]\n    get <task-id> | logs <task-id> [--limit <n>] [--json]\n    pause|resume|cancel|rm <task-id>\n    enable|disable <plugin-id>\n    settings | set-settings <json> | resolve-proxy <url> | watch
+    db-check | backup <dest-path>\n  ip:port (or tcp://ip:port) selects RPC over TCP; token from --token or AETHER_RPC_TOKEN"
 }
 
 fn import_usage() -> &'static str {
-    "\n  aether-cli import <file|-> [--socket <path>] [--dir <dir>] [--settings]\n  aether-cli export <file|-> [--socket <path>]"
+    "\n  aether-cli import <file|-> [--socket <path>] [--dir <dir>] [--settings]\n  aether-cli export <file|-> [--socket <path>]\n  aether-cli diag <file|-> [--socket <path>]"
 }
 
 /// Export the daemon's settings and task list as a JSON document. Task
@@ -957,6 +981,78 @@ fn import_export(
     Ok(())
 }
 
+/// Diagnostics bundle: versions, redacted settings, task counts and plugin
+/// inventory — enough for a bug report, nothing that carries credentials.
+const DIAG_FORMAT: &str = "aether-diagnostics/1";
+
+fn diag(target: &str, socket: &Path) -> Result<(), String> {
+    let mut client = aether_daemon::Client::connect(socket).map_err(|error| {
+        format!(
+            "daemon is not reachable at {}: {error} (start aether-daemon first)",
+            socket.display()
+        )
+    })?;
+    let daemon = client
+        .call("ping", None, None, None, None, serde_json::json!({}))
+        .map_err(|error| error.to_string())?;
+    let settings = client.settings().map_err(|error| error.to_string())?;
+    let tasks = client.list_tasks().map_err(|error| error.to_string())?;
+    let plugins = client.plugins().map_err(|error| error.to_string())?;
+    let mut by_state = std::collections::BTreeMap::new();
+    for task in &tasks {
+        *by_state.entry(task.state.as_str().to_string()).or_insert(0) += 1;
+    }
+    let document = serde_json::json!({
+        "format": DIAG_FORMAT,
+        "version": env!("CARGO_PKG_VERSION"),
+        "platform": {"os": std::env::consts::OS, "arch": std::env::consts::ARCH},
+        "daemon": {"version": daemon.get("version")},
+        "settings": redact_settings(settings),
+        "tasks": {"total": tasks.len(), "by_state": by_state},
+        "plugins": plugins.iter().map(|plugin| serde_json::json!({
+            "id": plugin.id,
+            "version": plugin.version,
+            "enabled": plugin.enabled,
+            "protocols": plugin.protocols,
+        })).collect::<Vec<_>>(),
+    });
+    let text = serde_json::to_string_pretty(&document).map_err(|error| error.to_string())?;
+    if target == "-" {
+        println!("{text}");
+    } else {
+        fs::write(target, format!("{text}\n"))
+            .map_err(|error| format!("cannot write {target}: {error}"))?;
+        println!("wrote diagnostics to {target}");
+    }
+    Ok(())
+}
+
+/// Mask values that can carry credentials: the RPC secret, custom request
+/// headers (often tokens) and proxy URL userinfo. Everything else is safe
+/// to attach to a bug report.
+fn redact_settings(mut settings: serde_json::Value) -> serde_json::Value {
+    if let Some(object) = settings.as_object_mut() {
+        for key in ["rpc_secret", "headers"] {
+            if object.contains_key(key) {
+                object.insert(key.to_string(), serde_json::json!("<redacted>"));
+            }
+        }
+        if let Some(proxy) = object
+            .get_mut("proxy")
+            .and_then(|value| value.as_object_mut())
+        {
+            let has_userinfo = proxy
+                .get("url")
+                .and_then(|value| value.as_str())
+                .is_some_and(|url| url.contains('@'));
+            if has_userinfo {
+                proxy.insert("url".to_string(), serde_json::json!("<redacted-userinfo>"));
+            }
+        }
+    }
+    settings
+}
+
 #[cfg(test)]
 mod export_tests {
     use super::{export_document, parse_export};
@@ -990,6 +1086,23 @@ mod export_tests {
         assert_eq!(tasks[0].target_dir.as_deref(), Some("/tmp"));
         assert_eq!(tasks[1].plugin_id, None);
         assert_eq!(tasks[1].priority, 0);
+    }
+
+    #[test]
+    fn diagnostics_redact_credentials_but_keep_the_rest() {
+        let settings = serde_json::json!({
+            "max_tasks": 3,
+            "rpc_secret": "super-secret",
+            "headers": "Authorization: Bearer x",
+            "proxy": {"mode": "manual", "url": "http://user:pass@proxy.test:8080"},
+            "user_agent": "Aether/0.3",
+        });
+        let redacted = super::redact_settings(settings);
+        assert_eq!(redacted["rpc_secret"], "<redacted>");
+        assert_eq!(redacted["headers"], "<redacted>");
+        assert_eq!(redacted["proxy"]["url"], "<redacted-userinfo>");
+        assert_eq!(redacted["max_tasks"], 3);
+        assert_eq!(redacted["user_agent"], "Aether/0.3");
     }
 
     #[test]
