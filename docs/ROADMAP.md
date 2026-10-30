@@ -31,9 +31,11 @@
 | `ee2ab81` | 单实例锁（fs2/配置目录锁文件，第二实例通知后退出）、关闭到托盘（仅托盘真实可用时；Linux 托盘无 watcher 改为诚实返回 None）、开机自启（Linux XDG / Windows HKCU Run / macOS LaunchAgent，状态以 OS 为准） |
 | `1d75cd5` | Windows 桌面通知（notify-rust toast + HKCU AUMID 一次注册，失败回退内置归属）+ Windows 发布产物补齐（daemon/CLI/native-host + 16 插件 exe 进 zip/安装器 `{app}\plugins`）+ default_plugins_dir exe 同级候选 |
 | `716896e` | 托盘平台分发（tray.rs → tray_sni.rs + tray_windows.rs 零依赖 Shell_NotifyIconW FFI）、zbus 移 unix-only、CI Windows 跑 bin 测试 |
+| `<待 pin>` | 设置页逐项审查：`update_check` RPC + `app_auto_update` 键（自动下载开关成真）、关于页真实打开文档/社区/反馈/版本说明/许可、PAC 回弹、重置补语言与主题；新增 `docs/SETTINGS_AUDIT.md` |
 
 - **设置页现状**：10 个分类中每个控件要么真实生效、要么是诚实的能力说明卡，
-  没有「点了没反应」或显示假值的控件。
+  没有「点了没反应」或显示假值的控件。逐项落点与边界见
+  `docs/SETTINGS_AUDIT.md`（每项控件 → 处理函数 → 真实/只读/外部）。
 - **质量门禁**：`cargo fmt --all --check` + 全仓 86 套件 + CI 三平台
   （Linux 全量测试，Windows 测 transport + rpc 回环 + bin 测试（托盘 FFI/i18n）
   + 全量 check，macOS check）。macOS runner 偶发 cancel——`gh run rerun <id> --failed` 重跑即可，
@@ -477,6 +479,26 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
     覆盖脱敏，e2e 验证 16 插件与 `<redacted>`。
   - **卸载清理**：Inno `[UninstallDelete]` 删除 `{app}\plugins` 与
     `{app}\licenses`（安装器自有），用户配置/下载不动。
+
+### 4.12 设置页诚实化（逐项审查）
+
+- **已完成**：逐个控件核对落点，修掉最后几处名不副实：
+  - 「自动下载更新」接入新设置键 `app_auto_update`，更新循环每轮重读
+    `settings.json`；关闭后只把状态置为 `available`，不下载。
+  - 「检查更新」新增 `update_check` RPC：后台线程执行清单拉取/校验/下载，
+    不阻塞下载主循环，结果经 `stats.update` 回传 About 面板。
+  - 「更新通道」删除（后端无此概念），改为只读「更新源」说明；无源时
+    `update_check` 返回 `disabled`，界面照实显示「未配置更新源」。
+  - 文档/社区/反馈/版本说明/许可改为真实 `open_url`（GitHub 仓库、
+    Discussions、Issues、CHANGELOG、LICENSE），打开器失败时提示 URL。
+  - 关于面板的状态行覆盖 idle/checking/up_to_date/available/ready/error。
+  - 重置界面偏好补齐语言（zh）与主题（跟随系统）。
+  - PAC 选择回弹到 daemon 实际模式，并说明由 `AETHER_PAC_URL` 决定。
+- **测试**：`tests/rpc.rs` 覆盖无源 `update_check=disabled`、
+  `app_auto_update` 往返/持久化/坏类型拒绝；`src/main.rs` 覆盖
+  `update_status_text` 全状态分支；三条新 @tr 文案补齐 en/ja/zh-TW。
+- **不变边界**：签名/公证、商店上架、云盘 OAuth、屏幕阅读器真机、
+  macOS `.app` 实跑需要外部账号或硬件，设置页不提供假开关。
 
 ## 5. 发布流程摘要
 

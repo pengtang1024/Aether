@@ -330,6 +330,13 @@ impl Client {
         self.call("update_status", None, None, None, None, json!({}))
     }
 
+    /// Ask the daemon to check for a new app release now. Returns
+    /// immediately with `status: "checking"`; the result shows up in
+    /// `stats().update`.
+    pub fn update_check(&mut self) -> Result<Value, DaemonError> {
+        self.call("update_check", None, None, None, None, json!({}))
+    }
+
     /// Installed plugins as the daemon registry sees them.
     pub fn plugins(&mut self) -> Result<Vec<PluginInfo>, DaemonError> {
         let value = self.call("plugins", None, None, None, None, json!({}))?;

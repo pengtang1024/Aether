@@ -285,3 +285,65 @@ fn secret_rotation_applies_to_new_connections() {
     assert_eq!(new["ok"], json!(true), "new token must work: {new}");
     drop(daemon);
 }
+
+#[test]
+fn update_check_without_source_reports_disabled() {
+    // No `--update-url` on this daemon: both the on-demand check and the
+    // dashboard status must say so instead of pretending to look.
+    let addr = free_addr();
+    let daemon = spawn_rpc_daemon("no-updates", addr, None);
+    wait_for_port(addr);
+
+    let mut local = Client::connect(&daemon.socket).unwrap();
+    let reply = local.update_check().unwrap();
+    assert_eq!(reply["status"], "disabled", "unexpected reply: {reply}");
+    assert_eq!(local.update_status().unwrap()["status"], "disabled");
+    assert!(
+        local.stats().unwrap().update.is_none(),
+        "stats must not invent an update state without a source"
+    );
+    drop(daemon);
+}
+
+#[test]
+fn app_auto_update_roundtrips_and_persists() {
+    let addr = free_addr();
+    let daemon = spawn_rpc_daemon("app-auto-update", addr, None);
+    wait_for_port(addr);
+
+    let mut local = Client::connect(&daemon.socket).unwrap();
+    // Absent by default: the update loop has always downloaded in the
+    // background, so the UI treats a missing key as "on".
+    let settings = local.settings().unwrap();
+    assert!(settings.get("app_auto_update").is_none(), "{settings}");
+
+    let saved = local
+        .set_settings(json!({"app_auto_update": false}))
+        .unwrap();
+    assert_eq!(saved["app_auto_update"], json!(false));
+    let settings_file = daemon
+        .root
+        .join("downloads")
+        .join(".aether")
+        .join("settings.json");
+    let raw = std::fs::read_to_string(&settings_file).unwrap();
+    assert!(
+        raw.contains("\"app_auto_update\": false"),
+        "not persisted: {raw}"
+    );
+
+    let saved = local
+        .set_settings(json!({"app_auto_update": true}))
+        .unwrap();
+    assert_eq!(saved["app_auto_update"], json!(true));
+
+    // A bad type is rejected like every other settings key.
+    let error = local
+        .set_settings(json!({"app_auto_update": "yes"}))
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("app_auto_update"),
+        "unexpected error: {error}"
+    );
+    drop(daemon);
+}

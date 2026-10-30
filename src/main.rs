@@ -433,6 +433,9 @@ fn refresh_rows(ui: &AppWindow, state: &Rc<RefCell<State>>) {
             ui.set_settings_plugin_auto_update(
                 settings["plugin_auto_update"].as_bool().unwrap_or(false),
             );
+            // Missing means "on": that is what the update loop did before the
+            // switch existed.
+            ui.set_settings_app_auto_update(settings["app_auto_update"].as_bool().unwrap_or(true));
             // Scheduled window (daemon-side; HH:MM strings, blank = unset).
             ui.set_settings_schedule_on(settings["schedule_on"].as_bool().unwrap_or(false));
             ui.set_settings_schedule_start(
@@ -631,6 +634,13 @@ fn refresh_rows(ui: &AppWindow, state: &Rc<RefCell<State>>) {
             );
         }
     }
+    // About panel: the daemon's real update state (null = no update source).
+    let update_text = match snapshot.stats.as_ref() {
+        Some(stats) => update_status_text(stats.update.as_ref()),
+        None => i18n::tr("daemon 未连接", "Daemon is not connected"),
+    };
+    ui.set_settings_update_status(update_text.into());
+
     let peak_now = snapshot.history.iter().copied().fold(0.0_f64, f64::max);
     ui.set_peak_speed(if peak_now > 0.0 {
         format_speed(peak_now).into()
@@ -945,7 +955,7 @@ impl UiPrefs {
 
 /// Reveal or open a path with the desktop's default handler. Used by the
 /// "after done" action; failures are ignored (the download already finished).
-fn open_path(path: &std::path::Path) {
+fn open_path(path: &std::path::Path) -> bool {
     #[cfg(target_os = "linux")]
     let mut command = {
         let mut command = Command::new("xdg-open");
@@ -965,11 +975,55 @@ fn open_path(path: &std::path::Path) {
         command.arg(path);
         command
     };
-    let _ = command
+    command
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
-        .spawn();
+        .spawn()
+        .is_ok()
+}
+
+/// Open an http(s) address with the desktop's default handler. Used by the
+/// About panel; returns false when no opener could be started.
+fn open_url(url: &str) -> bool {
+    open_path(std::path::Path::new(url))
+}
+
+/// Human-readable app-update state for the About panel. `None` means the
+/// daemon has no update source configured at all.
+fn update_status_text(update: Option<&serde_json::Value>) -> String {
+    let Some(update) = update else {
+        return i18n::tr(
+            "未配置更新源（daemon 需要 --update-url 与更新公钥）",
+            "No update source (the daemon needs --update-url and the public key)",
+        );
+    };
+    let latest = update["latest"].as_str().unwrap_or_default();
+    let error = update["error"].as_str().unwrap_or_default();
+    match update["status"].as_str().unwrap_or_default() {
+        "checking" => i18n::tr("正在检查更新…", "Checking for updates…"),
+        "idle" => i18n::tr(
+            "等待首次后台检查（每 6 小时一次）",
+            "Waiting for the first background check (every 6 hours)",
+        ),
+        "up_to_date" => i18n::tr(
+            format!("已是最新版本 {}", env!("CARGO_PKG_VERSION")),
+            format!("Up to date ({})", env!("CARGO_PKG_VERSION")),
+        ),
+        "available" => i18n::tr(
+            format!("发现新版本 {latest}，自动下载已关闭"),
+            format!("Version {latest} is available; automatic downloads are off"),
+        ),
+        "ready" => i18n::tr(
+            format!("新版本 {latest} 已下载，重启后生效"),
+            format!("Version {latest} downloaded; restart to apply"),
+        ),
+        "error" => i18n::tr(
+            format!("检查失败：{error}"),
+            format!("Check failed: {error}"),
+        ),
+        _ => i18n::tr("更新状态未知", "Unknown update state"),
+    }
 }
 
 /// Best-effort desktop notification. Linux uses `notify-send` (libnotify),
@@ -1426,13 +1480,25 @@ fn main() -> Result<(), slint::PlatformError> {
                         }
                     }
                     "proxy-mode" => {
+                        let previous = st.proxy_mode.clone();
                         st.proxy_mode = value.to_string();
                         match st.proxy_mode.as_str() {
-                            // Display-only entry: the PAC URL lives in the
-                            // daemon's start configuration, not in settings.
-                            "PAC" => {
+                            // PAC needs a URL from the daemon's start
+                            // configuration. Bounce the combo box back so it
+                            // never shows a mode the daemon is not using.
+                            "PAC" if previous != "PAC" => {
+                                st.proxy_mode = previous;
+                                if let Some(ui) = ui_handle.upgrade() {
+                                    let index = match st.proxy_mode.as_str() {
+                                        "直连" => 1,
+                                        "手动" => 2,
+                                        "PAC" => 3,
+                                        _ => 0,
+                                    };
+                                    ui.set_settings_proxy_mode(index);
+                                }
                                 hint = Some(
-                                    i18n::tr("PAC 由启动配置（AETHER_PAC_URL）决定，暂不支持在界面切换", "PAC comes from the launch configuration (AETHER_PAC_URL); switching it here is not supported")
+                                    i18n::tr("PAC 由启动配置（AETHER_PAC_URL）决定，请用启动参数切换", "PAC comes from the launch configuration (AETHER_PAC_URL); switch it with launch options")
                                         .into(),
                                 )
                             }
@@ -1485,6 +1551,24 @@ fn main() -> Result<(), slint::PlatformError> {
                             i18n::tr("已开启：daemon 每 6 小时检查并安装插件更新", "On; the daemon checks and installs plugin updates every 6 hours").into()
                         } else {
                             i18n::tr("已关闭自动更新插件", "Automatic plugin updates are off").into()
+                        });
+                    }
+                    "app-auto-update" => {
+                        let enabled = value.as_str() == "true";
+                        st.backend
+                            .set_setting(serde_json::json!({"app_auto_update": enabled}));
+                        hint = Some(if enabled {
+                            i18n::tr(
+                                "已开启：发现新版本后后台下载",
+                                "On; new releases download in the background",
+                            )
+                            .into()
+                        } else {
+                            i18n::tr(
+                                "已关闭自动下载：发现新版本只提示",
+                                "Off; new releases are reported but not downloaded",
+                            )
+                            .into()
                         });
                     }
                     "plugin-install" => {
@@ -1818,6 +1902,14 @@ fn main() -> Result<(), slint::PlatformError> {
                         if let Some(ui) = ui_handle.upgrade() {
                             ui.set_settings_clipboard(false);
                         }
+                        // Language and theme count as appearance: reset them
+                        // now instead of leaving the runtime on the old value
+                        // until the next launch.
+                        i18n::set_language("zh");
+                        if let Err(error) = slint::select_bundled_translation("") {
+                            eprintln!("aether: language selection failed: {error:?}");
+                        }
+                        save_theme_mode(0);
                         if let Some(ui) = ui_handle.upgrade() {
                             ui.set_settings_accent(0);
                             ui.set_settings_motion(true);
@@ -1826,8 +1918,10 @@ fn main() -> Result<(), slint::PlatformError> {
                             ui.set_settings_after_done(0);
                             ui.set_settings_notify_done(true);
                             ui.set_settings_notify_fail(true);
+                            ui.set_settings_language(0);
+                            ui.set_theme_mode(0);
                         }
-                        hint = Some(i18n::tr("界面偏好已恢复默认", "UI preferences restored to defaults").into());
+                        hint = Some(i18n::tr("界面偏好已恢复默认（含语言与主题）", "UI preferences restored to defaults (including language and theme)").into());
                     }
                     // The settings page still shows controls that do nothing;
                     // saying so beats a silent no-op (honest UI).
@@ -1953,30 +2047,66 @@ fn main() -> Result<(), slint::PlatformError> {
             let Some(ui) = ui_handle.upgrade() else {
                 return;
             };
+            let opened = |url: &str, zh: &str, en: &str| {
+                if open_url(url) {
+                    i18n::tr(zh.to_string(), en.to_string())
+                } else {
+                    i18n::tr(
+                        format!("无法打开浏览器，请访问 {url}"),
+                        format!("Could not open a browser; visit {url}"),
+                    )
+                }
+            };
             let message = match key.as_str() {
-                "docs" => i18n::tr(
-                    "文档 · docs.aether.dev（原型）",
-                    "Docs · docs.aether.dev (prototype)",
+                "docs" => opened(
+                    "https://github.com/pengtang1024/Aether/tree/main/docs",
+                    "已在浏览器打开文档",
+                    "Documentation opened in the browser",
                 ),
-                "community" => i18n::tr(
-                    "社区 · forum.aether.dev（原型）",
-                    "Community · forum.aether.dev (prototype)",
+                "community" => opened(
+                    "https://github.com/pengtang1024/Aether/discussions",
+                    "已在浏览器打开社区",
+                    "Community opened in the browser",
                 ),
-                "feedback" => i18n::tr(
-                    "反馈 · github.com/pengtang1024/Aether/issues（原型）",
-                    "Feedback · github.com/pengtang1024/Aether/issues (prototype)",
+                "feedback" => opened(
+                    "https://github.com/pengtang1024/Aether/issues",
+                    "已在浏览器打开问题反馈",
+                    "Issue tracker opened in the browser",
                 ),
-                "update" => i18n::tr(
-                    "已检查更新：当前已是最新版本 0.1.0",
-                    "Update check done; 0.1.0 is the latest version",
+                "changelog" => opened(
+                    "https://github.com/pengtang1024/Aether/blob/main/CHANGELOG.md",
+                    "已在浏览器打开版本说明",
+                    "Release notes opened in the browser",
                 ),
-                "channel" => i18n::tr("更新通道已更新", "Update channel changed"),
-                "auto-update" => i18n::tr("自动更新设置已保存", "Auto-update settings saved"),
-                "changelog" => i18n::tr(
-                    "版本说明 · 0.1.0（原型）",
-                    "Release notes · 0.1.0 (prototype)",
+                "license" => opened(
+                    "https://github.com/pengtang1024/Aether/blob/main/LICENSE",
+                    "已在浏览器打开许可证",
+                    "License opened in the browser",
                 ),
-                "license" => "MIT License · Slint Royalty-free 2.0".to_string(),
+                "update" => {
+                    let (connected, configured) = {
+                        let st = state.borrow();
+                        let snapshot = st.backend.snapshot();
+                        (
+                            snapshot.connected,
+                            snapshot
+                                .stats
+                                .as_ref()
+                                .is_some_and(|stats| stats.update.is_some()),
+                        )
+                    };
+                    if !connected {
+                        i18n::tr("daemon 未连接，无法检查更新", "The daemon is not connected")
+                    } else if !configured {
+                        i18n::tr(
+                            "未配置更新源：daemon 需要 --update-url 与更新公钥",
+                            "No update source: the daemon needs --update-url and the public key",
+                        )
+                    } else {
+                        state.borrow().backend.check_update();
+                        i18n::tr("正在检查更新…", "Checking for updates…")
+                    }
+                }
                 _ => i18n::tr("操作已记录", "Done"),
             };
             show_toast(&ui, &state, &message);
@@ -2095,12 +2225,12 @@ fn main() -> Result<(), slint::PlatformError> {
                         match after {
                             1 => {
                                 if let Some(dir) = &item.dir {
-                                    open_path(std::path::Path::new(dir));
+                                    let _ = open_path(std::path::Path::new(dir));
                                 }
                             }
                             2 => {
                                 if let (Some(dir), Some(file)) = (&item.dir, &item.file) {
-                                    open_path(&std::path::Path::new(dir).join(file));
+                                    let _ = open_path(&std::path::Path::new(dir).join(file));
                                 }
                             }
                             _ => {}
@@ -2174,5 +2304,48 @@ mod notification_tests {
             .status()
             .expect("reg query must run");
         assert!(status.success(), "AUMID must be registered under HKCU");
+    }
+}
+
+#[cfg(test)]
+mod update_status_tests {
+    use serde_json::json;
+
+    use super::update_status_text;
+
+    /// The About panel renders exactly one line per daemon state; a missing
+    /// source must read as "not configured", never as "up to date".
+    #[test]
+    fn every_update_state_has_a_line() {
+        super::i18n::set_language("en");
+        assert_eq!(
+            update_status_text(None),
+            "No update source (the daemon needs --update-url and the public key)"
+        );
+        assert_eq!(
+            update_status_text(Some(&json!({"status": "checking"}))),
+            "Checking for updates…"
+        );
+        assert!(update_status_text(Some(&json!({"status": "idle"}))).contains("6 hours"));
+        assert!(
+            update_status_text(Some(&json!({"status": "up_to_date"}))).starts_with("Up to date")
+        );
+        assert_eq!(
+            update_status_text(Some(&json!({"status": "available", "latest": "0.3.0"}))),
+            "Version 0.3.0 is available; automatic downloads are off"
+        );
+        assert_eq!(
+            update_status_text(Some(&json!({"status": "ready", "latest": "0.3.0"}))),
+            "Version 0.3.0 downloaded; restart to apply"
+        );
+        assert_eq!(
+            update_status_text(Some(&json!({"status": "error", "error": "timeout"}))),
+            "Check failed: timeout"
+        );
+        assert_eq!(
+            update_status_text(Some(&json!({"status": "what"}))),
+            "Unknown update state"
+        );
+        super::i18n::set_language("zh");
     }
 }

@@ -45,6 +45,9 @@ pub struct Stats {
     pub queued: u64,
     pub plugins_total: u64,
     pub plugins_enabled: u64,
+    /// App-update status from the daemon's periodic check (`null` when no
+    /// update source is configured).
+    pub update: Option<Value>,
 }
 
 impl Stats {
@@ -122,6 +125,10 @@ impl Stats {
             queued: num(&tasks, "queued"),
             plugins_total: num(&plugins, "total"),
             plugins_enabled: num(&plugins, "enabled"),
+            update: value
+                .get("update")
+                .filter(|update| !update.is_null())
+                .cloned(),
         }
     }
 }

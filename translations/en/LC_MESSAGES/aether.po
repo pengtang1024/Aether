@@ -774,3 +774,12 @@ msgstr "Resume"
 
 msgid "删除"
 msgstr "Delete"
+
+msgid "更新源"
+msgstr "Update source"
+
+msgid "由 daemon 启动配置决定（--update-url 与更新公钥），界面不可切换"
+msgstr "Set by the daemon's launch options (--update-url and the update public key); it cannot be changed here"
+
+msgid "在后台准备新版本；关闭后只报告发现新版本，不自动下载"
+msgstr "Prepare new releases in the background; when off, a new release is only reported, not downloaded"

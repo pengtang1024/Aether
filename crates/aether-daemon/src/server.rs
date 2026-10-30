@@ -151,6 +151,8 @@ struct State {
     /// Update manifest URL; when set together with the key, the plugin
     /// update channel (`plugin_updates` / `plugin_update_all`) is live.
     update_url: Option<String>,
+    /// AppImage path the updater replaces when a release is applied.
+    update_appimage: Option<PathBuf>,
 }
 
 impl Default for SystemProxyCache {
@@ -277,6 +279,7 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
                 key.clone(),
                 config.update_appimage.clone(),
                 data_dir.clone(),
+                settings_path.clone(),
                 status.clone(),
                 config.socket.clone(),
             );
@@ -319,6 +322,7 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
         host_version: config.host_version.clone(),
         plugin_public_key: config.update_public_key.clone(),
         update_url: config.update_url.clone(),
+        update_appimage: config.update_appimage.clone(),
     };
 
     recover_tasks(&mut state);
@@ -450,11 +454,67 @@ pub fn plugin_auto_update_pass(
     Ok(Some(result))
 }
 
+/// One app-update pass: fetch and verify the manifest, then — unless the
+/// user turned background downloads off — download and, for AppImage,
+/// apply the release. Blocking; the loop and the on-demand RPC run it on a
+/// worker thread. Returns the status it wrote.
+fn update_pass(
+    manifest_url: &str,
+    public_key: &str,
+    appimage: Option<&Path>,
+    data_dir: &Path,
+    settings_path: &Path,
+    status: &Arc<Mutex<serde_json::Value>>,
+) -> serde_json::Value {
+    // Re-read each pass so the settings switch applies without a restart.
+    let auto = Settings::load(settings_path)
+        .app_auto_update
+        .unwrap_or(true);
+    let result = (|| -> Result<serde_json::Value, aether_update::UpdateError> {
+        let client = UpdateClient::new(
+            manifest_url,
+            public_key,
+            env!("CARGO_PKG_VERSION"),
+            aether_plugin_sdk::current_platform_key(),
+            data_dir,
+        )?;
+        let Some(manifest) = client.check()? else {
+            return Ok(json!({"status": "up_to_date"}));
+        };
+        if !auto {
+            // Background downloads are off: report the version and let the
+            // user decide from the About panel.
+            return Ok(json!({"status": "available", "latest": manifest.version}));
+        }
+        let asset = client.asset_for_platform(&manifest)?;
+        let artifact = client.download(&manifest, asset)?;
+        if asset.kind == "appimage" {
+            if let Some(target) = appimage {
+                client.apply_appimage(&artifact, target)?;
+            }
+        }
+        Ok(json!({
+            "status": "ready",
+            "latest": manifest.version,
+            "artifact": artifact.to_string_lossy(),
+        }))
+    })();
+    let value = result.unwrap_or_else(|error| {
+        json!({
+            "status": "error",
+            "error": error.to_string(),
+        })
+    });
+    *status.lock().unwrap() = value.clone();
+    value
+}
+
 fn spawn_update_loop(
     manifest_url: String,
     public_key: String,
     appimage: Option<PathBuf>,
     data_dir: PathBuf,
+    settings_path: PathBuf,
     status: Arc<Mutex<serde_json::Value>>,
     socket: std::path::PathBuf,
 ) {
@@ -474,57 +534,14 @@ fn spawn_update_loop(
                 Ok(None) => {}
                 Err(error) => eprintln!("aether-daemon: plugin auto-update: {error}"),
             }
-            let client = match UpdateClient::new(
+            update_pass(
                 &manifest_url,
                 &public_key,
-                env!("CARGO_PKG_VERSION"),
-                aether_plugin_sdk::current_platform_key(),
+                appimage.as_deref(),
                 &data_dir,
-            ) {
-                Ok(client) => client,
-                Err(error) => {
-                    *status.lock().unwrap() = json!({
-                        "status": "error",
-                        "error": error.to_string(),
-                    });
-                    thread::sleep(Duration::from_secs(6 * 3600));
-                    continue;
-                }
-            };
-
-            match client.check() {
-                Ok(None) => {
-                    *status.lock().unwrap() = json!({"status": "up_to_date"});
-                }
-                Ok(Some(manifest)) => {
-                    let result = client.asset_for_platform(&manifest).and_then(|asset| {
-                        let artifact = client.download(&manifest, asset)?;
-                        if asset.kind == "appimage" {
-                            if let Some(target) = &appimage {
-                                client.apply_appimage(&artifact, target)?;
-                            }
-                        }
-                        Ok((artifact, manifest.version.clone()))
-                    });
-                    *status.lock().unwrap() = match result {
-                        Ok((artifact, version)) => json!({
-                            "status": "ready",
-                            "latest": version,
-                            "artifact": artifact.to_string_lossy(),
-                        }),
-                        Err(error) => json!({
-                            "status": "error",
-                            "error": error.to_string(),
-                        }),
-                    };
-                }
-                Err(error) => {
-                    *status.lock().unwrap() = json!({
-                        "status": "error",
-                        "error": error.to_string(),
-                    });
-                }
-            }
+                &settings_path,
+                &status,
+            );
             thread::sleep(Duration::from_secs(6 * 3600));
         }
     });
@@ -1118,7 +1135,12 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
                 "plugins": {
                     "total": registry.len(),
                     "enabled": registry.iter().filter(|entry| entry.enabled).count(),
-                }
+                },
+                // App-update status, so the About panel shows the same state
+                // the background loop is in. `null` = no update source.
+                "update": state.update.as_ref().map(|status| {
+                    status.lock().unwrap().clone()
+                }),
             }))
         }
         "db_check" => Ok(json!({ "result": state.store.integrity_check()? })),
@@ -1281,6 +1303,11 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
                         DaemonError::Protocol(format!("invalid plugin_auto_update: {error}"))
                     })?;
             }
+            if let Some(value) = patch.get("app_auto_update") {
+                next.app_auto_update = serde_json::from_value(value.clone()).map_err(|error| {
+                    DaemonError::Protocol(format!("invalid app_auto_update: {error}"))
+                })?;
+            }
             next.validate()?;
 
             let network_before = state.settings.network();
@@ -1347,6 +1374,33 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
             || json!({"status": "disabled"}),
             |status| status.lock().unwrap().clone(),
         )),
+        // Run one check (and, unless the user turned background downloads
+        // off, download/apply the release) off the main loop: fetching the
+        // manifest must not stall downloads. The result lands in `stats`.
+        "update_check" => {
+            let (Some(status), Some(url), Some(key)) = (
+                state.update.clone(),
+                state.update_url.clone(),
+                state.plugin_public_key.clone(),
+            ) else {
+                return Ok(json!({"status": "disabled"}));
+            };
+            *status.lock().unwrap() = json!({"status": "checking"});
+            let appimage = state.update_appimage.clone();
+            let data_dir = state.data_dir.clone();
+            let settings_path = state.settings_path.clone();
+            thread::spawn(move || {
+                update_pass(
+                    &url,
+                    &key,
+                    appimage.as_deref(),
+                    &data_dir,
+                    &settings_path,
+                    &status,
+                );
+            });
+            Ok(json!({"status": "checking"}))
+        }
         "shutdown" => Ok(json!({"ok": true})),
         other => Err(DaemonError::Protocol(format!("unknown method {other}"))),
     }

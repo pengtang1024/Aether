@@ -103,6 +103,11 @@ pub struct Settings {
     /// cycle and install outdated plugins automatically. Off by default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plugin_auto_update: Option<bool>,
+    /// Download a new app release as soon as the periodic check finds one.
+    /// `None`/`Some(true)` keeps the updater downloading in the background;
+    /// `Some(false)` only reports the version so the user decides.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_auto_update: Option<bool>,
 }
 
 /// The upper bound the http plugin honours for [`Settings::connections`]:
@@ -116,7 +121,7 @@ pub const CONNECTIONS_DEFAULT: u32 = 4;
 /// Every key `set_settings` accepts. The file is parsed with
 /// `deny_unknown_fields`, so the RPC rejects the same typos instead of
 /// silently storing nothing.
-pub const KEYS: [&str; 22] = [
+pub const KEYS: [&str; 23] = [
     "proxy",
     "user_agent",
     "ip_mode",
@@ -139,6 +144,7 @@ pub const KEYS: [&str; 22] = [
     "rpc_secret",
     "ffmpeg_path",
     "plugin_auto_update",
+    "app_auto_update",
 ];
 
 /// The limits in force: `settings.json` wins, the boot configuration
@@ -661,6 +667,7 @@ mod tests {
             rpc_secret: Some("token".into()),
             ffmpeg_path: Some("/usr/bin/ffmpeg".into()),
             plugin_auto_update: Some(true),
+            app_auto_update: Some(false),
         };
         let object = serde_json::to_value(settings).unwrap();
         let object = object.as_object().unwrap();

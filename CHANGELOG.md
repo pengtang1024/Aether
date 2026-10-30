@@ -7,6 +7,25 @@ versioning; 0.x releases may still change structure.
 
 ### Added
 
+- Settings can now actually check for app updates. A new `update_check` RPC
+  fetches and verifies the signed manifest on a worker thread (the download
+  loop keeps running), and the About panel renders the live state from
+  `stats.update`: idle, checking, up to date, available, downloaded and
+  ready to restart, or the error. A daemon started without `--update-url`
+  answers `disabled`, and the panel says "no update source" instead of
+  showing a fake "already latest 0.1.0" toast.
+- Background app downloads are a real setting (`app_auto_update`). The
+  periodic updater re-reads `settings.json` on every pass, so turning it off
+  takes effect without a restart: a new release is then only reported as
+  `available`. Missing key keeps the previous behaviour (download).
+- The About panel's documentation, community, feedback, release-notes and
+  licence rows open the real GitHub URLs (repository docs, Discussions,
+  Issues, `CHANGELOG.md`, `LICENSE`). If no desktop opener can be started the
+  toast prints the URL instead.
+- `docs/SETTINGS_AUDIT.md` maps every settings control to the code that
+  executes it and records the honest boundaries (read-only paths, launch
+  configuration, external accounts).
+
 - The UI is bilingual with Chinese as the built-in first language. All 200+
   Slint strings are wrapped in `@tr()` with the Chinese source remaining the
   default (the compiler reserves index 0 for it); `translations/en` provides
@@ -266,6 +285,18 @@ versioning; 0.x releases may still change structure.
   proxy environment variables staying authoritative. Detection is cached for
   60 seconds and the resolved proxy is applied per task, probe included.
   WPAD autodiscovery is deliberately not implemented.
+
+### Changed
+
+- "Reset UI preferences" now also restores the language (Simplified Chinese)
+  and the theme (follow the system) immediately, not just accent, motion,
+  flow, start page, after-done action and notifications.
+- Selecting PAC in the proxy combo box bounces back to the mode the daemon is
+  actually using and explains that `AETHER_PAC_URL`/`--pac-url` decides it.
+  The UI no longer displays a mode the daemon is not running.
+- The fake "update channel" (stable/beta) combo box is gone: the update source
+  is a read-only row driven by the daemon's launch configuration. Since there
+  is no channel concept in the backend, a switch would have been a lie.
 
 ## [0.2.0] - 2026-10-27
 

@@ -102,6 +102,9 @@ mod imp {
         RescanPlugins,
         /// Check the update manifest and install every outdated plugin.
         PluginUpdateAll,
+        /// Ask the daemon to check for a new app release now. The result
+        /// appears in `stats.update` on the next sample.
+        CheckUpdate,
     }
 
     struct Shared {
@@ -199,6 +202,12 @@ mod imp {
         /// the summary arrives through `take_notice`.
         pub fn plugin_update_all(&self) {
             let _ = self.commands.send(Command::PluginUpdateAll);
+        }
+
+        /// Trigger one app-update check in the daemon. The About panel reads
+        /// the live status from the dashboard sample, so no reply is needed.
+        pub fn check_update(&self) {
+            let _ = self.commands.send(Command::CheckUpdate);
         }
 
         /// Pop the most recent error surfaced by the daemon.
@@ -542,6 +551,13 @@ mod imp {
                         format!("已重新扫描插件目录：{total} 个插件"),
                         format!("Re-scanned the plugin directory: {total} plugins"),
                     ));
+                }
+                Command::CheckUpdate => {
+                    // `checking` is already reported through stats; a daemon
+                    // without an update source answers `disabled`, which the
+                    // panel renders as "not configured".
+                    client.update_check()?;
+                    self.stats_sampled = None;
                 }
                 Command::PluginUpdateAll => {
                     let value = client.plugin_update_all()?;

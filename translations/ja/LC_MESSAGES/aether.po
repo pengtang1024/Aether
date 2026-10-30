@@ -774,3 +774,12 @@ msgstr "再開"
 
 msgid "删除"
 msgstr "削除"
+
+msgid "更新源"
+msgstr "更新元"
+
+msgid "由 daemon 启动配置决定（--update-url 与更新公钥），界面不可切换"
+msgstr "daemon の起動設定（--update-url と更新公開鍵）で決まり、ここでは変更できません"
+
+msgid "在后台准备新版本；关闭后只报告发现新版本，不自动下载"
+msgstr "新しいバージョンをバックグラウンドで準備します。オフにすると検出のみで自動ダウンロードしません"

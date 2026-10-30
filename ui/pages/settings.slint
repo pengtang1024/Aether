@@ -1161,6 +1161,11 @@ component AdvancedPanel inherits Rectangle {
 
 component AboutPanel inherits Rectangle {
     in property <string> app-version: "";
+    // Live status of the daemon's update check, mirrored from `stats.update`.
+    in property <string> update-status: "";
+    // Daemon-backed: download a found release in the background.
+    in-out property <bool> auto-update-on: true;
+    callback changed(string, string);
     callback support-action(string);
 
     VerticalLayout {
@@ -1221,21 +1226,19 @@ component AboutPanel inherits Rectangle {
 
             SettingRow {
                 icon-source: AetherIcons.signal;
-                title: @tr("更新通道");
-                description: @tr("稳定版优先，测试版获取新能力");
-                ComboBox {
-                    model: ["稳定版", "测试版"];
-                    current-index: 0;
-                    min-width: Aether.field-md;
-                    max-width: Aether.field-md;
-                    selected => { root.support-action("channel"); }
-                }
+                title: @tr("更新源");
+                description: @tr("由 daemon 启动配置决定（--update-url 与更新公钥），界面不可切换");
+                divider: false;
             }
             SettingRow {
                 icon-source: AetherIcons.refresh;
                 title: @tr("自动下载更新");
-                description: @tr("在后台准备新版本");
-                Switch { checked: true; toggled => { root.support-action("auto-update"); } }
+                description: @tr("在后台准备新版本；关闭后只报告发现新版本，不自动下载");
+                divider: false;
+                Switch {
+                    checked: root.auto-update-on;
+                    toggled => { root.changed("app-auto-update", self.checked ? "true" : "false"); }
+                }
             }
             SettingRow {
                 icon-source: AetherIcons.info;
@@ -1243,6 +1246,14 @@ component AboutPanel inherits Rectangle {
                 description: @tr("查看变更、兼容性与已知问题");
                 divider: false;
                 TextButton { text: @tr("打开"); clicked => { root.support-action("changelog"); } }
+            }
+
+            Text {
+                text: root.update-status;
+                color: Aether.on-surface-muted;
+                font-size: Aether.text-caption;
+                wrap: word-wrap;
+                visible: root.update-status != "";
             }
         }
 
@@ -1320,6 +1331,9 @@ export component SettingsPage inherits Rectangle {
     in-out property <bool> flow-on: true;
     in-out property <bool> notify-done: true;
     in-out property <bool> notify-fail: true;
+    // Daemon-backed app-update knobs (About panel).
+    in-out property <bool> app-auto-update: true;
+    in property <string> update-status: "";
     in-out property <bool> schedule-on: false;
     in-out property <string> schedule-start: "";
     in-out property <string> schedule-end: "";
@@ -1461,6 +1475,9 @@ export component SettingsPage inherits Rectangle {
                     data-dir: root.data-dir; changed(k, v) => { root.settings-changed(k, v); } }
                 if root.tab == 9: AboutPanel {
                     app-version: root.app-version;
+                    update-status: root.update-status;
+                    auto-update-on <=> root.app-auto-update;
+                    changed(k, v) => { root.settings-changed(k, v); }
                     support-action(k) => { root.support-action(k); }
                 }
             }
