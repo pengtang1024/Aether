@@ -436,6 +436,12 @@ fn refresh_rows(ui: &AppWindow, state: &Rc<RefCell<State>>) {
             // Missing means "on": that is what the update loop did before the
             // switch existed.
             ui.set_settings_app_auto_update(settings["app_auto_update"].as_bool().unwrap_or(true));
+            // RPC is configured through the same settings file; the token
+            // itself is never mirrored into the input field.
+            let rpc_listen = settings["rpc_listen"].as_str().unwrap_or("");
+            let rpc_secret = settings["rpc_secret"].as_str().unwrap_or("");
+            ui.set_settings_rpc_listen(rpc_listen.to_string().into());
+            ui.set_settings_rpc_status(rpc_status_text(rpc_listen, !rpc_secret.is_empty()).into());
             // Scheduled window (daemon-side; HH:MM strings, blank = unset).
             ui.set_settings_schedule_on(settings["schedule_on"].as_bool().unwrap_or(false));
             ui.set_settings_schedule_start(
@@ -987,6 +993,29 @@ fn open_path(path: &std::path::Path) -> bool {
 /// About panel; returns false when no opener could be started.
 fn open_url(url: &str) -> bool {
     open_path(std::path::Path::new(url))
+}
+
+/// One line describing the daemon's persisted RPC configuration. The
+/// listener only rebinds at daemon start, so the wording avoids claiming
+/// the address is live right now.
+fn rpc_status_text(listen: &str, has_secret: bool) -> String {
+    let listen = listen.trim();
+    if listen.is_empty() {
+        return i18n::tr("远程控制未开启", "Remote control is off");
+    }
+    if has_secret {
+        i18n::tr(
+            format!("已配置 {listen}，需要令牌（重启 daemon 后按此地址监听）"),
+            format!(
+                "Configured on {listen} with a token (the daemon listens there after a restart)"
+            ),
+        )
+    } else {
+        i18n::tr(
+            format!("已配置 {listen}，无令牌（仅回环地址允许；重启 daemon 后生效）"),
+            format!("Configured on {listen} without a token (loopback only; applies after a daemon restart)"),
+        )
+    }
 }
 
 /// Human-readable app-update state for the About panel. `None` means the
@@ -2043,6 +2072,72 @@ fn main() -> Result<(), slint::PlatformError> {
     {
         let ui_handle = ui.as_weak();
         let state = state.clone();
+        // ---- RPC config ---------------------------------------------------------
+        {
+            let ui_handle = ui.as_weak();
+            let state = state.clone();
+            ui.on_rpc_apply(move |listen, secret| {
+            let Some(ui) = ui_handle.upgrade() else {
+                return;
+            };
+            let listen = listen.trim().to_string();
+            let secret = secret.trim().to_string();
+            let mut patch = serde_json::Map::new();
+            patch.insert(
+                "rpc_listen".into(),
+                if listen.is_empty() {
+                    serde_json::Value::Null
+                } else {
+                    serde_json::json!(listen)
+                },
+            );
+            // An empty field means "keep the current token"; clearing is an
+            // explicit button so a stray blank apply cannot drop auth.
+            if !secret.is_empty() {
+                patch.insert("rpc_secret".into(), serde_json::json!(secret));
+            }
+            state
+                .borrow()
+                .backend
+                .set_setting(serde_json::Value::Object(patch));
+            ui.set_settings_rpc_secret_value("".into());
+            let message = if listen.is_empty() {
+                i18n::tr(
+                    "已关闭远程控制：重启 daemon 后生效",
+                    "Remote control disabled; applies after a daemon restart",
+                )
+            } else {
+                i18n::tr(
+                    "已保存 RPC 配置：监听地址重启后生效，令牌立即生效",
+                    "RPC settings saved; the address applies after a restart, the token immediately",
+                )
+            };
+            show_toast(&ui, &state, &message);
+        });
+        }
+        {
+            let ui_handle = ui.as_weak();
+            let state = state.clone();
+            ui.on_rpc_clear_secret(move || {
+                let Some(ui) = ui_handle.upgrade() else {
+                    return;
+                };
+                state
+                    .borrow()
+                    .backend
+                    .set_setting(serde_json::json!({"rpc_secret": null}));
+                ui.set_settings_rpc_secret_value("".into());
+                show_toast(
+                    &ui,
+                    &state,
+                    &i18n::tr(
+                        "已清除访问令牌：重启 daemon 后按新配置监听",
+                        "Access token cleared; the daemon applies it on the next start",
+                    ),
+                );
+            });
+        }
+
         ui.on_support_action(move |key| {
             let Some(ui) = ui_handle.upgrade() else {
                 return;
@@ -2311,7 +2406,7 @@ mod notification_tests {
 mod update_status_tests {
     use serde_json::{json, Value};
 
-    use super::update_status_text;
+    use super::{rpc_status_text, update_status_text};
 
     /// The process language is global and other test threads flip it, so a
     /// line is accepted in either language instead of setting the flag here
@@ -2368,6 +2463,27 @@ mod update_status_tests {
             Some(json!({"status": "what"})),
             "更新状态未知",
             "Unknown update state",
+        );
+    }
+
+    #[test]
+    fn rpc_status_names_the_configured_address() {
+        let off = rpc_status_text("", false);
+        assert!(
+            off == "远程控制未开启" || off == "Remote control is off",
+            "unexpected: {off:?}"
+        );
+        let with_token = rpc_status_text("127.0.0.1:7777", true);
+        assert!(with_token.contains("127.0.0.1:7777"), "{with_token}");
+        assert!(
+            with_token.contains("令牌") || with_token.contains("token"),
+            "{with_token}"
+        );
+        let no_token = rpc_status_text("0.0.0.0:7777", false);
+        assert!(no_token.contains("0.0.0.0:7777"), "{no_token}");
+        assert!(
+            no_token.contains("回环") || no_token.contains("loopback"),
+            "{no_token}"
         );
     }
 }

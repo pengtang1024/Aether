@@ -783,3 +783,33 @@ msgstr "Set by the daemon's launch options (--update-url and the update public k
 
 msgid "在后台准备新版本；关闭后只报告发现新版本，不自动下载"
 msgstr "Prepare new releases in the background; when off, a new release is only reported, not downloaded"
+
+msgid "远程控制（RPC）"
+msgstr "Remote control (RPC)"
+
+msgid "CLI 与其他设备连接 daemon"
+msgstr "CLI and other devices connect to the daemon"
+
+msgid "监听地址"
+msgstr "Listen address"
+
+msgid "例如 127.0.0.1:7777；留空关闭；非回环地址必须设置令牌；修改后重启 daemon 生效"
+msgstr "For example 127.0.0.1:7777; leave blank to turn it off; a non-loopback address requires a token; a restart applies the address"
+
+msgid "访问令牌"
+msgstr "Access token"
+
+msgid "留空保持不变；设置后立即生效（无需重启）"
+msgstr "Leave blank to keep the current token; a new token applies immediately (no restart)"
+
+msgid "留空保持不变"
+msgstr "Leave blank to keep it"
+
+msgid "状态"
+msgstr "Status"
+
+msgid "清除令牌"
+msgstr "Clear token"
+
+msgid "未开启"
+msgstr "Off"

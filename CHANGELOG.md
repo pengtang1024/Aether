@@ -25,6 +25,13 @@ versioning; 0.x releases may still change structure.
 - `docs/SETTINGS_AUDIT.md` maps every settings control to the code that
   executes it and records the honest boundaries (read-only paths, launch
   configuration, external accounts).
+- Settings → Advanced now configures remote control (RPC) for real: a listen
+  address, a password-style access token, "apply" and "clear token" buttons,
+  and a status line. The address is persisted and bound on the next daemon
+  start (the line says so), while token changes rotate live. A non-loopback
+  address without a token is rejected by the daemon's existing validation.
+  Verified end to end: `aether-cli remote stats --socket 127.0.0.1:7788
+  --token …` works, missing/wrong tokens are refused.
 
 - The UI is bilingual with Chinese as the built-in first language. All 200+
   Slint strings are wrapped in `@tr()` with the Chinese source remaining the
@@ -288,6 +295,12 @@ versioning; 0.x releases may still change structure.
 
 ### Changed
 
+- Every settings switch is now a two-way binding. The one-way `checked:`
+  bindings meant a programmatic bounce was invisible: turning on the
+  download schedule without start/end times showed the switch as on while
+  the daemon never received it, and an OS refusal of start-at-login left the
+  switch on. The switches now follow the real state, and the schedule bounce
+  was re-tested in the running UI.
 - "Reset UI preferences" now also restores the language (Simplified Chinese)
   and the theme (follow the system) immediately, not just accent, motion,
   flow, start page, after-done action and notifications.

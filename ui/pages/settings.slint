@@ -238,7 +238,7 @@ component GeneralPanel inherits Rectangle {
                 title: @tr("开机自启");
                 description: @tr("登录系统时自动启动 Aether（由操作系统管理，删除自启项即关闭）");
                 Switch {
-                    checked: root.autostart-on;
+                    checked <=> root.autostart-on;
                     toggled => { root.changed("autostart", self.checked ? "true" : "false"); }
                 }
             }
@@ -284,7 +284,7 @@ component GeneralPanel inherits Rectangle {
                     : @tr("当前会话没有可用的剪贴板后端（远程/无图形会话），此功能不可用");
                 divider: false;
                 Switch {
-                    checked: root.clipboard-on;
+                    checked <=> root.clipboard-on;
                     enabled: root.clipboard-available;
                     toggled => { root.changed("clipboard-watch", self.checked ? "true" : "false"); }
                 }
@@ -513,7 +513,7 @@ component NetworkPanel inherits Rectangle {
                 title: @tr("FTP 被动模式");
                 description: @tr("兼容更多 FTP 服务器；关闭后使用主动模式");
                 divider: false;
-                Switch { checked: root.ftp-passive-on; toggled => { root.changed("ftp-passive", self.checked ? "true" : "false"); } }
+                Switch { checked <=> root.ftp-passive-on; toggled => { root.changed("ftp-passive", self.checked ? "true" : "false"); } }
             }
         }
     }
@@ -557,7 +557,7 @@ component BtPanel inherits Rectangle {
                 title: "DHT";
                 description: @tr("通过分布式哈希表发现节点");
                 divider: false;
-                Switch { checked: root.bt-dht-on; toggled => { root.changed("bt-dht", self.checked ? "true" : "false"); } }
+                Switch { checked <=> root.bt-dht-on; toggled => { root.changed("bt-dht", self.checked ? "true" : "false"); } }
             }
         }
 
@@ -964,7 +964,7 @@ component SchedulePanel inherits Rectangle {
                 icon-source: AetherIcons.play;
                 title: @tr("启用计划下载");
                 description: @tr("需要填好开始与结束时间");
-                Switch { checked: root.schedule-on; toggled => { root.changed("schedule-on", self.checked ? "true" : "false"); } }
+                Switch { checked <=> root.schedule-on; toggled => { root.changed("schedule-on", self.checked ? "true" : "false"); } }
             }
             SettingRow {
                 icon-source: AetherIcons.clock;
@@ -1004,14 +1004,14 @@ component SchedulePanel inherits Rectangle {
                 icon-source: AetherIcons.check;
                 title: @tr("下载完成");
                 description: @tr("完成后通过系统通知提醒（notify-send）");
-                Switch { checked: root.notify-done-on; toggled => { root.changed("notify-done", self.checked ? "true" : "false"); } }
+                Switch { checked <=> root.notify-done-on; toggled => { root.changed("notify-done", self.checked ? "true" : "false"); } }
             }
             SettingRow {
                 icon-source: AetherIcons.alert;
                 title: @tr("下载失败");
                 description: @tr("失败时提醒并附错误原因；手动取消不提醒");
                 divider: false;
-                Switch { checked: root.notify-fail-on; toggled => { root.changed("notify-fail", self.checked ? "true" : "false"); } }
+                Switch { checked <=> root.notify-fail-on; toggled => { root.changed("notify-fail", self.checked ? "true" : "false"); } }
             }
         }
     }
@@ -1086,14 +1086,14 @@ component AppearancePanel inherits Rectangle {
                 icon-source: AetherIcons.cloud;
                 title: @tr("背景流线");
                 description: @tr("窗口边缘的低对比度 Aurora 装饰");
-                Switch { checked: root.flow-on; toggled => { root.changed("flow-background", self.checked ? "true" : "false"); } }
+                Switch { checked <=> root.flow-on; toggled => { root.changed("flow-background", self.checked ? "true" : "false"); } }
             }
             SettingRow {
                 icon-source: AetherIcons.play;
                 title: @tr("界面动效");
                 description: @tr("关闭后所有过渡立即完成（无障碍）");
                 divider: false;
-                Switch { checked: root.motion-on; toggled => { root.changed("motion", self.checked ? "true" : "false"); } }
+                Switch { checked <=> root.motion-on; toggled => { root.changed("motion", self.checked ? "true" : "false"); } }
             }
         }
     }
@@ -1102,7 +1102,15 @@ component AppearancePanel inherits Rectangle {
 component AdvancedPanel inherits Rectangle {
     in property <string> plugins-dir: "";
     in property <string> data-dir: "";
+    // Daemon-backed remote control (RPC): persisted config plus a live
+    // status line. The token is never mirrored back into the field.
+    in property <string> rpc-listen: "";
+    in property <string> rpc-status: "";
+    in-out property <string> rpc-listen-value: "";
+    in-out property <string> rpc-secret-value: "";
     callback changed(string, string);
+    callback rpc-apply(string, string);
+    callback rpc-clear-secret;
 
     VerticalLayout {
         width: 100%;
@@ -1139,6 +1147,47 @@ component AdvancedPanel inherits Rectangle {
                     font-size: Aether.text-caption;
                     font-family: "JetBrains Mono";
                     vertical-alignment: center;
+                }
+            }
+        }
+
+        SectionCard {
+            icon-source: AetherIcons.signal;
+            title: @tr("远程控制（RPC）");
+            subtitle: @tr("CLI 与其他设备连接 daemon");
+
+            SettingRow {
+                icon-source: AetherIcons.signal;
+                title: @tr("监听地址");
+                description: @tr("例如 127.0.0.1:7777；留空关闭；非回环地址必须设置令牌；修改后重启 daemon 生效");
+                LineEdit {
+                    text <=> root.rpc-listen-value;
+                    placeholder-text: root.rpc-listen == "" ? @tr("未开启") : root.rpc-listen;
+                    min-width: Aether.field-md;
+                    max-width: Aether.field-md;
+                }
+            }
+            SettingRow {
+                icon-source: AetherIcons.shield;
+                title: @tr("访问令牌");
+                description: @tr("留空保持不变；设置后立即生效（无需重启）");
+                LineEdit {
+                    text <=> root.rpc-secret-value;
+                    input-type: InputType.password;
+                    placeholder-text: @tr("留空保持不变");
+                    min-width: Aether.field-md;
+                    max-width: Aether.field-md;
+                }
+            }
+            SettingRow {
+                icon-source: AetherIcons.info;
+                title: @tr("状态");
+                description: root.rpc-status;
+                divider: false;
+                HorizontalLayout {
+                    spacing: 8px;
+                    TextButton { text: @tr("清除令牌"); clicked => { root.rpc-clear-secret(); } }
+                    TextButton { text: @tr("应用"); clicked => { root.rpc-apply(root.rpc-listen-value, root.rpc-secret-value); } }
                 }
             }
         }
@@ -1236,7 +1285,7 @@ component AboutPanel inherits Rectangle {
                 description: @tr("在后台准备新版本；关闭后只报告发现新版本，不自动下载");
                 divider: false;
                 Switch {
-                    checked: root.auto-update-on;
+                    checked <=> root.auto-update-on;
                     toggled => { root.changed("app-auto-update", self.checked ? "true" : "false"); }
                 }
             }
@@ -1334,6 +1383,11 @@ export component SettingsPage inherits Rectangle {
     // Daemon-backed app-update knobs (About panel).
     in-out property <bool> app-auto-update: true;
     in property <string> update-status: "";
+    // Daemon-backed RPC config (Advanced panel).
+    in property <string> rpc-listen: "";
+    in property <string> rpc-status: "";
+    in-out property <string> rpc-listen-value: "";
+    in-out property <string> rpc-secret-value: "";
     in-out property <bool> schedule-on: false;
     in-out property <string> schedule-start: "";
     in-out property <string> schedule-end: "";
@@ -1345,6 +1399,8 @@ export component SettingsPage inherits Rectangle {
     in-out property <float> settings-download-limit-kb: 2048;
     callback settings-changed(string, string);
     callback support-action(string);
+    callback rpc-apply(string, string);
+    callback rpc-clear-secret;
     callback plugin-toggled(int, bool);
     callback plugin-action(string);
 
@@ -1472,7 +1528,15 @@ export component SettingsPage inherits Rectangle {
                 }
                 if root.tab == 8: AdvancedPanel {
                     plugins-dir: root.plugins-dir;
-                    data-dir: root.data-dir; changed(k, v) => { root.settings-changed(k, v); } }
+                    data-dir: root.data-dir;
+                    rpc-listen: root.rpc-listen;
+                    rpc-status: root.rpc-status;
+                    rpc-listen-value <=> root.rpc-listen-value;
+                    rpc-secret-value <=> root.rpc-secret-value;
+                    changed(k, v) => { root.settings-changed(k, v); }
+                    rpc-apply(l, s) => { root.rpc-apply(l, s); }
+                    rpc-clear-secret => { root.rpc-clear-secret(); }
+                }
                 if root.tab == 9: AboutPanel {
                     app-version: root.app-version;
                     update-status: root.update-status;

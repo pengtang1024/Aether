@@ -783,3 +783,33 @@ msgstr "由 daemon 啟動設定決定（--update-url 與更新公鑰），介面
 
 msgid "在后台准备新版本；关闭后只报告发现新版本，不自动下载"
 msgstr "在背景準備新版本；關閉後只回報發現新版本，不自動下載"
+
+msgid "远程控制（RPC）"
+msgstr "遠端控制（RPC）"
+
+msgid "CLI 与其他设备连接 daemon"
+msgstr "CLI 與其他裝置連線 daemon"
+
+msgid "监听地址"
+msgstr "監聽位址"
+
+msgid "例如 127.0.0.1:7777；留空关闭；非回环地址必须设置令牌；修改后重启 daemon 生效"
+msgstr "例如 127.0.0.1:7777；留空關閉；非回環位址必須設定權杖；修改後重新啟動 daemon 生效"
+
+msgid "访问令牌"
+msgstr "存取權杖"
+
+msgid "留空保持不变；设置后立即生效（无需重启）"
+msgstr "留空保持目前權杖；設定後立即生效（無需重新啟動）"
+
+msgid "留空保持不变"
+msgstr "留空保持不變"
+
+msgid "状态"
+msgstr "狀態"
+
+msgid "清除令牌"
+msgstr "清除權杖"
+
+msgid "未开启"
+msgstr "未開啟"

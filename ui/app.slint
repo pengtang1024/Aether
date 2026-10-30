@@ -79,6 +79,11 @@ export component AppWindow inherits Window {
     // status text (both mirrored from the daemon).
     in-out property <bool> settings-app-auto-update: true;
     in property <string> settings-update-status: "";
+    // Daemon-backed RPC config (Advanced panel).
+    in property <string> settings-rpc-listen: "";
+    in property <string> settings-rpc-status: "";
+    in-out property <string> settings-rpc-listen-value: "";
+    in-out property <string> settings-rpc-secret-value: "";
     // UI-local: interface language (0 = Chinese source, 1 = English).
     in-out property <int> settings-language: 0;
     // True when no clipboard backend exists (headless): the switch stays
@@ -226,6 +231,8 @@ export component AppWindow inherits Window {
     callback settings-changed(string, string);
     callback reset-filters();
     callback support-action(string);
+    callback rpc-apply(string, string);
+    callback rpc-clear-secret;
     callback plugin-toggled(int, bool);
     callback plugin-action(string);
 
@@ -529,6 +536,10 @@ export component AppWindow inherits Window {
                         plugin-auto-update <=> root.settings-plugin-auto-update;
                         app-auto-update <=> root.settings-app-auto-update;
                         update-status: root.settings-update-status;
+                        rpc-listen: root.settings-rpc-listen;
+                        rpc-status: root.settings-rpc-status;
+                        rpc-listen-value <=> root.settings-rpc-listen-value;
+                        rpc-secret-value <=> root.settings-rpc-secret-value;
                         language-index <=> root.settings-language;
                         start-page <=> root.settings-start-page;
                         after-done <=> root.settings-after-done;
@@ -550,6 +561,8 @@ export component AppWindow inherits Window {
                         settings-download-limit-kb <=> root.settings-download-limit-kb;
                         settings-changed(k, v) => { root.settings-changed(k, v); }
                         support-action(action) => { root.support-action(action); }
+                        rpc-apply(l, s) => { root.rpc-apply(l, s); }
+                        rpc-clear-secret => { root.rpc-clear-secret(); }
                         plugin-toggled(id, enabled) => { root.plugin-toggled(id, enabled); }
                         plugin-action(action) => { root.plugin-action(action); }
                     }

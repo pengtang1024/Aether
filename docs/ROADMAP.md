@@ -494,6 +494,11 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
   - 关于面板的状态行覆盖 idle/checking/up_to_date/available/ready/error。
   - 重置界面偏好补齐语言（zh）与主题（跟随系统）。
   - PAC 选择回弹到 daemon 实际模式，并说明由 `AETHER_PAC_URL` 决定。
+  - 所有设置开关改为双向绑定：此前单向 `checked:` 导致 daemon/Rust 回弹
+    不显示（计划任务未填时间仍显示开启、开机自启失败不回弹）。
+  - 高级页新增「远程控制（RPC）」：监听地址、访问令牌、清除令牌、应用与
+    状态行；地址重启 daemon 后 bind，令牌热轮换。实测 TCP + token 的
+    `remote stats` 通过，缺失/错误令牌被拒。
 - **测试**：`tests/rpc.rs` 覆盖无源 `update_check=disabled`、
   `app_auto_update` 往返/持久化/坏类型拒绝；`src/main.rs` 覆盖
   `update_status_text` 全状态分支；三条新 @tr 文案补齐 en/ja/zh-TW。
