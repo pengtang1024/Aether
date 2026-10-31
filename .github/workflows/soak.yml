@@ -1,0 +1,51 @@
+name: Nightly soak
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: "Soak duration in seconds"
+        required: false
+        default: "600"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: soak
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  aria2-soak:
+    name: aria2 HTTP/WS soak
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@3da603d4464771f1a8c3dd4acb41f03bc8107551 # branch 1.92.0
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: soak-linux
+      # The soak test stages real plugin binaries; build them first.
+      - run: cargo build -p aether-plugin-http -p aether-plugin-fake -p aether-plugin-bt
+      - name: Run soak
+        env:
+          AETHER_SOAK_SECS: ${{ github.event.inputs.seconds || '600' }}
+        run: cargo test -p aether-daemon --test aria2 soak_http_clients -- --ignored --nocapture
+
+  bt-seed:
+    name: BT seed/leech (serial)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@3da603d4464771f1a8c3dd4acb41f03bc8107551 # branch 1.92.0
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: soak-bt
+      - run: cargo test -p aether-plugin-bt -- --test-threads=1

@@ -1229,6 +1229,7 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
                         "capabilities": entry.manifest.capabilities,
                         "enabled": entry.enabled,
                         "blocked": blocked,
+                        "service": entry.manifest.kind == PluginKind::Service,
                         "running": running,
                         "last_error": service.and_then(|status| status.last_error.clone()),
                         "has_backup": backup_root
@@ -3277,7 +3278,10 @@ fn same_filesystem(left: &Path, right: &Path) -> bool {
             (Ok(left), Ok(right)) => {
                 match (left.volume_serial_number(), right.volume_serial_number()) {
                     (Some(left), Some(right)) => left == right,
-                    _ => false,
+                    // Unknown volume metadata keeps the centralized staging
+                    // root: copying at finalize is safer than writing into a
+                    // directory whose mount we could not identify.
+                    _ => true,
                 }
             }
             _ => true,

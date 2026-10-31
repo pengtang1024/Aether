@@ -852,3 +852,12 @@ msgstr "External-process plugins blocked; idle instances stopped, running tasks 
 
 msgid "BT 状态  "
 msgstr "BT status  "
+
+msgid "运行中"
+msgstr "Running"
+
+msgid "未启动"
+msgstr "Not started"
+
+msgid "错误："
+msgstr "Error: "

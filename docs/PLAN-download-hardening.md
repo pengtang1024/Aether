@@ -1,6 +1,6 @@
 # 下载链路硬化设计（9.75 → 10）
 
-> 状态：**Phase A/B 已实施；Phase C 已做 staging 失败回退、并发测试、Windows 反射测试骨架与可重复 soak；真实 Windows 跨卷/CI nightly 待补**
+> 状态：**Phase A/B/C 已实施；Phase C 补了 Windows 卷信息缺失时的 centralized 回退、Nightly soak workflow（aria2 HTTP/WS + BT serial）；真实 Windows 跨卷硬件环境仍不可在 CI 模拟，Phase D 可选**
 > 当前基线：下载正确性 9.8 / 可靠性 9.7 / 性能 9.5 / 可维护性 8.8，综合约 **9.75/10**
 > 目标：把剩余的架构、跨平台和长期运行风险收敛到可验收状态。
 
@@ -310,6 +310,10 @@ fn create_staging_root(state, task_id, final_dir) -> Result<PathBuf, DaemonError
 
 - [x] Phase A：ServiceSupervisor 替换 PluginBridge；aria2 E2E 全绿；kill 服务进程自动恢复；service 状态可查。
 - [ ] Phase B：BT 任务抽屉显示 ratio/uploaded/seed time/peers；非 BT 不显示；backend 单测通过。
-- [~] Phase C：目标盘 staging 创建失败自动回退 centralized（已做）；并发 HTTP 测试通过；`same_filesystem` 反射测试已加；`soak_http_clients`（`#[ignore]`，`AETHER_SOAK_SECS`）可重复跑。真实 Windows 跨卷与 nightly 任务仍需 CI 配置。
+- [x] Phase C：目标盘 staging 创建失败自动回退 centralized；Windows
+  `volume_serial_number` 缺失时回退 centralized；并发 HTTP 测试通过；
+  `soak_http_clients`（`#[ignore]`，`AETHER_SOAK_SECS`）可重复跑；
+  `.github/workflows/soak.yml` 每日跑 aria2 HTTP/WS soak 与 BT 串行契约测试。
+  真实 Windows 跨卷硬件仍无法在 CI 模拟（已用反射/回退逻辑覆盖）。
 - [ ] Phase D（可选）：主源中途失败可切换到同 ETag 镜像，不影响已下载分片。
 - [ ] 全 workspace check、fmt、clippy 通过；CHANGELOG/文档同步。

@@ -35,6 +35,8 @@ versioning; 0.x releases may still change structure.
   target's `.aether-staging` cannot be created; concurrent HTTP clients are
   covered by a new E2E, and an ignored `soak_http_clients` loop is available
   for nightly runs (`AETHER_SOAK_SECS`).
+- Settings → Plugins now shows service health: `运行中`, `未启动`, and the
+  last error text, sourced from the supervisor via the plugins RPC.
 - The task drawer now consumes the daemon's `task_detail` stream: BT tasks
   show seeding state, ratio, uploaded bytes, seed time and peer count. The
   data comes from the BT plugin's periodic detail events; non-BT tasks hide

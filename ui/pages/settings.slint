@@ -750,8 +750,10 @@ component InstalledPlugin inherits Rectangle {
             }
 
             Text {
-                text: root.plugin.description;
-                color: Aether.on-surface-muted;
+                text: root.plugin.error != ""
+                    ? @tr("错误：") + root.plugin.error
+                    : root.plugin.description;
+                color: root.plugin.error != "" ? Aether.error : Aether.on-surface-muted;
                 font-size: Aether.text-caption;
                 overflow: elide;
             }
@@ -772,6 +774,50 @@ component InstalledPlugin inherits Rectangle {
                 color: root.plugin.blocked ? Aether.warning : Aether.on-surface-muted;
                 font-size: Aether.text-micro;
                 overflow: elide;
+            }
+        }
+
+        if root.plugin.service && root.plugin.running: Rectangle {
+            height: 20px;
+            border-radius: 10px;
+            background: Aether.success.with-alpha(0.10);
+            border-width: 1px;
+            border-color: Aether.success.with-alpha(0.20);
+            cross-axis-self-alignment: center;
+
+            HorizontalLayout {
+                padding-left: 8px;
+                padding-right: 8px;
+                Text {
+                    text: @tr("运行中");
+                    color: Aether.success;
+                    font-size: Aether.text-micro;
+                    font-weight: Aether.weight-medium;
+                    vertical-alignment: center;
+                    cross-axis-self-alignment: center;
+                }
+            }
+        }
+
+        if root.plugin.service && root.plugin.enabled && !root.plugin.running: Rectangle {
+            height: 20px;
+            border-radius: 10px;
+            background: Aether.warning.with-alpha(0.10);
+            border-width: 1px;
+            border-color: Aether.warning.with-alpha(0.20);
+            cross-axis-self-alignment: center;
+
+            HorizontalLayout {
+                padding-left: 8px;
+                padding-right: 8px;
+                Text {
+                    text: @tr("未启动");
+                    color: Aether.warning;
+                    font-size: Aether.text-micro;
+                    font-weight: Aether.weight-medium;
+                    vertical-alignment: center;
+                    cross-axis-self-alignment: center;
+                }
             }
         }
 

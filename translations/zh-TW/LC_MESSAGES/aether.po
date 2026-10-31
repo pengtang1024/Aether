@@ -852,3 +852,12 @@ msgstr "已阻擋外部程序外掛：閒置實例已停止，執行中的任務
 
 msgid "BT 状态  "
 msgstr "BT 狀態  "
+
+msgid "运行中"
+msgstr "執行中"
+
+msgid "未启动"
+msgstr "未啟動"
+
+msgid "错误："
+msgstr "錯誤："

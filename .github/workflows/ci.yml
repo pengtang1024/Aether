@@ -61,6 +61,8 @@ jobs:
       # The pipe loopback (transport.rs) and the TCP RPC loopback (rpc.rs)
       # are both cross-platform acceptance tests for the local/remote IPC.
       - run: cargo test -p aether-daemon --test transport --test rpc
+      # `same_filesystem` uses Windows volume metadata for cross-drive staging.
+      - run: cargo test -p aether-daemon --lib same_filesystem
       # Bin tests: the Windows tray (FFI layout, message-only window,
       # best-effort icon handshake — Some/None both accepted on a headless
       # runner) plus the cross-platform i18n/backend/chart suites.

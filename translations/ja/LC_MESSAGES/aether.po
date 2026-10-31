@@ -852,3 +852,12 @@ msgstr "外部プロセスのプラグインをブロックしました：アイ
 
 msgid "BT 状态  "
 msgstr "BT 状態  "
+
+msgid "运行中"
+msgstr "稼働中"
+
+msgid "未启动"
+msgstr "未起動"
+
+msgid "错误："
+msgstr "エラー："

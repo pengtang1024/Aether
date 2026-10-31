@@ -22,6 +22,9 @@ pub struct PluginInfo {
     /// `external-process` and the user turned that capability off).
     #[serde(default)]
     pub blocked: bool,
+    /// Manifest kind is `service` (not a downloader).
+    #[serde(default)]
+    pub service: bool,
     /// Service plugin is currently running (download plugins report false).
     #[serde(default)]
     pub running: bool,
