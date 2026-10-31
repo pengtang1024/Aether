@@ -1,16 +1,7 @@
-//! S3-compatible object download via SigV4 GET/HEAD.
+//! S3-compatible object probing and URL/credential plumbing.
 
-use std::fs::{self, OpenOptions};
-use std::io::Read;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-
-use aether_plugin_sdk::fsutil::{sanitize_filename, write_all_at};
-use aether_plugin_sdk::task::{ProgressSnapshot, SharedProgress, TaskControl};
-use aether_plugin_sdk::{
-    Checksum, ChecksumAlgorithm, ErrorKind, FileInfo, Metadata, PluginError, PluginEvent,
-    PluginSender, TaskPaths, TaskSpec,
-};
+use aether_plugin_sdk::fsutil::sanitize_filename;
+use aether_plugin_sdk::{ErrorKind, PluginError};
 use percent_encoding::percent_decode_str;
 use reqwest::blocking::Client;
 use reqwest::header::RANGE;
@@ -18,9 +9,6 @@ use thiserror::Error;
 use url::Url;
 
 use crate::sigv4::{self, Credentials};
-
-const CHUNK: usize = 64 * 1024;
-const PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
 
 pub struct S3Probe {
     pub supported: bool,
@@ -92,154 +80,7 @@ pub fn probe(client: &Client, input: &str, settings: &serde_json::Value) -> S3Pr
     }
 }
 
-pub fn run(
-    sender: PluginSender,
-    client: Client,
-    task: TaskSpec,
-    paths: TaskPaths,
-    control: Arc<TaskControl>,
-    progress: SharedProgress,
-) {
-    match run_inner(&sender, &client, &task, &paths, &control, &progress) {
-        Ok(()) => {}
-        Err(S3Error::Canceled) => {}
-        Err(error) => {
-            let _ = sender.send(&PluginEvent::Failed {
-                task_id: task.task_id,
-                error: error.to_plugin_error(),
-            });
-        }
-    }
-}
-
-fn run_inner(
-    sender: &PluginSender,
-    client: &Client,
-    task: &TaskSpec,
-    paths: &TaskPaths,
-    control: &TaskControl,
-    progress: &SharedProgress,
-) -> Result<(), S3Error> {
-    if control.is_canceled() {
-        return Err(S3Error::Canceled);
-    }
-    let target = Target::parse(&task.url)?;
-    let config = Config::from_settings(&task.settings)?;
-    let url = target.url(&config)?;
-    fs::create_dir_all(&paths.staging)?;
-
-    let filename = task
-        .filename
-        .as_deref()
-        .and_then(sanitize_filename)
-        .or_else(|| target.filename())
-        .unwrap_or_else(|| "download.bin".into());
-    let file_path = paths.staging.join(&filename);
-    let file = OpenOptions::new()
-        .create(true)
-        .read(true)
-        .write(true)
-        .open(&file_path)?;
-    let mut done = file.metadata()?.len();
-
-    let range = (done > 0).then(|| format!("bytes={done}-"));
-    let mut response = send(client, "GET", &url, &config, range.as_deref())?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(S3Error::HttpStatus(status.as_u16()));
-    }
-    if done > 0 && status == reqwest::StatusCode::OK {
-        file.set_len(0)?;
-        done = 0;
-    }
-
-    let total = response
-        .headers()
-        .get(reqwest::header::CONTENT_LENGTH)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.parse::<u64>().ok())
-        .map(|length| length + done);
-
-    let _ = sender.send(&PluginEvent::Metadata {
-        task_id: task.task_id.clone(),
-        metadata: Metadata {
-            final_url: url.to_string(),
-            size: total,
-            etag: None,
-            content_type: None,
-            files: vec![],
-        },
-    });
-
-    let mut snapshot = ProgressSnapshot {
-        downloaded: done,
-        total,
-        connections: 1,
-        ..Default::default()
-    };
-    let mut last_progress = Instant::now() - PROGRESS_INTERVAL;
-    let mut offset = done;
-    let mut buffer = vec![0_u8; CHUNK];
-
-    loop {
-        if !control.wait_until_running() {
-            return Err(S3Error::Canceled);
-        }
-        let read = response.read(&mut buffer)?;
-        if read == 0 {
-            break;
-        }
-        write_all_at(&file, &buffer[..read], offset)?;
-        offset += read as u64;
-
-        if last_progress.elapsed() >= PROGRESS_INTERVAL {
-            snapshot.downloaded = offset;
-            snapshot.seq = snapshot.seq.saturating_add(1);
-            *progress.lock().unwrap() = snapshot.clone();
-            let _ = sender.send(&PluginEvent::Progress {
-                task_id: task.task_id.clone(),
-                seq: snapshot.seq,
-                downloaded: offset,
-                total,
-                speed_bps: 0,
-                eta_secs: None,
-                connections: 1,
-                chunks_done: None,
-                chunks_total: None,
-            });
-            last_progress = Instant::now();
-        }
-    }
-
-    file.sync_all()?;
-    let checksum = aether_plugin_sdk::checksum::sha256_file(&file_path)?;
-    if let Some(expected) = &task.checksum {
-        if expected.algorithm != ChecksumAlgorithm::Sha256 {
-            return Err(S3Error::Protocol("only SHA-256 is supported".into()));
-        }
-        if !checksum.eq_ignore_ascii_case(&expected.value) {
-            let _ = fs::remove_file(&file_path);
-            return Err(S3Error::ChecksumMismatch);
-        }
-    }
-
-    sender.send(&PluginEvent::Completed {
-        task_id: task.task_id.clone(),
-        files: vec![FileInfo {
-            relative_path: filename,
-            size: offset,
-            checksum: Some(Checksum {
-                algorithm: ChecksumAlgorithm::Sha256,
-                value: checksum,
-            }),
-        }],
-        plugin_state: None,
-    })?;
-
-    Ok(())
-}
-
-fn send(
+pub(crate) fn send(
     client: &Client,
     method: &str,
     url: &Url,
@@ -252,6 +93,8 @@ fn send(
         session_token: config.session_token.as_deref(),
         region: &config.region,
     };
+    // Range is intentionally not part of the signed headers: S3 accepts
+    // unsigned Range, and sigv4.rs only signs host/x-amz-*.
     let headers = sigv4::sign_headers(method, url, &credentials).map_err(S3Error::Protocol)?;
     let mut request = client.request(
         method
@@ -268,13 +111,13 @@ fn send(
     Ok(request.send()?)
 }
 
-struct Target {
-    bucket: String,
-    key: String,
+pub(crate) struct Target {
+    pub(crate) bucket: String,
+    pub(crate) key: String,
 }
 
 impl Target {
-    fn parse(input: &str) -> Result<Self, S3Error> {
+    pub(crate) fn parse(input: &str) -> Result<Self, S3Error> {
         let url = Url::parse(input)?;
         if url.scheme() != "s3" {
             return Err(S3Error::Protocol("not an s3:// URL".into()));
@@ -292,14 +135,14 @@ impl Target {
         Ok(Self { bucket, key })
     }
 
-    fn filename(&self) -> Option<String> {
+    pub(crate) fn filename(&self) -> Option<String> {
         self.key
             .rsplit('/')
             .find(|part| !part.is_empty())
             .and_then(sanitize_filename)
     }
 
-    fn url(&self, config: &Config) -> Result<Url, S3Error> {
+    pub(crate) fn url(&self, config: &Config) -> Result<Url, S3Error> {
         let key = encode_key(&self.key);
         let value = if let Some(endpoint) = &config.endpoint {
             if config.path_style {
@@ -335,7 +178,7 @@ fn encode_key(key: &str) -> String {
     encoded
 }
 
-struct Config {
+pub(crate) struct Config {
     access_key: String,
     secret_key: String,
     session_token: Option<String>,
@@ -345,7 +188,7 @@ struct Config {
 }
 
 impl Config {
-    fn from_settings(settings: &serde_json::Value) -> Result<Self, S3Error> {
+    pub(crate) fn from_settings(settings: &serde_json::Value) -> Result<Self, S3Error> {
         let access_key = setting(settings, "access_key")
             .or_else(|| std::env::var("AWS_ACCESS_KEY_ID").ok())
             .ok_or_else(|| S3Error::Protocol("S3 access_key is not configured".into()))?;
@@ -396,6 +239,9 @@ pub enum S3Error {
     #[error("http status {0}")]
     HttpStatus(u16),
 
+    #[error("server ignored a Range request")]
+    RangeIgnored,
+
     #[error("canceled")]
     Canceled,
 
@@ -424,6 +270,9 @@ impl S3Error {
             Self::HttpStatus(status) => {
                 PluginError::new(ErrorKind::HttpStatus, format!("HTTP {status}"))
                     .with_status(*status)
+            }
+            Self::RangeIgnored => {
+                PluginError::new(ErrorKind::Protocol, "server ignored a Range request")
             }
             Self::Protocol(message) => PluginError::new(ErrorKind::Protocol, message.clone()),
         }

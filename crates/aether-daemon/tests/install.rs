@@ -108,6 +108,10 @@ fn spawn(label: &str, public_key: Option<String>) -> (Daemon, Client) {
 /// dummy executable. The "binary" only needs to exist — install verifies
 /// hashes, not whether it runs (running it is the supervisor's job).
 fn write_package(dir: &Path, id: &str) -> PathBuf {
+    write_package_with_capabilities(dir, id, json!(["network"]))
+}
+
+fn write_package_with_capabilities(dir: &Path, id: &str, capabilities: Value) -> PathBuf {
     let package = dir.join(id);
     fs::create_dir_all(package.join("bin")).unwrap();
     fs::write(package.join("bin").join("plugin"), b"fake plugin binary").unwrap();
@@ -117,7 +121,7 @@ fn write_package(dir: &Path, id: &str) -> PathBuf {
         "version": "1.0.0",
         "api": 1,
         "protocols": ["test"],
-        "capabilities": ["network"],
+        "capabilities": capabilities,
         "executable": { current_platform_key(): "bin/plugin" },
     });
     fs::write(
@@ -126,6 +130,25 @@ fn write_package(dir: &Path, id: &str) -> PathBuf {
     )
     .unwrap();
     package
+}
+
+fn set_version(package: &Path, version: &str) {
+    let manifest_path = package.join("plugin.json");
+    let mut manifest: Value =
+        serde_json::from_str(&fs::read_to_string(&manifest_path).unwrap()).unwrap();
+    manifest["version"] = Value::String(version.into());
+    fs::write(
+        &manifest_path,
+        serde_json::to_string_pretty(&manifest).unwrap(),
+    )
+    .unwrap();
+}
+
+fn plugin_field<'a>(
+    plugins: &'a [aether_daemon::PluginInfo],
+    id: &str,
+) -> Option<&'a aether_daemon::PluginInfo> {
+    plugins.iter().find(|plugin| plugin.id == id)
 }
 
 /// In-process stand-in for `aether-plugin-sign`: files map + canonical
@@ -267,6 +290,120 @@ fn rescan_registers_dropped_packages_and_keeps_disabled_state() {
         "rescan must re-apply the disabled list"
     );
     assert_eq!(contains(&plugins, "beta"), Some(true));
+
+    client.shutdown().unwrap();
+}
+
+#[test]
+fn rollback_restores_the_retained_previous_version() {
+    let (daemon, mut client) = spawn("rollback", Some(pubkey([7; 32])));
+    let package = write_package(&daemon.root, "demo-rollback");
+    sign_package(&package, [7; 32]);
+    client
+        .install_plugin(package.to_str().unwrap())
+        .expect("install 1.0.0");
+    let plugins = client.plugins().unwrap();
+    let installed = plugin_field(&plugins, "demo-rollback").expect("installed");
+    assert_eq!(installed.version, "1.0.0");
+    assert!(
+        !installed.has_backup,
+        "first install has no previous version"
+    );
+
+    // Upgrade: the old copy becomes the rollback target.
+    set_version(&package, "1.1.0");
+    sign_package(&package, [7; 32]);
+    client
+        .install_plugin(package.to_str().unwrap())
+        .expect("install 1.1.0");
+    let plugins = client.plugins().unwrap();
+    let installed = plugin_field(&plugins, "demo-rollback").expect("installed");
+    assert_eq!(installed.version, "1.1.0");
+    assert!(installed.has_backup, "upgrade retains the previous version");
+
+    // Rollback goes through the verified install path and swaps again, so a
+    // second rollback returns to 1.1.0 instead of deleting either copy.
+    let rolled = client.rollback_plugin("demo-rollback").expect("rollback");
+    assert_eq!(rolled["version"], "1.0.0");
+    assert_eq!(rolled["rolled_back"], true);
+    let plugins = client.plugins().unwrap();
+    assert_eq!(
+        plugin_field(&plugins, "demo-rollback").unwrap().version,
+        "1.0.0"
+    );
+
+    let again = client
+        .rollback_plugin("demo-rollback")
+        .expect("second rollback");
+    assert_eq!(again["version"], "1.1.0");
+
+    // Uninstall removes the package and the retained copy.
+    let removed = client.uninstall_plugin("demo-rollback").expect("uninstall");
+    assert_eq!(removed["removed"], true);
+    assert!(!daemon.root.join("plugins/demo-rollback").exists());
+    assert!(!daemon.root.join("plugin-backups/demo-rollback").exists());
+    assert!(client
+        .plugins()
+        .unwrap()
+        .iter()
+        .all(|p| p.id != "demo-rollback"));
+    let error = client
+        .uninstall_plugin("demo-rollback")
+        .expect_err("already uninstalled");
+    assert!(error.to_string().contains("not installed"), "{error}");
+
+    client.shutdown().unwrap();
+}
+
+#[test]
+fn external_process_policy_is_reported_per_plugin() {
+    let (daemon, mut client) = spawn("policy", Some(pubkey([7; 32])));
+    let plain = write_package(&daemon.root, "plain");
+    sign_package(&plain, [7; 32]);
+    client.install_plugin(plain.to_str().unwrap()).unwrap();
+    let spawner = write_package_with_capabilities(
+        &daemon.root,
+        "spawner",
+        json!(["network", "external-process"]),
+    );
+    sign_package(&spawner, [7; 32]);
+    client.install_plugin(spawner.to_str().unwrap()).unwrap();
+
+    let plugins = client.plugins().unwrap();
+    assert!(!plugin_field(&plugins, "spawner").unwrap().blocked);
+    assert!(!plugin_field(&plugins, "plain").unwrap().blocked);
+
+    client
+        .call(
+            "set_settings",
+            None,
+            None,
+            None,
+            None,
+            json!({ "plugin_external_process": false }),
+        )
+        .unwrap();
+
+    let plugins = client.plugins().unwrap();
+    assert!(
+        plugin_field(&plugins, "spawner").unwrap().blocked,
+        "external-process plugin must report the policy block"
+    );
+    assert!(!plugin_field(&plugins, "plain").unwrap().blocked);
+
+    // Turning it back on unblocks without a restart.
+    client
+        .call(
+            "set_settings",
+            None,
+            None,
+            None,
+            None,
+            json!({ "plugin_external_process": true }),
+        )
+        .unwrap();
+    let plugins = client.plugins().unwrap();
+    assert!(!plugin_field(&plugins, "spawner").unwrap().blocked);
 
     client.shutdown().unwrap();
 }

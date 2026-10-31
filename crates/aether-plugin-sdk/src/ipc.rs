@@ -180,4 +180,40 @@ mod tests {
         let err = read_frame::<_, PluginEvent>(&mut cursor).unwrap_err();
         assert!(matches!(err, IpcError::Io(_)));
     }
+
+    /// Fuzz-shaped inputs must surface as errors, never panics: garbage
+    /// MessagePack, an unknown event tag, and a payload that disagrees with
+    /// the header length (both shorter and longer).
+    #[test]
+    fn malformed_payloads_are_errors_not_panics() {
+        let garbage: Vec<u8> = vec![0x00, 0x00, 0x00, 0x04, 0xde, 0xad, 0xbe, 0xef];
+        assert!(decode_frame::<PluginEvent>(&garbage).is_err());
+
+        let mut unknown = Vec::from(3u32.to_be_bytes());
+        unknown.extend_from_slice(&[0x82, 0xa4, b't', b'y', b'p', b'e', 0xa7, b'u', b'n', b'k']);
+        assert!(decode_frame::<PluginEvent>(&unknown).is_err());
+
+        let mut short = Vec::from(5u32.to_be_bytes());
+        short.extend_from_slice(&[0xc0]);
+        assert!(matches!(
+            decode_frame::<PluginEvent>(&short),
+            Err(IpcError::TruncatedPayload { expected: 5 })
+        ));
+
+        let mut long = Vec::from(1u32.to_be_bytes());
+        long.extend_from_slice(&[0xc0, 0xc0, 0xc0]);
+        assert!(decode_frame::<PluginEvent>(&long).is_err());
+    }
+
+    #[test]
+    fn oversized_write_is_refused_before_bytes_hit_the_pipe() {
+        let huge = vec![0u8; MAX_FRAME_SIZE as usize + 1];
+        let mut sink = Vec::new();
+        let err = write_frame(&mut sink, &huge).unwrap_err();
+        assert!(matches!(err, IpcError::FrameTooLarge { .. }));
+        assert!(
+            sink.is_empty(),
+            "nothing may be written for a rejected frame"
+        );
+    }
 }

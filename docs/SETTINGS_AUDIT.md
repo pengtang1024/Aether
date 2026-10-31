@@ -19,7 +19,7 @@
 | 控件 | 落点 | 状态 |
 | --- | --- | --- |
 | 启动页面 | `src/main.rs` `start-page` → `UiPrefs.start_page`，启动时 `page = match prefs.start_page` | 真实 |
-| 开机自启 | `autostart::set_enabled`（XDG / HKCU Run / LaunchAgent）；OS 拒绝时开关回弹并提示 | 真实 |
+| 开机自启 | `autostart::set_enabled`（XDG / HKCU Run / LaunchAgent，条目带 `--silent`，启动时 `refresh()` 自愈）；OS 拒绝时开关回弹并提示；无托盘时静默启动回退为显示窗口 | 真实 |
 | 关闭窗口行为 | 固定行为说明：有托盘收进托盘，无托盘退出（`tray` 模块决定） | 只读（说明卡） |
 | 默认下载目录 | daemon 的 `stats.download_dir`，由 daemon 启动参数 `--dir` 决定 | 只读 |
 | 检测下载链接 | `clipboard_control.set_enabled` + `UiPrefs.clipboard_watch`；无后端时禁用开关并说明 | 真实 / 外部 |
@@ -79,6 +79,11 @@ BT 键由 `aether-plugin-bt` 消费（`src/plugin.rs`/`src/bt.rs` 的
 | 更新全部 | `plugin_update_all` RPC（签名校验 + tar.gz 解包防护） | 真实 |
 | 自动更新插件 | `set_settings {"plugin_auto_update"}` → daemon 每 6 小时 pass | 真实 |
 | 安装插件包 | `install_plugin` RPC；签名/哈希/占用结果经 notice 回传 | 真实 |
+| 卸载 | `uninstall_plugin` RPC；运行任务时拒绝，删除包与回滚备份并清禁用标记 | 真实 |
+| 回滚 | `rollback_plugin` RPC；上一版重新走验签/哈希，当前版成为新回滚点 | 真实 |
+| 权限行 | `plugins` RPC 的 `capabilities` + `blocked`；握手强制与 manifest 一致 | 真实（展示/策略） |
+| 固定插件版本 | `set_settings {"plugin_pins"}`；更新/自动更新跳过，手动安装不受限 | 真实 |
+| 外部进程闸门 | `set_settings {"plugin_external_process"}`；拒绝 spawn 声明 external-process 的插件，空闲实例立即停止 | 真实 |
 | 重新扫描 | `rescan_plugins` RPC | 真实 |
 
 ## 7. 计划（Schedule）
@@ -104,9 +109,10 @@ BT 键由 `aether-plugin-bt` 消费（`src/plugin.rs`/`src/bt.rs` 的
 | --- | --- | --- |
 | 数据库路径 | `stats.data_dir`（daemon 真实数据目录） | 只读 |
 | 插件目录 | `stats.plugins_dir` | 只读 |
-| RPC 监听地址 | `set_settings {"rpc_listen"}` → `Settings.rpc_listen`，daemon 启动时 bind；空值关闭 | 真实（重启生效） |
-| RPC 访问令牌 | `set_settings {"rpc_secret"}` → `rpc_secret`（0600 文件），热轮换立即生效 | 真实 |
-| 清除令牌 | `set_settings {"rpc_secret": null}`，显式按钮避免空输入误清 | 真实 |
+| RPC 监听地址 | `set_settings {"rpc_listen"}` → `Settings.rpc_listen`，daemon 启动时 bind；首次启动默认 `127.0.0.1:6800`，空字符串关闭 | 真实（重启生效） |
+| RPC 访问令牌 | `set_settings {"rpc_secret"}` → `rpc_secret`（0600 文件），首次启动自动生成 32 位令牌；热轮换立即生效 | 真实 |
+| 随机令牌 | 设置页按钮调用 `generate_rpc_secret()` 填入字段，点「应用」写入 daemon（不自动保存） | 真实 |
+| 清除令牌 | `set_settings {"rpc_secret": ""}`，显式空字符串清除鉴权（仅回环地址） | 真实 |
 | RPC 状态 | 由 `rpc_listen` + 是否设置令牌生成，明确写「重启 daemon 后按此地址监听」 | 只读 |
 | 重置界面偏好 | `UiPrefs::default()` + 立即恢复剪贴板开关、语言（zh）、主题（跟随系统）、主色/动效/流线/启动页/完成后动作/通知 | 真实 |
 

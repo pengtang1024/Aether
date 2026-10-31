@@ -13,6 +13,35 @@
     "windows-arm64": "bin/aether-plugin-gdrive-windows-arm64.exe",
     "macos-universal": "bin/aether-plugin-gdrive-macos-universal"
   },
-  "settings_schema": { "sections": [] },
+  "settings_schema": {
+    "sections": [
+      {
+        "title": "OAuth2 (private files)",
+        "fields": [
+          {
+            "key": "access_token",
+            "type": "secret"
+          },
+          {
+            "key": "oauth_client_id",
+            "type": "string"
+          },
+          {
+            "key": "oauth_client_secret",
+            "type": "secret"
+          },
+          {
+            "key": "oauth_refresh_token",
+            "type": "secret"
+          },
+          {
+            "key": "oauth_token_url",
+            "type": "string",
+            "default": "https://oauth2.googleapis.com/token"
+          }
+        ]
+      }
+    ]
+  },
   "detail_schema": { "sections": [{ "type": "metrics", "items": ["speed", "size"] }] }
 }

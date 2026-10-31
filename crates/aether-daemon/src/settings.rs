@@ -4,6 +4,7 @@
 //! Unknown fields are rejected instead of silently dropped: a typo in a
 //! settings key should surface immediately, not disappear.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -85,13 +86,15 @@ pub struct Settings {
     /// Window end, `"HH:MM"`. `end < start` means the window wraps midnight.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub schedule_end: Option<String>,
-    /// RPC over TCP: `"ip:port"` to listen on, off when unset. Requires
-    /// [`Settings::rpc_secret`] on any non-loopback address.
+    /// RPC over TCP: `"ip:port"` to listen on. `None` means the built-in
+    /// default ([`RPC_LISTEN_DEFAULT`]); an empty string turns the listener
+    /// off. Requires [`Settings::rpc_secret`] on any non-loopback address.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rpc_listen: Option<String>,
     /// Token every RPC connection must present as its first message
-    /// (`{"method":"auth","settings":{"token":"…"}}`). Blank input is
-    /// normalised to `None` by `set_settings`.
+    /// (`{"method":"auth","settings":{"token":"…"}}`). `None` means "generate
+    /// one on first boot"; an empty string runs without a token (loopback
+    /// only).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rpc_secret: Option<String>,
     /// ffmpeg binary for plugins that shell out (rtmp capture, media
@@ -103,11 +106,44 @@ pub struct Settings {
     /// cycle and install outdated plugins automatically. Off by default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plugin_auto_update: Option<bool>,
+    /// Allow plugins that declare the `external-process` capability (yt-dlp,
+    /// ffmpeg capture/remux) to start. `None`/`true` keeps today's behaviour;
+    /// `false` refuses the spawn instead of pretending the tool is missing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plugin_external_process: Option<bool>,
+    /// Version pins: plugin id -> version. Pinned plugins are skipped by
+    /// `plugin_updates`/`plugin_update_all` (manual install still works).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plugin_pins: Option<BTreeMap<String, String>>,
     /// Download a new app release as soon as the periodic check finds one.
     /// `None`/`Some(true)` keeps the updater downloading in the background;
     /// `Some(false)` only reports the version so the user decides.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub app_auto_update: Option<bool>,
+}
+
+/// RPC listen address used when the user never configured one. Loopback
+/// only: reaching the daemon from another machine stays an explicit choice.
+/// 6800 is the port aria2 users already know; Aether is meant to replace it,
+/// and a busy port only disables TCP RPC for that run.
+pub const RPC_LISTEN_DEFAULT: &str = "127.0.0.1:6800";
+
+/// Bytes in a generated RPC token; rendered as lowercase hex (32 chars).
+const RPC_SECRET_BYTES: usize = 16;
+
+/// A fresh random RPC token. `None` means the OS random source is
+/// unavailable; callers leave the setting unset instead of inventing a weak
+/// token.
+pub fn generate_rpc_secret() -> Option<String> {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut bytes = [0u8; RPC_SECRET_BYTES];
+    getrandom::fill(&mut bytes).ok()?;
+    let mut secret = String::with_capacity(RPC_SECRET_BYTES * 2);
+    for byte in bytes {
+        secret.push(HEX[(byte >> 4) as usize] as char);
+        secret.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    Some(secret)
 }
 
 /// The upper bound the http plugin honours for [`Settings::connections`]:
@@ -121,7 +157,7 @@ pub const CONNECTIONS_DEFAULT: u32 = 4;
 /// Every key `set_settings` accepts. The file is parsed with
 /// `deny_unknown_fields`, so the RPC rejects the same typos instead of
 /// silently storing nothing.
-pub const KEYS: [&str; 23] = [
+pub const KEYS: [&str; 25] = [
     "proxy",
     "user_agent",
     "ip_mode",
@@ -144,6 +180,8 @@ pub const KEYS: [&str; 23] = [
     "rpc_secret",
     "ffmpeg_path",
     "plugin_auto_update",
+    "plugin_external_process",
+    "plugin_pins",
     "app_auto_update",
 ];
 
@@ -183,6 +221,31 @@ pub fn parse_hhmm(text: &str) -> Option<u32> {
 impl Settings {
     pub fn path(download_dir: &Path) -> PathBuf {
         download_dir.join(".aether").join("settings.json")
+    }
+
+    /// Fill in first-run defaults for the optional TCP listener: a loopback
+    /// address ([`RPC_LISTEN_DEFAULT`]) and a generated token. Returns true
+    /// when something changed so the caller persists once and later boots
+    /// keep the same token. An explicit empty string (listener off, no token)
+    /// is left alone.
+    pub fn seed_rpc_defaults(&mut self) -> bool {
+        let mut changed = false;
+        if self.rpc_listen.is_none() {
+            self.rpc_listen = Some(RPC_LISTEN_DEFAULT.to_string());
+            changed = true;
+        }
+        if self.rpc_secret.is_none() {
+            match generate_rpc_secret() {
+                Some(secret) => {
+                    self.rpc_secret = Some(secret);
+                    changed = true;
+                }
+                None => {
+                    eprintln!("aether-daemon: OS random source unavailable; RPC token left unset")
+                }
+            }
+        }
+        changed
     }
 
     /// The network configuration handed to plugin processes, or `None` when
@@ -302,6 +365,24 @@ impl Settings {
                 return Err(DaemonError::Protocol(format!(
                     "connections must be within 1..={CONNECTIONS_MAX}, got {connections}"
                 )));
+            }
+        }
+        if let Some(pins) = &self.plugin_pins {
+            for (id, version) in pins {
+                if id.is_empty()
+                    || !id.chars().all(|ch| {
+                        ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-' || ch == '_'
+                    })
+                {
+                    return Err(DaemonError::Protocol(format!(
+                        "plugin_pins has an invalid plugin id {id:?}"
+                    )));
+                }
+                semver::Version::parse(version).map_err(|error| {
+                    DaemonError::Protocol(format!(
+                        "plugin_pins version for {id} is not semver: {error}"
+                    ))
+                })?;
             }
         }
         if let Some(headers) = self.default_headers.as_deref() {
@@ -667,6 +748,8 @@ mod tests {
             rpc_secret: Some("token".into()),
             ffmpeg_path: Some("/usr/bin/ffmpeg".into()),
             plugin_auto_update: Some(true),
+            plugin_external_process: Some(false),
+            plugin_pins: Some(BTreeMap::from([("http".into(), "0.2.0".into())])),
             app_auto_update: Some(false),
         };
         let object = serde_json::to_value(settings).unwrap();
@@ -675,6 +758,27 @@ mod tests {
         for key in object.keys() {
             assert!(KEYS.contains(&key.as_str()), "unknown key {key}");
         }
+    }
+
+    #[test]
+    fn rejects_invalid_plugin_pins() {
+        let bad_id = Settings {
+            plugin_pins: Some(BTreeMap::from([("Bad Id".into(), "1.0.0".into())])),
+            ..Settings::default()
+        };
+        assert!(bad_id.validate().is_err());
+
+        let bad_version = Settings {
+            plugin_pins: Some(BTreeMap::from([("http".into(), "not-semver".into())])),
+            ..Settings::default()
+        };
+        assert!(bad_version.validate().is_err());
+
+        let good = Settings {
+            plugin_pins: Some(BTreeMap::from([("http".into(), "0.2.0".into())])),
+            ..Settings::default()
+        };
+        good.validate().unwrap();
     }
 
     #[test]
@@ -780,9 +884,41 @@ mod tests {
     }
 
     #[test]
+    fn seeds_the_rpc_defaults_once() {
+        // First boot: loopback address plus a generated token.
+        let mut settings = Settings::default();
+        assert!(settings.seed_rpc_defaults());
+        assert_eq!(settings.rpc_listen.as_deref(), Some(RPC_LISTEN_DEFAULT));
+        let secret = settings.rpc_secret.as_deref().unwrap();
+        assert_eq!(secret.len(), RPC_SECRET_BYTES * 2);
+        assert!(secret.bytes().all(|byte| byte.is_ascii_hexdigit()));
+
+        // Later boots keep the same token instead of rotating it.
+        let token = settings.rpc_secret.clone();
+        assert!(!settings.seed_rpc_defaults());
+        assert_eq!(settings.rpc_secret, token);
+
+        // An explicit empty value means the user turned it off / removed the
+        // token; seeding must not undo that.
+        let mut opted_out = Settings {
+            rpc_listen: Some(String::new()),
+            rpc_secret: Some(String::new()),
+            ..Settings::default()
+        };
+        assert!(!opted_out.seed_rpc_defaults());
+        assert_eq!(opted_out.rpc_listen.as_deref(), Some(""));
+        assert_eq!(opted_out.rpc_secret.as_deref(), Some(""));
+    }
+
+    #[test]
     fn validates_the_rpc_listen_address() {
-        // Off by default.
-        Settings::default().validate().unwrap();
+        // A blank address is the explicit "off" state.
+        Settings {
+            rpc_listen: Some(String::new()),
+            ..Settings::default()
+        }
+        .validate()
+        .unwrap();
 
         // Loopback needs no token; a typo is still an error.
         let loopback = Settings {

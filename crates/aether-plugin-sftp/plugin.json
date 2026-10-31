@@ -13,6 +13,17 @@
     "windows-arm64": "bin/aether-plugin-sftp-windows-arm64.exe",
     "macos-universal": "bin/aether-plugin-sftp-macos-universal"
   },
-  "settings_schema": { "sections": [] },
+  "settings_schema": {
+    "sections": [
+      {
+        "title": "SFTP",
+        "fields": [
+          { "key": "sftp_key", "type": "string" },
+          { "key": "sftp_passphrase", "type": "secret" },
+          { "key": "sftp_agent", "type": "bool", "default": true }
+        ]
+      }
+    ]
+  },
   "detail_schema": { "sections": [{ "type": "metrics", "items": ["size"] }] }
 }

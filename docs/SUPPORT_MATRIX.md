@@ -3,7 +3,7 @@
 > 结论先说：**不能声称覆盖“所有下载情况”。** 插件架构解决的是可扩展性，不等于覆盖率。
 > 本文是唯一支持范围来源；矩阵之外视为未支持，新增场景必须通过新插件实现，Host 不改。
 >
-> 当前：**HTTP 插件已实现（P1，尚未接 Host UI）**，fake 测试插件 1 个；其余协议仍是目标/计划。
+> 当前：**16 个第一方下载插件 + 1 个 aria2 RPC 兼容服务插件已接入 daemon 与 Slint 插件页**（HTTP/BT/FTP/SFTP/WebDAV/S3/Metalink/HLS/DASH/yt-dlp/RTMP/IPFS/thunder/云盘等）；其余协议仍是目标/计划。
 
 ## 1. 支持分级
 
@@ -21,14 +21,14 @@
 | 场景 | 插件 | 级别 | 阶段 | 备注 |
 | --- | --- | --- | --- | --- |
 | HTTP/HTTPS 1.1 | http | Core | **已实现** | Range、分段、续传、重定向、代理；鉴权后续 |
-| HTTP/2 | http | Core | P1 | 多路复用 Range |
+| HTTP/2 | http | Core | **已实现** | reqwest 启用 `http2`，TLS ALPN 协商；HTTP/3 未启用 |
 | HTTP/3 / QUIC | http | Core | P1/P2 | 可选；UDP 失败回退 h2 |
 | FTP / FTPS | ftp | Optional | **已实现** | FTP + 显式 FTPS、REST/SIZE、SHA-256；MDTM 待补 |
-| SFTP | sftp | Optional | **已实现（基础）** | 密码认证、seek 续传；密钥/agent 待补 |
-| WebDAV | webdav | Optional | **已实现（GET）** | webdav(s) 方案、Basic Auth、Range；PROPFIND/锁待补 |
-| S3 / 兼容对象存储 | s3 | Optional | **已实现（基础）** | SigV4 GET/HEAD、Range 续传；分片/自定义 CA 待补 |
+| SFTP | sftp | Optional | **已实现** | 密码 / 私钥（`sftp_key` + passphrase）/ SSH agent；seek 续传；known_hosts 校验待补 |
+| WebDAV | webdav | Optional | **已实现** | webdav(s) 方案、Basic Auth、Range；PROPFIND Depth:0 取大小/ETag（403/405 回退 HEAD）；PUT/锁待补 |
+| S3 / 兼容对象存储 | s3 | Optional | **已实现** | SigV4 GET/HEAD、并发 Range 分片（1–8 连接）、续传；自定义 CA/分片上传待补 |
 | Metalink | metalink | Optional | **已实现（HTTP 内置）** | v3/v4、优先级选源、SHA-256 |
-| BitTorrent v1 / hybrid | bt | Optional（随包懒启动） | **已实现（基础）** | librqbit、magnet/.torrent、initial peers；做种/DHT 压测待补 |
+| BitTorrent v1 / hybrid | bt | Optional（随包懒启动） | **已实现（基础）** | librqbit、magnet/.torrent、initial peers、多文件选择与完成后做种；DHT 压测待补 |
 | BitTorrent v2 / pure v2 | bt | Optional | P3 待验证 | 依赖 BT 内核能力；不支持则明确报错 |
 | WebTorrent / WebRTC | — | Not planned | — | 浏览器 P2P 不在核心 |
 | ED2K / Kad | ed2k | Optional | P5+（未实现） | 需要 eDonkey 内核；当前不做 |
@@ -38,6 +38,7 @@
 | Usenet / NNTP | — | Not planned | — | 不在路线图 |
 | TFTP / Gopher / SCP | — | Not planned | — | 不在路线图 |
 | WebSocket / 长连接消息 | — | Not planned | — | 不是文件下载协议 |
+| aria2 JSON-RPC 客户端 | aria2（服务插件） | Optional | **已实现（HTTP/WS）** | 与原生 RPC 共用 6800：POST/GET `/jsonrpc`、CORS、`token:` 鉴权、常用方法与 `system.multicall`；多 URI 与 `out` 文件名覆盖只取/不生效（文件名由探测决定）；列表接口受 daemon `list` 的 100 条上限约束；`addTorrent`/`addMetalink` 通过插件内置回环临时源交给 BT/HTTP 插件（`addTorrent` 的 web seed 列表忽略；内联字节在插件内存中保留 24 小时，daemon/插件重启后尚未开始的排队任务会失效）；WebSocket `/jsonrpc` 支持调用与 `aria2.onDownload*` 通知；逐任务 `changeOption`/`changePosition` 尚未实现 |
 
 ## 3. 内容与来源
 
@@ -47,10 +48,10 @@
 | 多镜像 / Metalink | metalink/http | Optional | 源评分、分段分配 |
 | 种子 / magnet | bt | Optional | 多文件、做种、顺序模式 |
 | HLS 点播 | media | Optional | **已实现插件** | AES-128、EXT-X-MAP、BYTERANGE、合并 |
-| HLS 直播 | media | Optional | 滚动 playlist、窗口计算 |
+| HLS 直播 | media | Optional | **已实现** | 滚动 playlist 刷新、按媒体序列去重、ENDLIST 收尾；断点续传不做 |
 | DASH 点播 | media | Optional | **已实现插件** | SegmentTemplate/List/BaseURL、首个 Period；直播待补 |
 | YouTube/Bilibili 等站点 | extractor | External | **已实现插件** | yt-dlp 子进程；站点覆盖取决于 yt-dlp，不保证 |
-| Google Drive / OneDrive / Dropbox | gdrive / onedrive / dropbox | Optional | **已实现共享链接** | 公开链接转直链；OAuth 私有文件待补 |
+| Google Drive / OneDrive / Dropbox | gdrive / onedrive / dropbox | Optional | **已实现** | 公开链接转直链；私有文件支持现成 access_token 或 OAuth2 refresh_token（用户自建应用，插件不内置 client_id）；Dropbox 临时直链过期后需重开任务 |
 | 百度网盘 / 阿里云盘等 | baidupan / aliyunpan | Optional | **官方 API 基础** | 文件 ID + access_token；共享链接 OAuth 待补；不做绕过 |
 | 浏览器正在下载的文件 | browser-extension | Optional | P5 | 扩展 + Native Messaging；用户显式授权 |
 | RSS / 自动追番 | Host 功能 | Optional | P5 | 后续 Host 功能，不是协议插件 |
@@ -68,7 +69,7 @@
 | Basic/Bearer/自定义 Header | 设计完成 | 插件设置 |
 | Cookie 手动导入 | 设计完成 | 不自动读取浏览器 Cookie |
 | Digest/NTLM/Kerberos | 未纳入 | 如有需求作为插件/SDK 扩展 |
-| OAuth2 刷新 | 计划 | P6 云盘插件；PKCE/设备码；token 存 keyring |
+| OAuth2 刷新 | **已实现** | 云端插件用 refresh_token 换 access_token（用户自建应用）；PKCE/设备码与 keyring 存储待补 |
 | 客户端证书/mTLS | 未纳入 | 可后续加 |
 | DNS/DoH/自定义 CA | 部分设计 | 系统 DNS 默认；DoH 可选 |
 | 自定义 UA/Referer | 设计完成 | 插件设置 |

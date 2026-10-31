@@ -18,7 +18,13 @@ use crate::http;
 
 const PLUGIN_ID: &str = "media";
 const PLUGIN_VERSION: &str = "0.1.0";
-const CAPABILITIES: &[Capability] = &[Capability::Network, Capability::FilesystemTask];
+const CAPABILITIES: &[Capability] = &[
+    Capability::Network,
+    Capability::FilesystemTask,
+    // `transcode_to` shells out to ffmpeg (`-c copy`); the manifest must
+    // declare the same set or the handshake now rejects the mismatch.
+    Capability::ExternalProcess,
+];
 
 pub struct MediaPlugin {
     client: Option<reqwest::blocking::Client>,
@@ -233,12 +239,19 @@ impl Plugin for MediaPlugin {
                     eta_secs: None,
                     connections: 1,
                     chunks_done: Some(snapshot.chunks_done),
-                    chunks_total: Some(snapshot.chunks_total),
+                    chunks_total: (snapshot.chunks_total > 0).then_some(snapshot.chunks_total),
                 })?;
             }
             HostCommand::Init { .. } => {
                 return Err(SdkError::Protocol(
                     "init must be handled by the SDK runner".into(),
+                ));
+            }
+            // Service/bridge commands target `kind: "service"` plugins
+            // (aria2 compatibility); download plugins must not accept them.
+            HostCommand::ServiceInit { .. } | HostCommand::BridgeCall { .. } => {
+                return Err(SdkError::Protocol(
+                    "service commands are not supported by this plugin".into(),
                 ));
             }
             HostCommand::Ping { .. } | HostCommand::Shutdown => {

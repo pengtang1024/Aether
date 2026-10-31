@@ -1,0 +1,20 @@
+[package]
+name = "aether-plugin-aria2"
+version.workspace = true
+edition = "2021"
+rust-version = "1.92"
+description = "aria2 JSON-RPC compatibility bridge for Aether"
+license = "MIT"
+publish = false
+
+[[bin]]
+name = "aether-plugin-aria2"
+path = "src/main.rs"
+
+[dependencies]
+aether-plugin-sdk = { path = "../aether-plugin-sdk" }
+# addTorrent/addMetalink carry base64 payloads in the aria2 API.
+base64 = "0.22"
+# Loopback publish tokens for the temporary torrent/metalink host.
+getrandom = "0.3"
+serde_json = "1"

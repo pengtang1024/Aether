@@ -18,6 +18,13 @@ pub struct PluginInfo {
     pub capabilities: Vec<String>,
     #[serde(default)]
     pub enabled: bool,
+    /// Host policy refuses to spawn this plugin (it declares
+    /// `external-process` and the user turned that capability off).
+    #[serde(default)]
+    pub blocked: bool,
+    /// A previous version is retained and can be reinstalled.
+    #[serde(default)]
+    pub has_backup: bool,
 }
 
 /// Dashboard counters behind the daemon's `stats` method.

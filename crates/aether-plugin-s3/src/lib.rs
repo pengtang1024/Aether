@@ -1,5 +1,6 @@
 //! S3-compatible object download plugin for Aether.
 
+pub mod download;
 pub mod plugin;
 pub mod s3;
 pub mod sigv4;

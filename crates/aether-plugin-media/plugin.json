@@ -5,7 +5,7 @@
   "api": 1,
   "min_host": "0.2.0",
   "protocols": ["hls", "dash"],
-  "capabilities": ["network", "filesystem:task"],
+  "capabilities": ["network", "filesystem:task", "external-process"],
   "executable": {
     "linux-x86_64": "bin/aether-plugin-media-linux-x86_64",
     "linux-aarch64": "bin/aether-plugin-media-linux-aarch64",
@@ -18,7 +18,9 @@
       {
         "title": "媒体",
         "fields": [
-          { "key": "prefer_highest_bandwidth", "type": "bool", "default": true }
+          { "key": "prefer_highest_bandwidth", "type": "bool", "default": true },
+          { "key": "hls_live_interval_ms", "type": "int", "min": 500, "max": 10000, "default": 1000 },
+          { "key": "hls_live_idle_polls", "type": "int", "min": 1, "default": 3 }
         ]
       }
     ]

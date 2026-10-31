@@ -10,7 +10,7 @@ use aether_plugin_sdk::{
     Capability, HostCommand, Metadata, Plugin, PluginContext, PluginEvent, SdkError,
 };
 
-use crate::s3;
+use crate::{download, s3};
 
 const PLUGIN_ID: &str = "s3";
 const PLUGIN_VERSION: &str = "0.1.0";
@@ -101,7 +101,12 @@ impl Plugin for S3Plugin {
                     reason: probe.reason,
                 })?;
             }
-            HostCommand::Start { task, paths, .. } => {
+            HostCommand::Start {
+                task,
+                paths,
+                budget,
+                ..
+            } => {
                 let client = self.client()?;
                 let task_id = task.task_id.clone();
                 let sender = ctx.sender();
@@ -110,7 +115,15 @@ impl Plugin for S3Plugin {
                 let thread_control = control.clone();
                 let thread_progress = progress.clone();
                 thread::spawn(move || {
-                    s3::run(sender, client, task, paths, thread_control, thread_progress);
+                    download::run(
+                        sender,
+                        client,
+                        task,
+                        paths,
+                        budget,
+                        thread_control,
+                        thread_progress,
+                    );
                 });
                 self.tasks.insert(task_id, TaskRecord { control, progress });
             }
@@ -142,7 +155,7 @@ impl Plugin for S3Plugin {
                     total: snapshot.total,
                     speed_bps: snapshot.speed_bps,
                     eta_secs: None,
-                    connections: 1,
+                    connections: snapshot.connections.max(1),
                     chunks_done: None,
                     chunks_total: None,
                 })?;
@@ -150,6 +163,13 @@ impl Plugin for S3Plugin {
             HostCommand::Init { .. } => {
                 return Err(SdkError::Protocol(
                     "init must be handled by the SDK runner".into(),
+                ));
+            }
+            // Service/bridge commands target `kind: "service"` plugins
+            // (aria2 compatibility); download plugins must not accept them.
+            HostCommand::ServiceInit { .. } | HostCommand::BridgeCall { .. } => {
+                return Err(SdkError::Protocol(
+                    "service commands are not supported by this plugin".into(),
                 ));
             }
             HostCommand::Ping { .. } | HostCommand::Shutdown => {

@@ -850,8 +850,11 @@ fn daemon_uses_the_proxy_from_the_environment() {
     assert_eq!(settings["proxy"]["mode"], "custom");
     assert_eq!(settings["proxy"]["url"], "socks5://127.0.0.1:1080");
     // The environment override is per run: it must not rewrite the user's
-    // persisted settings behind their back.
-    assert!(!daemon.root.join("downloads/.aether/settings.json").exists());
+    // persisted settings behind their back. (The file itself exists because
+    // first boot seeds the RPC defaults.)
+    let persisted = fs::read_to_string(daemon.root.join("downloads/.aether/settings.json"))
+        .expect("first boot writes the RPC defaults");
+    assert!(!persisted.contains("1080"), "{persisted}");
 
     client.shutdown().unwrap();
     daemon.shutdown();

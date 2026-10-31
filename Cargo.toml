@@ -24,6 +24,7 @@ members = [
     "crates/aether-plugin-thunder",
     "crates/aether-plugin-ipfs",
     "crates/aether-plugin-rtmp",
+    "crates/aether-plugin-aria2",
     "crates/aether-plugin-cloud",
     "crates/aether-plugin-baidupan",
     "crates/aether-plugin-aliyunpan",

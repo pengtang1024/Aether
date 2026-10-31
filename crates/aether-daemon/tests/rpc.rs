@@ -99,12 +99,12 @@ fn spawn_rpc_daemon(label: &str, addr: SocketAddr, secret: Option<&str>) -> Daem
         pac_url: None,
         rpc_listen: Some(addr.to_string()),
     };
-    if let Some(secret) = secret {
-        let settings_path = aether_daemon::settings::Settings::path(&config.download_dir);
-        let mut settings = aether_daemon::settings::Settings::load(&settings_path);
-        settings.rpc_secret = Some(secret.to_string());
-        settings.save(&settings_path).unwrap();
-    }
+    // Persist the token explicitly: `None` means "generate a default token",
+    // while `Some("")` keeps the loopback-no-token case this helper promises.
+    let settings_path = aether_daemon::settings::Settings::path(&config.download_dir);
+    let mut settings = aether_daemon::settings::Settings::load(&settings_path);
+    settings.rpc_secret = Some(secret.unwrap_or("").to_string());
+    settings.save(&settings_path).unwrap();
     let handle = thread::spawn(move || aether_daemon::run(config));
     Daemon {
         root,
@@ -234,6 +234,11 @@ fn authed_session_serves_subscriptions_and_shutdown() {
 fn non_loopback_without_secret_refuses_to_start() {
     let root = temp_dir("wide-open");
     let socket = endpoint("wide-open", &root);
+    let settings_path = aether_daemon::settings::Settings::path(&root.join("downloads"));
+    let mut settings = aether_daemon::settings::Settings::load(&settings_path);
+    // An explicit empty token: the default token must not rescue this config.
+    settings.rpc_secret = Some(String::new());
+    settings.save(&settings_path).unwrap();
     let config = DaemonConfig {
         download_dir: root.join("downloads"),
         plugins_dir: root.join("no-plugins"),

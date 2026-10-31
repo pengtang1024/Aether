@@ -3,7 +3,7 @@
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Seek, SeekFrom};
 use std::net::TcpStream;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -20,6 +20,7 @@ use url::Url;
 
 const CHUNK: usize = 64 * 1024;
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
+const NO_CREDENTIALS: &str = "no credentials: set a password, sftp_key, or an SSH agent";
 
 #[derive(Debug, Clone)]
 struct Target {
@@ -27,7 +28,145 @@ struct Target {
     port: u16,
     username: String,
     password: String,
+    auth: AuthConfig,
     path: String,
+}
+
+/// Authentication method selected for one connection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum AuthPlan {
+    Password(String),
+    PrivateKey {
+        path: PathBuf,
+        passphrase: Option<String>,
+    },
+    Agent,
+}
+
+/// Authentication options collected from task settings and the URL query.
+///
+/// `None` means "not specified", so a lower-priority source can fill the gap.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct AuthConfig {
+    key: Option<String>,
+    passphrase: Option<String>,
+    agent_allowed: Option<bool>,
+}
+
+impl AuthConfig {
+    fn from_settings(settings: &serde_json::Value) -> Self {
+        Self {
+            key: text_setting(settings, "sftp_key"),
+            passphrase: text_setting(settings, "sftp_passphrase"),
+            agent_allowed: settings
+                .get("sftp_agent")
+                .and_then(serde_json::Value::as_bool),
+        }
+    }
+
+    fn from_query(url: &Url) -> Self {
+        let mut config = Self::default();
+        for (name, value) in url.query_pairs() {
+            match name.as_ref() {
+                "key" => config.key = non_empty(value.into_owned()),
+                "passphrase" => config.passphrase = non_empty(value.into_owned()),
+                "agent" => config.agent_allowed = parse_agent_flag(&value),
+                _ => {}
+            }
+        }
+        config
+    }
+
+    /// Keep the values in `self` and fill missing ones from `fallback`.
+    fn with_fallback(mut self, fallback: Self) -> Self {
+        if self.key.is_none() {
+            self.key = fallback.key;
+        }
+        if self.passphrase.is_none() {
+            self.passphrase = fallback.passphrase;
+        }
+        if self.agent_allowed.is_none() {
+            self.agent_allowed = fallback.agent_allowed;
+        }
+        self
+    }
+
+    fn agent_enabled(&self) -> bool {
+        self.agent_allowed.unwrap_or(true)
+    }
+}
+
+/// Pick the authentication method.
+///
+/// Priority: explicit private key (settings, then URL query), URL password,
+/// then SSH agent when it is enabled and available. Missing everything is an
+/// error instead of an unauthenticated connection attempt.
+fn select_auth(
+    config: &AuthConfig,
+    password: &str,
+    agent_available: bool,
+) -> Result<AuthPlan, SftpError> {
+    if let Some(key) = config.key.as_deref().filter(|key| !key.trim().is_empty()) {
+        return Ok(AuthPlan::PrivateKey {
+            path: expand_home(key.trim()),
+            passphrase: config
+                .passphrase
+                .clone()
+                .filter(|passphrase| !passphrase.is_empty()),
+        });
+    }
+    if !password.is_empty() {
+        return Ok(AuthPlan::Password(password.to_owned()));
+    }
+    if config.agent_enabled() && agent_available {
+        return Ok(AuthPlan::Agent);
+    }
+    Err(SftpError::Protocol(NO_CREDENTIALS.into()))
+}
+
+fn text_setting(settings: &serde_json::Value, key: &str) -> Option<String> {
+    settings
+        .get(key)
+        .and_then(serde_json::Value::as_str)
+        .map(ToOwned::to_owned)
+}
+
+fn non_empty(value: String) -> Option<String> {
+    (!value.is_empty()).then_some(value)
+}
+
+fn parse_agent_flag(value: &str) -> Option<bool> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "" | "1" | "true" | "yes" | "on" => Some(true),
+        "0" | "false" | "no" | "off" => Some(false),
+        _ => None,
+    }
+}
+
+fn agent_available() -> bool {
+    std::env::var_os("SSH_AUTH_SOCK").is_some_and(|value| !value.is_empty())
+}
+
+fn expand_home(path: &str) -> PathBuf {
+    expand_home_with(path, std::env::var("HOME").ok().as_deref())
+}
+
+/// Expand a leading `~` or `~/` with the supplied home directory.
+fn expand_home_with(path: &str, home: Option<&str>) -> PathBuf {
+    let Some(rest) = path.strip_prefix('~') else {
+        return PathBuf::from(path);
+    };
+    if !(rest.is_empty() || rest.starts_with('/') || rest.starts_with('\\')) {
+        return PathBuf::from(path);
+    }
+    let Some(home) = home.filter(|home| !home.is_empty()) else {
+        return PathBuf::from(path);
+    };
+    if rest.is_empty() {
+        PathBuf::from(home)
+    } else {
+        Path::new(home).join(&rest[1..])
+    }
 }
 
 pub struct SftpProbe {
@@ -99,7 +238,8 @@ fn run_inner(
         return Err(SftpError::Canceled);
     }
     let target = Target::parse(&task.url)?;
-    let (session, _) = connect(&target)?;
+    let auth = target.auth_plan(&task.settings)?;
+    let (session, _) = connect(&target, &auth)?;
     let sftp = session.sftp()?;
     let mut remote = sftp.open(&target.path)?;
     let size = remote.stat()?.size.unwrap_or(0);
@@ -208,20 +348,35 @@ fn run_inner(
 }
 
 fn connect_and_stat(target: &Target) -> Result<u64, SftpError> {
-    let (session, _) = connect(target)?;
+    let auth = target.auth_plan(&serde_json::Value::Null)?;
+    let (session, _) = connect(target, &auth)?;
     let sftp = session.sftp()?;
     let stat = sftp.stat(Path::new(&target.path))?;
     Ok(stat.size.unwrap_or(0))
 }
 
-fn connect(target: &Target) -> Result<(Session, TcpStream), SftpError> {
+fn connect(target: &Target, auth: &AuthPlan) -> Result<(Session, TcpStream), SftpError> {
     let tcp = TcpStream::connect((target.host.as_str(), target.port))?;
     tcp.set_read_timeout(Some(Duration::from_secs(60)))?;
     let mut session = Session::new()?;
     session.set_tcp_stream(tcp.try_clone()?);
     session.handshake()?;
-    session.userauth_password(&target.username, &target.password)?;
+    authenticate(&session, &target.username, auth)?;
     Ok((session, tcp))
+}
+
+fn authenticate(session: &Session, username: &str, auth: &AuthPlan) -> Result<(), SftpError> {
+    match auth {
+        AuthPlan::Password(password) => session.userauth_password(username, password)?,
+        AuthPlan::PrivateKey { path, passphrase } => {
+            session.userauth_pubkey_file(username, None, path, passphrase.as_deref())?
+        }
+        AuthPlan::Agent => session.userauth_agent(username)?,
+    }
+    if !session.authenticated() {
+        return Err(SftpError::Protocol("authentication failed".into()));
+    }
+    Ok(())
 }
 
 impl Target {
@@ -241,6 +396,7 @@ impl Target {
         let password = percent_decode_str(url.password().unwrap_or(""))
             .decode_utf8_lossy()
             .into_owned();
+        let auth = AuthConfig::from_query(&url);
         let path = percent_decode_str(url.path())
             .decode_utf8_lossy()
             .into_owned();
@@ -252,8 +408,14 @@ impl Target {
             port,
             username,
             password,
+            auth,
             path,
         })
+    }
+
+    fn auth_plan(&self, settings: &serde_json::Value) -> Result<AuthPlan, SftpError> {
+        let config = AuthConfig::from_settings(settings).with_fallback(self.auth.clone());
+        select_auth(&config, &self.password, agent_available())
     }
 
     fn filename(&self) -> Option<String> {
@@ -305,6 +467,14 @@ impl SftpError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+
+    fn private_key(path: &str, passphrase: Option<&str>) -> AuthPlan {
+        AuthPlan::PrivateKey {
+            path: PathBuf::from(path),
+            passphrase: passphrase.map(ToOwned::to_owned),
+        }
+    }
 
     #[test]
     fn parses_sftp_url() {
@@ -315,5 +485,176 @@ mod tests {
         assert_eq!(target.password, "p@ss");
         assert_eq!(target.path, "/pub/file.bin");
         assert_eq!(target.filename().as_deref(), Some("file.bin"));
+    }
+
+    #[test]
+    fn parses_auth_query_parameters() {
+        let target = Target::parse(
+            "sftp://user@example.com/pub/file.bin?key=%2Fhome%2Fme%2F.id_ed25519&passphrase=p%40ss&agent=0",
+        )
+        .unwrap();
+        assert_eq!(target.path, "/pub/file.bin");
+        assert_eq!(
+            target.auth,
+            AuthConfig {
+                key: Some("/home/me/.id_ed25519".into()),
+                passphrase: Some("p@ss".into()),
+                agent_allowed: Some(false),
+            }
+        );
+    }
+
+    #[test]
+    fn parses_agent_flag_variants() {
+        for value in ["1", "true", "YES", "on", ""] {
+            assert_eq!(parse_agent_flag(value), Some(true), "{value}");
+        }
+        for value in ["0", "false", "No", "off"] {
+            assert_eq!(parse_agent_flag(value), Some(false), "{value}");
+        }
+        assert_eq!(parse_agent_flag("maybe"), None);
+    }
+
+    #[test]
+    fn selects_url_password_when_no_key_is_configured() {
+        assert_eq!(
+            select_auth(&AuthConfig::default(), "secret", true).unwrap(),
+            AuthPlan::Password("secret".into())
+        );
+    }
+
+    #[test]
+    fn selects_settings_key_over_url_password() {
+        let target =
+            Target::parse("sftp://user:url-secret@example.com/pub/file.bin?key=/query/key")
+                .unwrap();
+        let plan = target
+            .auth_plan(&json!({
+                "sftp_key": "/settings/key",
+                "sftp_passphrase": "phrase",
+            }))
+            .unwrap();
+        assert_eq!(plan, private_key("/settings/key", Some("phrase")));
+    }
+
+    #[test]
+    fn settings_key_keeps_query_passphrase_as_fallback() {
+        let target = Target::parse(
+            "sftp://user@example.com/pub/file.bin?key=%2Fquery%2Fkey&passphrase=query-phrase",
+        )
+        .unwrap();
+        let plan = target
+            .auth_plan(&json!({ "sftp_key": "/settings/key" }))
+            .unwrap();
+        assert_eq!(plan, private_key("/settings/key", Some("query-phrase")));
+    }
+
+    #[test]
+    fn empty_settings_key_does_not_hide_url_password() {
+        let target = Target::parse("sftp://user:url-secret@example.com/pub/file.bin").unwrap();
+        let plan = target.auth_plan(&json!({ "sftp_key": "   " })).unwrap();
+        assert_eq!(plan, AuthPlan::Password("url-secret".into()));
+    }
+
+    #[test]
+    fn uses_agent_when_enabled_and_available() {
+        assert_eq!(
+            select_auth(&AuthConfig::default(), "", true).unwrap(),
+            AuthPlan::Agent
+        );
+        assert_eq!(
+            select_auth(
+                &AuthConfig::from_settings(&json!({ "sftp_agent": true })),
+                "",
+                true
+            )
+            .unwrap(),
+            AuthPlan::Agent
+        );
+    }
+
+    #[test]
+    fn refuses_agent_when_unavailable() {
+        let error = select_auth(&AuthConfig::default(), "", false).unwrap_err();
+        assert!(error.to_string().contains(NO_CREDENTIALS), "{error}");
+    }
+
+    #[test]
+    fn settings_can_disable_agent() {
+        let error = select_auth(
+            &AuthConfig::from_settings(&json!({ "sftp_agent": false })),
+            "",
+            true,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains(NO_CREDENTIALS), "{error}");
+    }
+
+    #[test]
+    fn url_can_disable_agent() {
+        let target = Target::parse("sftp://user@example.com/pub/file.bin?agent=0").unwrap();
+        let error = target.auth_plan(&json!({})).unwrap_err();
+        assert!(error.to_string().contains(NO_CREDENTIALS), "{error}");
+    }
+
+    #[test]
+    fn url_password_still_wins_over_agent() {
+        let target = Target::parse("sftp://user:url-secret@example.com/pub/file.bin").unwrap();
+        assert_eq!(
+            target.auth_plan(&json!({})).unwrap(),
+            AuthPlan::Password("url-secret".into())
+        );
+    }
+
+    #[test]
+    fn reports_missing_credentials() {
+        let target = Target::parse("sftp://user@example.com/pub/file.bin?agent=0").unwrap();
+        let error = target
+            .auth_plan(&json!({ "sftp_agent": false }))
+            .unwrap_err();
+        assert!(error.to_string().contains(NO_CREDENTIALS), "{error}");
+    }
+
+    #[test]
+    fn expands_tilde_using_home() {
+        assert_eq!(
+            expand_home_with("~/.ssh/id_ed25519", Some("/home/tester")),
+            PathBuf::from("/home/tester/.ssh/id_ed25519")
+        );
+        assert_eq!(
+            expand_home_with("~", Some("/home/tester")),
+            PathBuf::from("/home/tester")
+        );
+        assert_eq!(
+            expand_home_with("/absolute/key", Some("/home/tester")),
+            PathBuf::from("/absolute/key")
+        );
+        assert_eq!(
+            expand_home_with("~other/key", Some("/home/tester")),
+            PathBuf::from("~other/key")
+        );
+        assert_eq!(expand_home_with("~/key", None), PathBuf::from("~/key"));
+    }
+
+    #[test]
+    fn expands_tilde_when_selecting_private_key() {
+        let plan = select_auth(
+            &AuthConfig {
+                key: Some("~/keys/id_test".into()),
+                passphrase: None,
+                agent_allowed: None,
+            },
+            "",
+            false,
+        )
+        .unwrap();
+        let expected = expand_home_with("~/keys/id_test", std::env::var("HOME").ok().as_deref());
+        assert_eq!(
+            plan,
+            AuthPlan::PrivateKey {
+                path: expected,
+                passphrase: None
+            }
+        );
     }
 }

@@ -58,6 +58,19 @@ pub enum HostCommand {
         request_id: u64,
         task_id: String,
     },
+    /// Sent once to a `kind: "service"` plugin after `Init`: the daemon's
+    /// trusted local endpoint. The service uses it to call back into the
+    /// daemon instead of opening its own listening socket.
+    ServiceInit {
+        socket: String,
+    },
+    /// A compatibility-protocol request routed from the daemon listener to a
+    /// service plugin. `payload` is protocol-specific JSON; the reply is a
+    /// [`PluginEvent::BridgeResult`] with the same `request_id`.
+    BridgeCall {
+        request_id: u64,
+        payload: serde_json::Value,
+    },
     Ping {
         request_id: u64,
     },
@@ -78,6 +91,12 @@ pub enum PluginEvent {
     /// Handshake complete, after `Init` has been applied.
     Ready {
         api: u16,
+    },
+    /// Response to [`HostCommand::BridgeCall`]. `payload` is the
+    /// protocol-specific reply (for aria2: a `result` or `error` object).
+    BridgeResult {
+        request_id: u64,
+        payload: serde_json::Value,
     },
     /// Response to [`HostCommand::Probe`].
     ProbeResult {
@@ -150,6 +169,34 @@ pub enum Capability {
     Clipboard,
     #[serde(rename = "http3")]
     Http3,
+}
+
+impl Capability {
+    /// Wire name, identical to the manifest/Hello notation.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Network => "network",
+            Self::FilesystemTask => "filesystem:task",
+            Self::ExternalProcess => "external-process",
+            Self::Clipboard => "clipboard",
+            Self::Http3 => "http3",
+        }
+    }
+
+    /// Every capability this host version understands, in manifest order.
+    pub const ALL: &'static [Capability] = &[
+        Capability::Network,
+        Capability::FilesystemTask,
+        Capability::ExternalProcess,
+        Capability::Clipboard,
+        Capability::Http3,
+    ];
+}
+
+impl std::fmt::Display for Capability {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

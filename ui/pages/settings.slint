@@ -236,7 +236,7 @@ component GeneralPanel inherits Rectangle {
             SettingRow {
                 icon-source: AetherIcons.play;
                 title: @tr("开机自启");
-                description: @tr("登录系统时自动启动 Aether（由操作系统管理，删除自启项即关闭）");
+                description: @tr("登录系统时静默启动 Aether（驻留托盘，不弹主窗口；由操作系统管理，删除自启项即关闭）");
                 Switch {
                     checked <=> root.autostart-on;
                     toggled => { root.changed("autostart", self.checked ? "true" : "false"); }
@@ -715,6 +715,8 @@ component PluginFilter inherits Rectangle {
 component InstalledPlugin inherits Rectangle {
     in property <PluginRow> plugin;
     callback toggled(int, bool);
+    callback removed(int);
+    callback rolled-back(int);
 
     height: Aether.plugin-row;
 
@@ -760,6 +762,29 @@ component InstalledPlugin inherits Rectangle {
                 color: Aether.on-surface-muted;
                 font-size: Aether.text-micro;
             }
+
+            // Declared capabilities, not marketing copy: the manifest is the
+            // contract and the host refuses undeclared runtime claims.
+            Text {
+                text: root.plugin.blocked
+                    ? @tr("权限：") + root.plugin.caps + @tr("（外部进程被设置阻止）")
+                    : @tr("权限：") + root.plugin.caps;
+                color: root.plugin.blocked ? Aether.warning : Aether.on-surface-muted;
+                font-size: Aether.text-micro;
+                overflow: elide;
+            }
+        }
+
+        if root.plugin.can-rollback: TextButton {
+            text: @tr("回滚");
+            cross-axis-self-alignment: center;
+            clicked => { root.rolled-back(root.plugin.id); }
+        }
+
+        TextButton {
+            text: @tr("卸载");
+            cross-axis-self-alignment: center;
+            clicked => { root.removed(root.plugin.id); }
         }
 
         if root.plugin.update: Rectangle {
@@ -798,11 +823,17 @@ component PluginPanel inherits Rectangle {
     in property <string> plugins-dir: "";
     // Daemon-backed: auto-install outdated plugins on the update cycle.
     in-out property <bool> auto-update-on: false;
+    // Daemon-backed version pins: "id=version; id=version".
+    in-out property <string> plugin-pins: "";
+    // Host policy gate for plugins that declare `external-process`.
+    in-out property <bool> external-process-on: true;
     // Draft path of the package to install (UI-local until the button
     // fires `plugin-install`).
     in-out property <string> install-path: "";
     callback changed(string, string);
     callback plugin-toggled(int, bool);
+    callback plugin-remove(int);
+    callback plugin-rollback(int);
     callback plugin-action(string);
 
     VerticalLayout {
@@ -846,6 +877,8 @@ component PluginPanel inherits Rectangle {
                     || (root.plugin-filter == 2 && plugin.enabled)
                     || (root.plugin-filter == 3 && plugin.update);
                 toggled(id, enabled) => { root.plugin-toggled(id, enabled); }
+                removed(id) => { root.plugin-remove(id); }
+                rolled-back(id) => { root.plugin-rollback(id); }
             }
         }
 
@@ -861,6 +894,33 @@ component PluginPanel inherits Rectangle {
                 Switch {
                     checked <=> root.auto-update-on;
                     toggled => { root.changed("plugin-auto-update", self.checked ? "true" : "false"); }
+                }
+            }
+            SettingRow {
+                icon-source: AetherIcons.shield;
+                title: @tr("允许外部进程");
+                description: @tr("关闭后，声明 external-process 的插件（yt-dlp/ffmpeg）不会启动；运行中的任务跑完当前进程");
+                Switch {
+                    checked <=> root.external-process-on;
+                    toggled => { root.changed("plugin-external-process", self.checked ? "true" : "false"); }
+                }
+            }
+            SettingRow {
+                icon-source: AetherIcons.tune;
+                title: @tr("固定插件版本");
+                description: @tr("id=版本，多条用分号分隔；固定后自动/手动检查更新都会跳过该插件（仍可手动安装）");
+                HorizontalLayout {
+                    spacing: 6px;
+                    LineEdit {
+                        text <=> root.plugin-pins;
+                        placeholder-text: "http=0.2.0; bt=0.2.0";
+                        horizontal-stretch: 1;
+                        accepted => { root.changed("plugin-pins", self.text); }
+                    }
+                    TextButton {
+                        text: @tr("保存");
+                        clicked => { root.changed("plugin-pins", root.plugin-pins); }
+                    }
                 }
             }
             SettingRow {
@@ -1103,7 +1163,8 @@ component AdvancedPanel inherits Rectangle {
     in property <string> plugins-dir: "";
     in property <string> data-dir: "";
     // Daemon-backed remote control (RPC): persisted config plus a live
-    // status line. The token is never mirrored back into the field.
+    // status line. The token is mirrored into a masked field so the random
+    // button has something to replace; the daemon generates the first one.
     in property <string> rpc-listen: "";
     in property <string> rpc-status: "";
     in-out property <string> rpc-listen-value: "";
@@ -1111,6 +1172,7 @@ component AdvancedPanel inherits Rectangle {
     callback changed(string, string);
     callback rpc-apply(string, string);
     callback rpc-clear-secret;
+    callback rpc-random-secret;
 
     VerticalLayout {
         width: 100%;
@@ -1159,7 +1221,7 @@ component AdvancedPanel inherits Rectangle {
             SettingRow {
                 icon-source: AetherIcons.signal;
                 title: @tr("监听地址");
-                description: @tr("例如 127.0.0.1:7777；留空关闭；非回环地址必须设置令牌；修改后重启 daemon 生效");
+                description: @tr("默认 127.0.0.1:6800；留空关闭；非回环地址必须设置令牌；修改后重启 daemon 生效");
                 LineEdit {
                     text <=> root.rpc-listen-value;
                     placeholder-text: root.rpc-listen == "" ? @tr("未开启") : root.rpc-listen;
@@ -1170,13 +1232,17 @@ component AdvancedPanel inherits Rectangle {
             SettingRow {
                 icon-source: AetherIcons.shield;
                 title: @tr("访问令牌");
-                description: @tr("留空保持不变；设置后立即生效（无需重启）");
-                LineEdit {
-                    text <=> root.rpc-secret-value;
-                    input-type: InputType.password;
-                    placeholder-text: @tr("留空保持不变");
-                    min-width: Aether.field-md;
-                    max-width: Aether.field-md;
+                description: @tr("默认自动生成；随机按钮换一个；留空表示不使用令牌（仅回环地址）；应用后立即生效");
+                HorizontalLayout {
+                    spacing: Aether.space-sm;
+                    LineEdit {
+                        text <=> root.rpc-secret-value;
+                        input-type: InputType.password;
+                        placeholder-text: @tr("留空表示不使用令牌");
+                        min-width: Aether.field-md;
+                        max-width: Aether.field-md;
+                    }
+                    TextButton { text: @tr("随机"); clicked => { root.rpc-random-secret(); } }
                 }
             }
             SettingRow {
@@ -1372,6 +1438,8 @@ export component SettingsPage inherits Rectangle {
     in-out property <bool> autostart-on: false;
     // Daemon-backed: install outdated plugins on the periodic update cycle.
     in-out property <bool> plugin-auto-update: false;
+    in-out property <string> plugin-pins: "";
+    in-out property <bool> plugin-external-process: true;
     // UI-local: interface language (0 = Chinese source, 1 = English).
     in-out property <int> language-index: 0;
     in-out property <int> after-done: 0;
@@ -1401,7 +1469,10 @@ export component SettingsPage inherits Rectangle {
     callback support-action(string);
     callback rpc-apply(string, string);
     callback rpc-clear-secret;
+    callback rpc-random-secret;
     callback plugin-toggled(int, bool);
+    callback plugin-remove(int);
+    callback plugin-rollback(int);
     callback plugin-action(string);
 
     HorizontalLayout {
@@ -1506,8 +1577,12 @@ export component SettingsPage inherits Rectangle {
                 if root.tab == 5: PluginPanel {
                     plugins-dir: root.plugins-dir;
                     auto-update-on <=> root.plugin-auto-update;
+                    plugin-pins <=> root.plugin-pins;
+                    external-process-on <=> root.plugin-external-process;
                     changed(k, v) => { root.settings-changed(k, v); }
                     plugin-toggled(id, enabled) => { root.plugin-toggled(id, enabled); }
+                    plugin-remove(id) => { root.plugin-remove(id); }
+                    plugin-rollback(id) => { root.plugin-rollback(id); }
                     plugin-action(action) => { root.plugin-action(action); }
                 }
                 if root.tab == 6: SchedulePanel {
@@ -1536,6 +1611,7 @@ export component SettingsPage inherits Rectangle {
                     changed(k, v) => { root.settings-changed(k, v); }
                     rpc-apply(l, s) => { root.rpc-apply(l, s); }
                     rpc-clear-secret => { root.rpc-clear-secret(); }
+                    rpc-random-secret => { root.rpc-random-secret(); }
                 }
                 if root.tab == 9: AboutPanel {
                     app-version: root.app-version;

@@ -23,11 +23,13 @@ daemon 应由 systemd user unit 启动（`systemctl --user enable --now aether-d
 Windows 上没有 unit：由 UI/CLI 首次连接时自动拉起 `aether-daemon.exe`。
 UI 启动时如果连接失败，可以提示“后台服务未启动”，或执行 `aether-daemon`。
 
-### RPC over TCP（opt-in，远程控制）
+### RPC over TCP（默认回环，远程控制）
 
-daemon 侧默认关闭；`rpc_listen`（settings 或 `--rpc-listen` /`AETHER_RPC_LISTEN`）
-开启后监听 `ip:port`。**非 loopback 地址必须先设置 `rpc_secret`，否则 daemon
-拒绝启动**。每个 TCP 连接的首条消息必须是鉴权：
+daemon 首次启动即监听 `127.0.0.1:6800` 并生成随机令牌；地址与令牌都写入
+settings，设置页会回显，令牌字段旁的「随机」按钮可换一个（点「应用」保存）。
+`rpc_listen` 置空关闭监听；`--rpc-listen` / `AETHER_RPC_LISTEN` 覆盖本次运行。
+**非 loopback 地址必须先设置 `rpc_secret`，否则 daemon 拒绝启动**；回环地址
+允许令牌为空（设置页留空即可）。每个 TCP 连接的首条消息必须是鉴权：
 
 ```json
 {"id":1,"method":"auth","settings":{"token":"<rpc_secret>"}}
@@ -38,6 +40,12 @@ token 用常数时间比较；失败即断开。之后的行协议与本地完�
 客户端入口：`Client::connect_rpc(addr, token)`；CLI：
 `aether-cli remote ping --socket 192.0.2.1:9090 --token …`。
 **无 TLS——仅限可信网络或 SSH 隧道。**
+
+同一个监听还兼容 aria2 JSON-RPC：首行是 HTTP 时交给 `aria2` 服务插件，
+`POST http://127.0.0.1:6800/jsonrpc`，令牌按 aria2 约定作为 params 第一项
+`"token:<rpc_secret>"`。HTTP 与 `ws://.../jsonrpc` 都可选：WebSocket 连接会收到
+`aria2.onDownloadStart/Pause/Stop/Complete/Error` 通知。插件未安装或停用时 HTTP 返回
+JSON-RPC 错误，原生协议不受影响。
 
 ## 2. 首屏
 
@@ -225,13 +233,27 @@ let resolved = client.resolve_proxy("https://example.com/file.zip")?;
 
 ```
 → {"id":2,"method":"plugins","settings":{}}
-← {"ok":true,"result":{"plugins":[{"id":"bt","name":"…","version":"0.1.0",
-     "protocols":["bt","magnet"],"capabilities":[…],"enabled":true},…]}}
+← {"ok":true,"result":{"external_process_allowed":true,
+     "plugins":[{"id":"bt","name":"…","version":"0.1.0",
+     "protocols":["bt","magnet"],"capabilities":[…],"enabled":true,
+     "blocked":false,"has_backup":true},…]}}
 → {"id":3,"method":"set_plugin_enabled","plugin":"bt","settings":{"enabled":false}}
 ← {"ok":true,"result":{"plugin":{"id":"bt","enabled":false}}}
+→ {"id":4,"method":"rollback_plugin","plugin":"bt","settings":{}}
+← {"ok":true,"result":{"plugin_id":"bt","version":"0.1.0","rolled_back":true}}
+→ {"id":5,"method":"uninstall_plugin","plugin":"bt","settings":{}}
+← {"ok":true,"result":{"plugin_id":"bt","removed":true}}
 ```
 
+- `blocked` 表示 `plugin_external_process=false` 且插件声明 `external-process`：
+  它仍可查看/禁用/卸载，但不会被 spawn。`has_backup` 表示可以回滚。
+- `rollback_plugin` 把 `<data_dir>/plugin-backups/<id>` 重新走完整的安装校验
+  （manifest/API/Host 版本/签名/逐文件哈希），当前版本变成新的回滚点；没有
+  上一版时返回 `plugin X has no retained previous version`。
+- `uninstall_plugin` 删除插件包与回滚备份并清除禁用标记；任务运行中拒绝。
 - 禁用列表存 SQLite `disabled_plugins` 表（schema v5），重启后仍生效。
 - 有运行中任务的插件拒绝停用（报 `plugin X still has running tasks`）；已禁用的
   插件不参与 probe，因此 `add` 会报 `no plugin supports this URL`。
 - UI 行 id 即 `plugins` 返回顺序的数组下标（registry 按 id 排序，顺序稳定）。
+- 能力契约：`Hello.capabilities` 与 manifest 必须集合相等，否则握手失败
+  （多报、少报都拒绝）。

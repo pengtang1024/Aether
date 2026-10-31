@@ -165,9 +165,11 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
 - **已落地（2026-10-29）**：
   - transport 抽象加了 TCP 分支（`Listener::bind_tcp` / `Conn::connect_tcp`），
     行协议与本地 socket 完全一致。
-  - daemon settings 新增 `rpc_listen`（`ip:port`，默认关闭）与 `rpc_secret`；
-    `--rpc-listen` / `AETHER_RPC_LISTEN` 覆盖 `rpc_listen`。非 loopback 地址
-    必须有 `rpc_secret`，否则**拒绝启动**（boot 路径和 `set_settings` 都校验）。
+  - daemon settings 新增 `rpc_listen`（`ip:port`）与 `rpc_secret`；
+    `--rpc-listen` / `AETHER_RPC_LISTEN` 覆盖 `rpc_listen`。最初为 opt-in，
+    后续改为首次启动默认 `127.0.0.1:6800` + 自动生成令牌（空字符串关闭 /
+    无令牌）。非 loopback 地址必须有 `rpc_secret`，否则**拒绝启动**（boot
+    路径和 `set_settings` 都校验）。
   - 每个 TCP 连接的首条消息必须是
     `{"method":"auth","settings":{"token":"…"}}`，常数时间比较；错 token/
     无 auth 直接拒绝。`set_settings` 轮换 `rpc_secret` 即时生效（新连接用
@@ -178,6 +180,13 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
   - 验收：`tests/rpc.rs` 6 个用例（正确 token 通/错 token 拒/无 auth 拒/
     authed 会话含 subscribe+shutdown/非 loopback 无 secret 拒启/token 轮换），
     CI Windows job 与 transport 回环一起实跑。
+  - **aria2 兼容（2026-10-31）**：新增 `kind: "service"` 插件（`aria2`），与原生
+    RPC 共用 6800；首行识别 HTTP 后走 `POST/GET /jsonrpc` + CORS + `token:`，
+    daemon 通过 `BridgeCall`/`BridgeResult` 转发给插件，插件用本地 socket 回调。
+    覆盖常用方法与 `system.multicall`，`addTorrent`/`addMetalink` 经插件内回环
+    临时源交给 BT/HTTP 插件；`ws://` 支持调用与 `aria2.onDownload*` 通知。
+    逐任务 `changeOption`/`changePosition` 未实现。`tests/aria2.rs` 实测
+    HTTP 与原生协议同端口共存、启停服务插件即时生效。
 - **明确不做**：TLS——文档写明「仅限可信网络或 SSH 隧道」。
 
 ### 4.3 浏览器扩展接管
@@ -247,6 +256,13 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
   2026-10-30 诚实化：无 StatusNotifierWatcher 时 `start` 返回 None（原来
   返回 Some 但图标不可见）——「图标不可见就不假装有托盘」，关闭窗口因此
   保持退出语义（见 §4.8）。
+  **2026-10-31 Ubuntu 图标不显示修复**：Ubuntu 的 AppIndicator 扩展把
+  `Id` + `Menu` 当作必需属性，缺 `Menu` 时日志报
+  `Unknown property 'Menu'` 并**静默丢弃图标**（`ItemIsMenu` 不顶用）。
+  Item 现在导出 `Menu`（object path `o` = `/Menu`，与既有 dbusmenu 导出
+  同一路径）；真机 session bus 验证：`GetAll` 含 `Menu`，watcher 发出
+  `StatusNotifierItemRegistered`（该信号在 `addIconToPanel` 之后才 emit），
+  即图标真正进入面板。KDE 等按规范读 `Menu` 的宿主同样受益。
   坑（都踩过）：zbus 5 **没有** `#[zbus(method)]`（普通方法自动识别，
   method 级合法键仅 name/signal/property/out_args/proxy）；zvariant 5 的
   `Signature` 是解析树 + `Type::SIGNATURE` 常量，derive 用
@@ -422,6 +438,15 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
     存在）；开机自启点击 e2e（desktop entry 写入/删除、开关状态、toast）；
     单测覆盖双开/释放、entry 内容与引号、临时目录往返、Windows 注册表往返
     （CI Windows bin 测试实跑）。
+  - **静默启动（2026-10-31）**：`--silent` / `--minimized`（精确匹配，见
+    `src/launch.rs`）启动 daemon 与托盘但不显示主窗口；自启项（XDG / HKCU
+    Run / LaunchAgent）自动带该参数，启动时 `autostart::refresh()` 把旧条目
+    与移动后的可执行路径重写为规范形式（条目不存在则不创建）。无真实托盘
+    （GNOME 无 AppIndicator、macOS、通知区域拒绝）时**回退显示窗口**并记一行
+    日志；静默路径用 `run_event_loop_until_quit()`，托盘 Activate/菜单唤回。
+    单测覆盖参数精确匹配、四象限隐藏判定、三平台条目内容；Xvfb + watcher
+    stub 冒烟验证「无可见窗口 → Activate 后出现」。macOS 因无托盘实现必然
+    回退，见 `docs/PLAN-silent-start.md`。
 
 ### 4.9 更新灰度与迁移导出
 
@@ -501,14 +526,65 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
   - PAC 选择回弹到 daemon 实际模式，并说明由 `AETHER_PAC_URL` 决定。
   - 所有设置开关改为双向绑定：此前单向 `checked:` 导致 daemon/Rust 回弹
     不显示（计划任务未填时间仍显示开启、开机自启失败不回弹）。
-  - 高级页新增「远程控制（RPC）」：监听地址、访问令牌、清除令牌、应用与
-    状态行；地址重启 daemon 后 bind，令牌热轮换。实测 TCP + token 的
-    `remote stats` 通过，缺失/错误令牌被拒。
+  - 高级页新增「远程控制（RPC）」：监听地址、访问令牌、随机/清除令牌、应用
+    与状态行；默认回环地址和自动令牌会回显，地址重启 daemon 后 bind，令牌热
+    轮换。实测 TCP + token 的 `remote stats` 通过，缺失/错误令牌被拒。
 - **测试**：`tests/rpc.rs` 覆盖无源 `update_check=disabled`、
   `app_auto_update` 往返/持久化/坏类型拒绝；`src/main.rs` 覆盖
   `update_status_text` 全状态分支；三条新 @tr 文案补齐 en/ja/zh-TW。
 - **不变边界**：签名/公证、商店上架、云盘 OAuth、屏幕阅读器真机、
   macOS `.app` 实跑需要外部账号或硬件，设置页不提供假开关。
+
+### 4.13 插件能力完善（能力契约 / 管理 / 协议 / 韧性）
+
+- **能力契约闭环**：
+  - `PluginManifest::validate` 拒绝重复能力；`Capability::as_str/ALL` 是唯一
+    wire 名称来源。
+  - 进程插件与 cdylib 插件的 Hello 都必须与 manifest 能力**集合相等**：
+    多报（运行时偷偷 external-process）与少报（manifest 过度承诺）都拒绝。
+  - 设置页插件行渲染权限（网络 / 任务目录 / 外部进程 / 剪贴板 / HTTP3）；
+    能力来自 `plugins` RPC 的 `capabilities`。
+  - `plugin_external_process=false` 是真实闸门：声明 external-process 的插件
+    spawn 前拒绝，空闲实例立即停止，运行中任务让当前进程跑完；UI 行标
+    「外部进程被设置阻止」。media 插件补声明它实际使用的 external-process。
+- **管理闭环**：
+  - `uninstall_plugin`：运行任务时拒绝；canonicalize 后只允许删除插件目录的
+    直接子目录；删除包与 `<data_dir>/plugin-backups/<id>`，清禁用标记并重扫。
+  - `rollback_plugin`：`<data_dir>/plugin-backups/<id>` 复用完整安装校验
+    （manifest/API/Host 版本/签名/files 哈希），当前版本成为新的回滚点，
+    可反复来回切。
+  - 安装时保留上一版到 data_dir（不能放 plugins_dir：扫描会把它当重复 id）。
+  - `plugin_pins`（`id -> 版本`）+ UI 文本框：`plugin_updates` /
+    `plugin_update_all` / 自动更新跳过固定插件；手动安装/回滚不受限。
+  - `plugins` RPC 新增 `blocked`、`has_backup`、`external_process_allowed`。
+- **协议能力**：
+  - HTTP：reqwest 启用 `http2`（TLS ALPN）；HTTP/3 仍未启用。
+  - SFTP：私钥（`sftp_key` + passphrase）与 SSH agent；settings > URL query >
+    URL 密码的优先级，`~` 展开；无凭据给出可操作错误。
+  - WebDAV：PROPFIND Depth:0 取 size/ETag 并识别 collection；403/405/501/
+    网络错误/畸形 XML 回退 HEAD；下载仍走 HTTP 引擎。
+  - S3：HEAD 取大小后并发 Range（1–8 连接，≥4 MiB 才分片），续传只补缺失
+    区间，服务器忽略 Range（200）回退单流；取消/暂停截断到连续前缀。
+  - HLS：`EXT-X-ENDLIST` 分流 VOD/live；live 轮询（默认 1s，可调）、按
+    `(media sequence, URI, byterange)` 去重、追加写、ENDLIST 收尾；直播跳过
+    transcode；取消在轮询/段边界生效。
+  - BT：`bt_files` 支持索引/相对路径（先 `list_only` 取 metadata，再
+    `only_files` 正式添加），`bt_seed_ratio` / `bt_seed_minutes` 在下载完成后
+    继续做种（先到先得），做种期间 Detail/plugin_state 报告 ratio/uploaded；
+    取消会删除 torrent。未选中的 0 字节占位文件 best-effort 清理。
+  - 云盘：GDrive/OneDrive/Dropbox 私有文件支持现成 `access_token` 或
+    refresh_token 换新 token（用户自建应用，不内置 client_id）；Dropbox 先
+    换临时直链；错误脱敏 client_secret/refresh_token。
+- **运行时韧性**：
+  - 插件进程崩溃后，下一条命令的 `ensure_process` 检测 `try_wait` 并重新
+    spawn；`prune_dead` 提供显式清理。
+  - IPC 新增畸形 MessagePack、未知事件、截断/超长 payload、超限写入测试。
+- **测试**：`aether-plugin-sdk`（能力集合/重复/畸形 IPC）、`aether-host`
+  （策略闸门、崩溃重启、cdylib 能力校验）、`aether-daemon`（安装/回滚/卸载/
+  策略 RPC）、sftp 15 / webdav 14 / s3 10 / media 20 / cloud 22 / bt 16 用例。
+- **诚实边界**：network/filesystem 仍是声明+展示，不是 OS 沙箱；连续崩溃的
+  指数退避/隔离、内存/句柄硬配额、1 GB soak、DASH 直播、ED2K、百度/阿里
+  共享链接 OAuth、OAuth PKCE/设备码与 keyring、S3 自定义 CA/分片上传仍未做。
 
 ## 5. 发布流程摘要
 

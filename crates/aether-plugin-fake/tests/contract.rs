@@ -32,6 +32,7 @@ fn manifest(id: &str) -> PluginManifest {
         "version": PLUGIN_VERSION,
         "api": API_VERSION,
         "protocols": ["http", "https"],
+        "capabilities": ["network", "filesystem:task"],
         "executable": {}
     }))
     .unwrap();

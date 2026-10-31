@@ -87,7 +87,7 @@ impl AbiPlugin {
                 api,
                 plugin_id,
                 version,
-                ..
+                capabilities,
             } => {
                 if api != API_VERSION || api != self.manifest.api {
                     return Err(HostError::Abi("plugin API mismatch".into()));
@@ -95,6 +95,8 @@ impl AbiPlugin {
                 if plugin_id != self.manifest.id || version != self.manifest.version {
                     return Err(HostError::Abi("plugin identity mismatch".into()));
                 }
+                aether_plugin_sdk::verify_capabilities(&self.manifest, &capabilities)
+                    .map_err(|error| HostError::Abi(error.to_string()))?;
             }
             other => return Err(HostError::Abi(format!("expected Hello, got {other:?}"))),
         }

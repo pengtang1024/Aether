@@ -5,15 +5,16 @@ use std::fs;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use aes::Aes128;
 use aether_plugin_sdk::checksum::sha256_bytes;
 use aether_plugin_sdk::{
-    current_platform_key, Budget, Checksum, ChecksumAlgorithm, Init, LogLevel, PluginEvent,
-    PluginManifest, PluginProcess, TaskPaths, TaskSpec, API_VERSION,
+    current_platform_key, Budget, Checksum, ChecksumAlgorithm, ErrorKind, Init, LogLevel,
+    PluginEvent, PluginManifest, PluginProcess, TaskPaths, TaskSpec, API_VERSION,
 };
 use cbc::cipher::block_padding::Pkcs7;
 use cbc::cipher::{BlockEncryptMut, KeyIvInit};
@@ -44,30 +45,9 @@ fn start_server(routes: Vec<(String, String, Vec<u8>)>) -> TestServer {
 }
 
 fn handle(mut stream: TcpStream, routes: &HashMap<String, (String, Vec<u8>)>) {
-    let mut request = Vec::new();
-    let mut buffer = [0_u8; 1024];
-    loop {
-        let read = match stream.read(&mut buffer) {
-            Ok(0) | Err(_) => return,
-            Ok(read) => read,
-        };
-        request.extend_from_slice(&buffer[..read]);
-        if request.windows(4).any(|window| window == b"\r\n\r\n") {
-            break;
-        }
-    }
-
-    let text = String::from_utf8_lossy(&request);
-    let path = text
-        .lines()
-        .next()
-        .and_then(|line| line.split_whitespace().nth(1))
-        .unwrap_or("/")
-        .split('?')
-        .next()
-        .unwrap_or("/")
-        .to_string();
-
+    let Some(path) = read_request_path(&mut stream) else {
+        return;
+    };
     let (content_type, body) = routes
         .get(&path)
         .cloned()
@@ -77,13 +57,116 @@ fn handle(mut stream: TcpStream, routes: &HashMap<String, (String, Vec<u8>)>) {
     } else {
         "404 Not Found"
     };
+    write_response(&mut stream, status, &content_type, &body);
+}
+
+fn read_request_path(stream: &mut TcpStream) -> Option<String> {
+    let mut request = Vec::new();
+    let mut buffer = [0_u8; 1024];
+    loop {
+        let read = match stream.read(&mut buffer) {
+            Ok(0) | Err(_) => return None,
+            Ok(read) => read,
+        };
+        request.extend_from_slice(&buffer[..read]);
+        if request.windows(4).any(|window| window == b"\r\n\r\n") {
+            break;
+        }
+    }
+
+    let text = String::from_utf8_lossy(&request);
+    text.lines()
+        .next()?
+        .split_whitespace()
+        .nth(1)?
+        .split('?')
+        .next()
+        .map(str::to_string)
+}
+
+fn write_response(stream: &mut TcpStream, status: &str, content_type: &str, body: &[u8]) {
     let response = format!(
         "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         body.len()
     );
     let _ = stream.write_all(response.as_bytes());
-    let _ = stream.write_all(&body);
+    let _ = stream.write_all(body);
     let _ = stream.flush();
+}
+
+/// A server whose `/live.m3u8` response changes on every request: version N
+/// is returned for the Nth hit, and the last version is repeated afterwards.
+struct DynamicServer {
+    addr: SocketAddr,
+    requests: Arc<Mutex<Vec<String>>>,
+    playlist_hits: Arc<AtomicUsize>,
+}
+
+impl DynamicServer {
+    fn requests(&self) -> Vec<String> {
+        self.requests.lock().unwrap().clone()
+    }
+
+    fn segment_requests(&self) -> Vec<String> {
+        self.requests()
+            .into_iter()
+            .filter(|path| path != "/live.m3u8")
+            .collect()
+    }
+
+    fn playlist_hits(&self) -> usize {
+        self.playlist_hits.load(Ordering::SeqCst)
+    }
+}
+
+fn start_dynamic_server(versions: Vec<String>, segments: Vec<(String, Vec<u8>)>) -> DynamicServer {
+    assert!(!versions.is_empty(), "need at least one playlist version");
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let versions = Arc::new(versions);
+    let segments: Arc<HashMap<String, Vec<u8>>> = Arc::new(segments.into_iter().collect());
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let playlist_hits = Arc::new(AtomicUsize::new(0));
+
+    let thread_versions = versions.clone();
+    let thread_segments = segments.clone();
+    let thread_requests = requests.clone();
+    let thread_hits = playlist_hits.clone();
+    thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let versions = thread_versions.clone();
+            let segments = thread_segments.clone();
+            let requests = thread_requests.clone();
+            let hits = thread_hits.clone();
+            thread::spawn(move || {
+                let Some(path) = read_request_path(&mut stream) else {
+                    return;
+                };
+                requests.lock().unwrap().push(path.clone());
+                if path == "/live.m3u8" {
+                    let index = hits.fetch_add(1, Ordering::SeqCst);
+                    let version = &versions[index.min(versions.len() - 1)];
+                    write_response(
+                        &mut stream,
+                        "200 OK",
+                        "application/vnd.apple.mpegurl",
+                        version.as_bytes(),
+                    );
+                } else if let Some(body) = segments.get(&path) {
+                    write_response(&mut stream, "200 OK", "video/mp2t", body);
+                } else {
+                    write_response(&mut stream, "404 Not Found", "text/plain", b"not found");
+                }
+            });
+        }
+    });
+
+    DynamicServer {
+        addr,
+        requests,
+        playlist_hits,
+    }
 }
 
 fn temp_dir(label: &str) -> PathBuf {
@@ -106,7 +189,7 @@ fn manifest() -> PluginManifest {
         "version": "0.1.0",
         "api": API_VERSION,
         "protocols": ["hls"],
-        "capabilities": ["network", "filesystem:task"],
+        "capabilities": ["network", "filesystem:task", "external-process"],
         "executable": {}
     }))
     .unwrap();
@@ -132,18 +215,28 @@ fn executable() -> PathBuf {
 }
 
 fn start_task(plugin: &mut PluginProcess, url: String, staging: PathBuf, expected: &[u8]) {
+    start_task_with(plugin, url, staging, serde_json::json!({}), Some(expected));
+}
+
+fn start_task_with(
+    plugin: &mut PluginProcess,
+    url: String,
+    staging: PathBuf,
+    settings: serde_json::Value,
+    expected: Option<&[u8]>,
+) {
     plugin
         .start_task(
             TaskSpec {
                 task_id: "task-1".into(),
                 url,
                 filename: None,
-                settings: serde_json::json!({}),
+                settings,
                 plugin_state: None,
                 expected_size: None,
-                checksum: Some(Checksum {
+                checksum: expected.map(|bytes| Checksum {
                     algorithm: ChecksumAlgorithm::Sha256,
-                    value: sha256_bytes(expected),
+                    value: sha256_bytes(bytes),
                 }),
                 proxy: None,
             },
@@ -157,8 +250,14 @@ fn start_task(plugin: &mut PluginProcess, url: String, staging: PathBuf, expecte
 }
 
 fn wait_for_completed(plugin: &mut PluginProcess) {
-    for _ in 0..100 {
-        match plugin.recv_event(Duration::from_secs(2)).unwrap() {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        assert!(
+            Instant::now() < deadline,
+            "task did not complete within 20 seconds"
+        );
+        let timeout = (deadline - Instant::now()).min(Duration::from_secs(2));
+        match plugin.recv_event(timeout).unwrap() {
             PluginEvent::Completed { task_id, .. } if task_id == "task-1" => return,
             PluginEvent::Failed { task_id, error } if task_id == "task-1" => {
                 panic!("task failed: {error:?}")
@@ -166,7 +265,6 @@ fn wait_for_completed(plugin: &mut PluginProcess) {
             _ => {}
         }
     }
-    panic!("task did not complete");
 }
 
 fn media_playlist(segments: &[&str], extra: &str) -> String {
@@ -180,6 +278,21 @@ fn media_playlist(segments: &[&str], extra: &str) -> String {
         text.push('\n');
     }
     text.push_str("#EXT-X-ENDLIST\n");
+    text
+}
+
+fn live_playlist(segments: &[&str], endlist: bool) -> String {
+    let mut text = String::from(
+        "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:0\n",
+    );
+    for segment in segments {
+        text.push_str("#EXTINF:2.0,\n");
+        text.push_str(segment);
+        text.push('\n');
+    }
+    if endlist {
+        text.push_str("#EXT-X-ENDLIST\n");
+    }
     text
 }
 
@@ -324,6 +437,154 @@ fn downloads_dash_segment_template() {
     wait_for_completed(&mut plugin);
 
     assert_eq!(fs::read(staging.join("manifest.mp4")).unwrap(), expected);
+    plugin.shutdown().unwrap();
+    fs::remove_dir_all(root).ok();
+}
+
+#[test]
+fn downloads_live_segments_once_until_endlist() {
+    let bodies: Vec<(&str, Vec<u8>)> = vec![
+        ("/live0.ts", vec![10_u8; 800]),
+        ("/live1.ts", vec![11_u8; 400]),
+        ("/live2.ts", vec![12_u8; 600]),
+        ("/live3.ts", vec![13_u8; 200]),
+    ];
+    let versions = vec![
+        // Probe consumes version 0.
+        live_playlist(&["live0.ts", "live1.ts"], false),
+        live_playlist(&["live0.ts", "live1.ts"], false),
+        live_playlist(&["live0.ts", "live1.ts", "live2.ts"], false),
+        live_playlist(&["live0.ts", "live1.ts", "live2.ts", "live3.ts"], true),
+    ];
+    let server = start_dynamic_server(
+        versions,
+        bodies
+            .iter()
+            .map(|(path, body)| ((*path).to_string(), body.clone()))
+            .collect(),
+    );
+    let root = temp_dir("live");
+    let url = format!("http://{}/live.m3u8", server.addr);
+    let expected = bodies
+        .iter()
+        .flat_map(|(_, body)| body.clone())
+        .collect::<Vec<u8>>();
+
+    let mut plugin = PluginProcess::spawn(manifest(), &executable(), init(&root)).unwrap();
+    let probe = plugin.probe(&url).unwrap();
+    assert!(probe.supported);
+    assert_eq!(probe.suggested_filename.as_deref(), Some("live.ts"));
+
+    let staging = root.join("staging");
+    start_task_with(
+        &mut plugin,
+        url,
+        staging.clone(),
+        serde_json::json!({
+            "hls_live_interval_ms": 500,
+            "hls_live_idle_polls": 2,
+        }),
+        Some(&expected),
+    );
+    wait_for_completed(&mut plugin);
+
+    assert_eq!(fs::read(staging.join("live.ts")).unwrap(), expected);
+    assert_eq!(
+        server.segment_requests(),
+        vec![
+            "/live0.ts".to_string(),
+            "/live1.ts".to_string(),
+            "/live2.ts".to_string(),
+            "/live3.ts".to_string(),
+        ],
+        "every live segment must be downloaded once, in order"
+    );
+    assert!(
+        server.playlist_hits() >= 4,
+        "playlist should be refreshed until ENDLIST, got {} requests",
+        server.playlist_hits()
+    );
+
+    plugin.shutdown().unwrap();
+    fs::remove_dir_all(root).ok();
+}
+
+#[test]
+fn canceling_live_task_stops_polling() {
+    let bodies = vec![
+        ("/c0.ts".to_string(), vec![21_u8; 300]),
+        ("/c1.ts".to_string(), vec![22_u8; 300]),
+    ];
+    // One version only: it is repeated forever, so only cancellation can
+    // stop the stream.
+    let server = start_dynamic_server(
+        vec![live_playlist(&["c0.ts", "c1.ts"], false)],
+        bodies.clone(),
+    );
+    let root = temp_dir("live-cancel");
+    let url = format!("http://{}/live.m3u8", server.addr);
+    let expected = [bodies[0].1.clone(), bodies[1].1.clone()].concat();
+
+    let mut plugin = PluginProcess::spawn(manifest(), &executable(), init(&root)).unwrap();
+    let staging = root.join("staging");
+    start_task_with(
+        &mut plugin,
+        url,
+        staging.clone(),
+        serde_json::json!({ "hls_live_interval_ms": 500 }),
+        None,
+    );
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        assert!(
+            Instant::now() < deadline,
+            "live task did not report progress"
+        );
+        let timeout = (deadline - Instant::now()).min(Duration::from_secs(2));
+        match plugin.recv_event(timeout).unwrap() {
+            PluginEvent::Progress { downloaded, .. } if downloaded > 0 => break,
+            PluginEvent::Failed { error, .. } => panic!("live task failed early: {error:?}"),
+            _ => {}
+        }
+    }
+
+    plugin.cancel("task-1").unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        assert!(
+            Instant::now() < deadline,
+            "canceled live task did not report a terminal event"
+        );
+        let timeout = (deadline - Instant::now()).min(Duration::from_secs(2));
+        match plugin.recv_event(timeout).unwrap() {
+            PluginEvent::Failed { task_id, error }
+                if task_id == "task-1" && error.kind == ErrorKind::Canceled =>
+            {
+                break;
+            }
+            PluginEvent::Completed { task_id, .. } if task_id == "task-1" => {
+                panic!("canceled live task completed")
+            }
+            _ => {}
+        }
+    }
+
+    assert_eq!(
+        fs::read(staging.join("live.ts")).unwrap(),
+        expected,
+        "segments downloaded before cancel should stay in the output file"
+    );
+
+    let requests = server.requests().len();
+    thread::sleep(Duration::from_millis(1_500));
+    assert_eq!(
+        server.requests().len(),
+        requests,
+        "plugin kept polling after the live task was canceled"
+    );
+
     plugin.shutdown().unwrap();
     fs::remove_dir_all(root).ok();
 }

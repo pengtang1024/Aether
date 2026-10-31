@@ -50,17 +50,20 @@ Material 组件会一起切换。
 
 设置页是独立的多分类中心：左侧 10 个分类，右侧是 M3 分组卡片。覆盖下载并发、连接数、
 动态分段、重试与超时、全局限速、磁盘预分配、校验、代理、DNS、请求头、BT/PT、DHT/PEX、
-做种、媒体嗅探、浏览器接管、插件、计划任务、通知、外观、RPC 与维护等能力。
+做种、媒体嗅探、浏览器接管、插件、计划任务、通知、外观、RPC（含 aria2 JSON-RPC
+兼容）与维护等能力。
 
 ![设置中心](docs/screenshots/settings.png)
 
 ### 插件
 
 主页系统卡显示插件总数和可更新数量；设置 → 插件是完整目录：
-**18 个插件（15 个内置、
-3 个社区）**，支持按全部/内置/已启用/可更新筛选，单独启停、更新全部、安装、插件目录、
-自动更新与开发者模式。插件在独立进程中运行（`crates/aether-plugin-sdk`）；插件页目前
-仍是目录展示，启停/安装尚未下发到 daemon。
+**18 个插件（15 个内置、3 个社区）**，另有 aria2 RPC 兼容服务插件；支持按全部/内置/已启用/可更新筛选，单独启停、
+更新全部、安装、插件目录、自动更新、版本固定、卸载与回滚。每行显示 manifest 声明的
+**权限**（网络 / 任务目录 / 外部进程 / 剪贴板 / HTTP3）；声明 `external-process` 的
+插件受设置页闸门控制，关闭后不会启动并显示原因。插件在独立进程中运行
+（`crates/aether-plugin-sdk`）；握手会拒绝声明与实现不一致的能力，daemon 在任务
+运行期间拒绝禁用/覆盖/卸载/回滚。
 
 ![插件](docs/screenshots/plugins.png)
 
@@ -115,7 +118,13 @@ AETHER_VIEW=dialog    cargo run   # 直接打开新建下载
 AETHER_VIEW=drawer    cargo run   # 打开一个正在下载的任务 inspector
 
 AETHER_THEME=light    cargo run   # 临时固定浅色（也可 dark）
+
+cargo run -- --silent             # 静默启动：驻留托盘，不显示主窗口
+cargo run -- --minimized          # 同上，别名
 ```
+
+`--silent` 仅在托盘真实可用时隐藏窗口；没有托盘（如未安装 AppIndicator 的
+GNOME）会回退为正常显示窗口。
 
 不设置 `AETHER_THEME` 时使用已保存的主题；首次启动默认跟随系统。应用会读取
 GNOME / Windows / macOS 的桌面明暗偏好，并在“跟随系统”模式下每 10 秒检查一次变化。
@@ -342,9 +351,13 @@ Esc 关闭；下载空状态提供“清除筛选条件”，一次恢复全部�
   器暂停过的任务（用户手动暂停的不受影响）；完成/失败的桌面提醒在 Linux 走
   notify-send、macOS 走系统通知、Windows 走 WinRT toast（归属 Aether 的
   AUMID 在首次通知时注册进 HKCU），可分别开关（本地偏好，取消不提醒）
+- 远程控制（RPC）默认监听 `127.0.0.1:6800` 并自动生成令牌；设置页可改地址、
+  随机或清空令牌。同一端口兼容 aria2 JSON-RPC：AriaNg 填
+  `http://127.0.0.1:6800/jsonrpc` 或 `ws://127.0.0.1:6800/jsonrpc`，密钥填
+  设置页里的令牌即可（`addTorrent`/`addMetalink` 与实时通知均已支持）
 - 没有机制支撑的假控件已从界面移除或改为能力说明卡：密度/缩放/紧凑列表、
   HTTP/2 开关、镜像加速、低速断开、连接总数、BT 的加密/PEX/LSD/做种比例
-  （librqbit 不支持）、媒体转码与浏览器接管、RPC 区
+  （librqbit 不支持）、媒体转码与浏览器接管
 - 详情面板按图标设计，标签在悬停提示里；不展示真实分段图与 BT 节点
 - 系统托盘（Linux StatusNotifier、Windows 通知区域）、剪贴板链接检测与
   四语言界面（简体中文/English/日本語/繁體中文）已落地；协议关联由安装包
@@ -353,6 +366,9 @@ Esc 关闭；下载空状态提供“清除筛选条件”，一次恢复全部�
   关闭窗口=隐藏，托盘菜单退出；无托盘时关闭=退出）、开机自启（Linux XDG
   autostart / Windows HKCU Run / macOS LaunchAgent）均为真实系统集成；
   开机自启开关显示操作系统里的真实状态，写失败会回弹并说明原因
+- 静默启动：自启项带 `--silent`（别名 `--minimized`），登录后驻留托盘继续
+  下载、不弹主窗口；手动启动仍显示窗口。没有可用托盘时回退为显示窗口并
+  记录日志，绝不把应用藏到找不到的地方
 - Windows 安装包与便携 zip 已随附 daemon、CLI、native-host 和全部第一方
   插件 exe（`{app}\plugins`，daemon 按 exe 同级解析）；macOS `.app` 同样
   随附四个二进制（universal）与 `Contents/Resources/plugins`，daemon 按

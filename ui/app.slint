@@ -75,6 +75,10 @@ export component AppWindow inherits Window {
     in-out property <bool> settings-clipboard: false;
     // Daemon-backed: auto-install outdated plugins on the update cycle.
     in-out property <bool> settings-plugin-auto-update: false;
+    // "id=version; id=version" pins rendered from the daemon's map.
+    in-out property <string> settings-plugin-pins: "";
+    // Host policy gate for plugins that declare `external-process`.
+    in-out property <bool> settings-plugin-external-process: true;
     // About panel: daemon-backed app auto-download switch and live update
     // status text (both mirrored from the daemon).
     in-out property <bool> settings-app-auto-update: true;
@@ -233,7 +237,10 @@ export component AppWindow inherits Window {
     callback support-action(string);
     callback rpc-apply(string, string);
     callback rpc-clear-secret;
+    callback rpc-random-secret;
     callback plugin-toggled(int, bool);
+    callback plugin-remove(int);
+    callback plugin-rollback(int);
     callback plugin-action(string);
 
     preferred-width: 900px;
@@ -534,6 +541,8 @@ export component AppWindow inherits Window {
                         bt-trackers <=> root.settings-bt-trackers;
                         media-ffmpeg <=> root.settings-media-ffmpeg;
                         plugin-auto-update <=> root.settings-plugin-auto-update;
+                        plugin-pins <=> root.settings-plugin-pins;
+                        plugin-external-process <=> root.settings-plugin-external-process;
                         app-auto-update <=> root.settings-app-auto-update;
                         update-status: root.settings-update-status;
                         rpc-listen: root.settings-rpc-listen;
@@ -563,7 +572,10 @@ export component AppWindow inherits Window {
                         support-action(action) => { root.support-action(action); }
                         rpc-apply(l, s) => { root.rpc-apply(l, s); }
                         rpc-clear-secret => { root.rpc-clear-secret(); }
+                        rpc-random-secret => { root.rpc-random-secret(); }
                         plugin-toggled(id, enabled) => { root.plugin-toggled(id, enabled); }
+                        plugin-remove(id) => { root.plugin-remove(id); }
+                        plugin-rollback(id) => { root.plugin-rollback(id); }
                         plugin-action(action) => { root.plugin-action(action); }
                     }
                 }

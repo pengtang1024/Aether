@@ -6,8 +6,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use aether_plugin_sdk::{
-    Budget, Init, LogLevel, NetworkConfig, PluginEvent, PluginKind, PluginProcess, ProbeResult,
-    ProxyConfig, TaskPaths, TaskSpec,
+    Budget, Capability, Init, LogLevel, NetworkConfig, PluginEvent, PluginKind, PluginProcess,
+    ProbeResult, ProxyConfig, TaskPaths, TaskSpec,
 };
 
 use crate::abi::AbiPlugin;
@@ -25,6 +25,10 @@ pub struct PluginManager {
     /// Host-wide network behaviour (user agent, IP mode, DNS servers) handed
     /// to plugin processes on spawn.
     network: Option<NetworkConfig>,
+    /// When false, plugins that declare the `external-process` capability are
+    /// refused at spawn time. Process-level sandboxing is out of scope; this
+    /// is the policy gate the daemon exposes as a setting.
+    allow_external_process: bool,
     processes: HashMap<String, RunningPlugin>,
 }
 
@@ -53,6 +57,7 @@ impl PluginManager {
             host_version: host_version.into(),
             proxy: None,
             network: None,
+            allow_external_process: true,
             processes: HashMap::new(),
         }
     }
@@ -71,6 +76,16 @@ impl PluginManager {
     /// proxy, it takes effect on the next spawn.
     pub fn set_network(&mut self, network: Option<NetworkConfig>) {
         self.network = network;
+    }
+
+    /// Allow or refuse plugins that declare `external-process`. Takes effect
+    /// on the next spawn; already running processes keep going.
+    pub fn set_allow_external_process(&mut self, allow: bool) {
+        self.allow_external_process = allow;
+    }
+
+    pub fn allow_external_process(&self) -> bool {
+        self.allow_external_process
     }
 
     pub fn registry(&self) -> &PluginRegistry {
@@ -95,7 +110,7 @@ impl PluginManager {
         let ids = self
             .registry
             .iter()
-            .filter(|entry| entry.enabled)
+            .filter(|entry| entry.enabled && entry.manifest.kind != PluginKind::Service)
             .map(|entry| entry.manifest.id.clone())
             .collect::<Vec<_>>();
 
@@ -191,7 +206,37 @@ impl PluginManager {
         }
     }
 
+    /// PID of a running process plugin (test/diagnostics helper); `None`
+    /// for ABI plugins or plugins that are not running.
+    pub fn running_pid(&self, plugin_id: &str) -> Option<u32> {
+        self.processes.get(plugin_id).and_then(RunningPlugin::pid)
+    }
+
+    /// Drop processes that already exited so the next command respawns them.
+    /// Returns the removed plugin ids (the daemon logs them).
+    pub fn prune_dead(&mut self) -> Vec<String> {
+        let dead = self
+            .processes
+            .iter_mut()
+            .filter_map(|(id, process)| process.has_exited().then(|| id.clone()))
+            .collect::<Vec<_>>();
+        for id in &dead {
+            self.processes.remove(id);
+        }
+        dead
+    }
+
     fn ensure_process(&mut self, plugin_id: &str) -> Result<&mut RunningPlugin, HostError> {
+        // A crashed plugin must not poison every later command: drop the
+        // dead handle and spawn a fresh process below.
+        let dead = self
+            .processes
+            .get_mut(plugin_id)
+            .is_some_and(RunningPlugin::has_exited);
+        if dead {
+            self.processes.remove(plugin_id);
+        }
+
         if !self.processes.contains_key(plugin_id) {
             let entry = self
                 .registry
@@ -199,6 +244,17 @@ impl PluginManager {
                 .ok_or_else(|| HostError::PluginNotFound(plugin_id.to_string()))?;
             if !entry.enabled {
                 return Err(HostError::PluginDisabled(plugin_id.to_string()));
+            }
+            if !self.allow_external_process
+                && entry
+                    .manifest
+                    .capabilities
+                    .contains(&Capability::ExternalProcess)
+            {
+                return Err(HostError::CapabilityDenied {
+                    plugin: plugin_id.to_string(),
+                    capability: Capability::ExternalProcess.as_str().to_string(),
+                });
             }
             let executable = entry.executable()?;
             let init = Init {
@@ -220,6 +276,7 @@ impl PluginManager {
                     plugin.handshake(init)?;
                     RunningPlugin::Abi(plugin)
                 }
+                PluginKind::Service => return Err(HostError::ServicePlugin(plugin_id.to_string())),
             };
             self.processes.insert(plugin_id.to_string(), running);
         }
@@ -233,6 +290,22 @@ enum RunningPlugin {
 }
 
 impl RunningPlugin {
+    /// Process plugins can be observed directly; in-process ABI plugins have
+    /// no separate lifetime to check.
+    fn pid(&self) -> Option<u32> {
+        match self {
+            Self::Process(process) => Some(process.pid()),
+            Self::Abi(_) => None,
+        }
+    }
+
+    fn has_exited(&mut self) -> bool {
+        match self {
+            Self::Process(process) => process.has_exited(),
+            Self::Abi(_) => false,
+        }
+    }
+
     fn send(&mut self, command: &aether_plugin_sdk::HostCommand) -> Result<(), HostError> {
         match self {
             Self::Process(process) => Ok(process.send(command)?),

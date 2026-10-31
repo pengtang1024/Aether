@@ -17,6 +17,10 @@ pub enum PluginKind {
     Process,
     /// In-process `cdylib` loaded through the Aether ABI.
     Cdylib,
+    /// Always-on compatibility bridge (for example aria2 JSON-RPC). It never
+    /// probes or starts downloads; the daemon starts it at boot, hands it the
+    /// local endpoint, and routes protocol requests to it.
+    Service,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -104,6 +108,16 @@ impl PluginManifest {
     /// Validate the full manifest, including executable paths and host range.
     pub fn validate(&self) -> Result<(), ManifestError> {
         self.validate_identity()?;
+
+        let mut seen = std::collections::BTreeSet::new();
+        for capability in &self.capabilities {
+            if !seen.insert(capability.as_str()) {
+                return Err(ManifestError::Invalid(format!(
+                    "duplicate capability {}",
+                    capability.as_str()
+                )));
+            }
+        }
 
         if self.executable.is_empty() {
             return Err(ManifestError::Invalid(
@@ -292,6 +306,17 @@ mod tests {
             manifest.resolve_executable(&root),
             Err(ManifestError::UnsafePath(_))
         ));
+    }
+
+    #[test]
+    fn rejects_duplicate_capabilities() {
+        let mut manifest = minimal_manifest();
+        manifest.capabilities = vec![
+            crate::protocol::Capability::Network,
+            crate::protocol::Capability::Network,
+        ];
+        let error = manifest.validate().unwrap_err();
+        assert!(error.to_string().contains("duplicate capability network"));
     }
 
     #[test]

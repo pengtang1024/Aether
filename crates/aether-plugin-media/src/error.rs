@@ -28,6 +28,9 @@ pub enum MediaError {
 
     #[error("protocol error: {0}")]
     Protocol(String),
+
+    #[error("network error: {0}")]
+    Network(String),
 }
 
 impl MediaError {
@@ -47,6 +50,11 @@ impl MediaError {
             Self::Json(error) => PluginError::new(ErrorKind::Internal, error.to_string()),
             Self::Sdk(error) => PluginError::new(ErrorKind::Internal, error.to_string()),
             Self::Protocol(message) => PluginError::new(ErrorKind::Protocol, message.clone()),
+            // The SDK has no dedicated `Network` kind; `Connect` is the
+            // network-failure bucket the host retries.
+            Self::Network(message) => {
+                PluginError::new(ErrorKind::Connect, message.clone()).retryable(true)
+            }
         }
     }
 }

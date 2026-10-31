@@ -127,6 +127,13 @@ impl Plugin for SftpPlugin {
                     "init must be handled by the SDK runner".into(),
                 ));
             }
+            // Service/bridge commands target `kind: "service"` plugins
+            // (aria2 compatibility); download plugins must not accept them.
+            HostCommand::ServiceInit { .. } | HostCommand::BridgeCall { .. } => {
+                return Err(SdkError::Protocol(
+                    "service commands are not supported by this plugin".into(),
+                ));
+            }
             HostCommand::Ping { .. } | HostCommand::Shutdown => {
                 return Err(SdkError::Protocol(
                     "ping/shutdown must be handled by the SDK runner".into(),

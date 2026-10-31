@@ -325,10 +325,22 @@ daemon 是常驻入口，但“接管所有下载”还需要：
 
 ## 7. 安全边界
 
-- 默认不做任何 TCP 监听，避免网页/局域网访问。RPC over TCP 是显式 opt-in
-  （`rpc_listen` 或 `--rpc-listen`），每个连接必须先过 token 鉴权；非 loopback
-  地址没有 `rpc_secret` 时 daemon 拒绝启动。RPC 不做 TLS——仅限可信网络或
-  SSH 隧道。
+- RPC over TCP 首次启动即启用，但只监听回环地址 `127.0.0.1:6800`
+  （`RPC_LISTEN_DEFAULT`），并自动生成一个 32 位十六进制 `rpc_secret`；
+  两者都会写回 `settings.json`，UI 与 CLI 读到的是同一个值。`rpc_listen`
+  置空字符串可关闭监听，`rpc_secret` 置空字符串可关闭鉴权（仅回环地址允许，
+  非 loopback 地址没有令牌时 daemon 拒绝启动）。端口被占用时默认监听会跳过
+  并在日志里提示，不影响下载；显式配置的地址绑定失败仍然报错。RPC 不做
+  TLS——仅限可信网络或 SSH 隧道。
+- 同一个 6800 端口按首行区分协议：`POST /jsonrpc`、`GET /jsonrpc?...` 等 HTTP
+  请求交给 `kind: "service"` 的 `aria2` 兼容插件，原生 Aether JSON-lines 仍走
+  `auth` 握手。HTTP 侧复用同一个 `rpc_secret`（aria2 约定：params 首项为
+  `token:<secret>`），并返回 CORS 头；插件未安装/未启用时 HTTP 返回 JSON-RPC 错误。
+  兼容层支持常用 aria2 方法与 `system.multicall`；`addTorrent`/`addMetalink`
+  会把内联 base64 解码后发布到插件内的回环临时地址，再交给 BT/HTTP 插件。
+  支持 `ws://.../jsonrpc`：JSON-RPC 调用与
+  `aria2.onDownloadStart/Pause/Stop/Complete/Error` 通知；逐任务
+  `changeOption`/`changePosition` 仍不支持。
 - socket 权限 0600；Windows 管道走默认 DACL（仅同用户）；本地请求只能由同
   用户发起。
 - `add` 的 URL/settings 会传给第一方插件；插件仍受 Host 最终落盘路径校验。

@@ -19,6 +19,8 @@
 
 - `kind` 默认 `process`。
 - `executable` 指向 `.so` / `.dylib` / `.dll`；`resolve_executable` 仍做目录逃逸检查。
+- `capabilities` 与进程插件同一契约：cdylib 在 Hello 里上报的能力必须与 manifest
+  集合相等，否则 Host 拒绝握手（多报/少报都不行）。
 
 ## 2. C ABI
 

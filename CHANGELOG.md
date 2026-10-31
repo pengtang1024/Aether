@@ -5,6 +5,97 @@ versioning; 0.x releases may still change structure.
 
 ## [Unreleased]
 
+### Added
+
+- Silent start: `--silent` (alias `--minimized`) starts the daemon and the
+  tray without showing the main window. The start-at-login entries written by
+  Aether now pass the flag, and `autostart::refresh()` rewrites an existing
+  entry on boot so AppImage moves and pre-flag entries stay silent. A session
+  without a usable tray icon falls back to a normal visible start (logged)
+  instead of hiding the app out of reach. The tray's Activate/menu item is the
+  way back in.
+- Remote control (RPC) now works out of the box: the first daemon start seeds
+  a loopback listener on `127.0.0.1:6800` and a random 32-character token,
+  persisting both in `settings.json`. Settings → Advanced mirrors the address
+  and the token (masked) and adds a **Random** button for a fresh token; an
+  empty address turns the listener off, an empty token runs without auth on
+  loopback only, and Apply persists either choice. A busy default port is
+  logged and skipped instead of stopping the daemon.
+- aria2 JSON-RPC compatibility is available as a new `kind: "service"` plugin
+  (`aria2`). The daemon keeps the single 6800 listener, detects HTTP on the
+  first line, validates aria2's `token:<rpc_secret>` convention, answers CORS
+  preflights, and forwards calls to the plugin, which translates them into
+  native daemon requests. Covered: `addUri`, `tellStatus/Active/Waiting/Stopped`,
+  `pause`/`unpause`/`remove` (+ all variants), `getGlobalStat`, `getVersion`,
+  `getSessionInfo`, `getFiles`/`getUris`, `getGlobalOption`/`changeGlobalOption`,
+  `purgeDownloadResult`, `saveSession`, `shutdown`, `system.multicall` and
+  `system.listMethods`. `addTorrent`/`addMetalink` decode the inline base64
+  payload, publish it on a short-lived loopback URL inside the plugin, and
+  hand it to the BT/HTTP plugin. `ws://.../jsonrpc` serves calls and pushes
+  `aria2.onDownloadStart/Pause/Stop/Complete/Error` notifications from the
+  daemon event stream. Not yet supported: per-task `changeOption` /
+  `changePosition`.
+
+### Plugin capabilities and management
+
+- The capability declaration is now a contract, not a label. `plugin.json`
+  rejects duplicate capabilities, the handshake compares `Hello.capabilities`
+  with the manifest and refuses both undeclared runtime claims and manifest
+  entries the binary does not implement, and the settings page renders each
+  plugin's permissions (network / task files / external process / clipboard /
+  HTTP3).
+- Plugins that declare `external-process` (yt-dlp, ffmpeg capture/remux) now
+  have a real policy gate: `plugin_external_process=false` refuses the spawn,
+  stops idle instances immediately, lets running tasks finish, and marks the
+  affected rows in the plugin catalogue. The media plugin now declares the
+  capability it actually uses (ffmpeg remux).
+- Plugin management is complete in the UI and RPC: uninstall (refused while
+  tasks run, removes the package and the retained backup), rollback to the
+  previous version (re-verified through the normal install path and
+  repeatable), and version pins (`plugin_pins`) that update checks skip while
+  manual install still works.
+- A crashed plugin process no longer poisons later commands: the host drops
+  the dead handle and spawns a fresh process on the next command. IPC
+  framing gained malformed-payload / oversized-write coverage.
+- New RPCs `uninstall_plugin` and `rollback_plugin`; `plugins` reports
+  `blocked` and `has_backup` per plugin.
+
+### Protocol plugins
+
+- SFTP: private-key (`sftp_key` + optional passphrase) and SSH-agent
+  authentication, with password as fallback; URL query parameters are
+  supported and task settings win. Probe still only sees URL credentials
+  (protocol limitation).
+- WebDAV: `PROPFIND` (Depth: 0) now supplies size/ETag and detects
+  collections; 403/405/501 or malformed XML falls back to the previous HEAD
+  probe.
+- S3: downloads use concurrent ranged GETs (1–8 connections, 1 MiB+ chunks)
+  with resumable prefixes, cancel/pause handling, and a single-stream
+  fallback when the server ignores `Range`.
+- HLS: live playlists are polled, de-duplicated by media sequence/URI and
+  appended until `EXT-X-ENDLIST`; VOD, AES-128 and DASH paths are unchanged.
+  `hls_live_interval_ms` and `hls_live_idle_polls` tune polling.
+- HTTP/2 is enabled for the HTTP-family client through reqwest's `http2`
+  feature (TLS ALPN); HTTP/3 remains off.
+- BitTorrent: `bt_files` selects files by index or relative path (metadata is
+  listed once, then `only_files` is applied) and `bt_seed_ratio` /
+  `bt_seed_minutes` keep seeding after the download, reporting ratio/uploaded
+  through Detail and `plugin_state`; cancelling deletes the torrent.
+- Google Drive / OneDrive / Dropbox: private files work with a ready
+  `access_token` or an OAuth2 `refresh_token` (client id/secret are user
+  supplied — no bundled credentials). Dropbox resolves a temporary link via
+  the API first; public share links keep their existing path. Errors redact
+  client secret / refresh token.
+
+### Fixed
+
+- The Linux tray icon now actually appears on Ubuntu/GNOME: the exported
+  StatusNotifierItem was missing the `Menu` property (it only set
+  `ItemIsMenu`), and Ubuntu's AppIndicator extension treats `Id` + `Menu` as
+  required — it logged `Unknown property 'Menu'` and dropped the icon. The
+  item now answers `Menu` with the `/Menu` object path of the dbusmenu it
+  already exports.
+
 ## [0.2.2] - 2026-10-30
 
 ### Fixed

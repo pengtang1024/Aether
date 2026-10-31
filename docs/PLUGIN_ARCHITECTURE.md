@@ -99,6 +99,20 @@ aether-plugin-http/
   `aether-plugin-sign <package-dir>`。
 - 插件目录只读；用户安装的可选插件放用户数据目录，Host 校验签名后加载。
 
+### 3.1 服务型插件（`kind: "service"`）
+
+不是下载引擎，而是常驻兼容桥（当前为 `aria2` JSON-RPC）：
+
+- daemon 启动时按 manifest 的 `protocols`（如 `["aria2"]`）找到并拉起，空闲清理
+  不会停止它；启停/重装/回滚会重启桥。
+- 插件**不监听端口**。daemon 在共享 TCP 端口上识别协议，把 HTTP 请求通过
+  `BridgeCall { request_id, payload }` 发给插件，插件回 `BridgeResult`。
+- 握手后 daemon 发一次 `ServiceInit { socket }`：本地端点，插件用它回调 daemon
+  的 JSON-lines 接口；令牌由 daemon 校验，插件拿不到 `rpc_secret`。
+- HTTP/WS 传输、CORS、令牌校验与 `aria2.onDownload*` 事件扇出都留在 daemon；
+  插件只做请求翻译，不接触端口与 `rpc_secret`。
+- 服务插件不参与 `Probe`/`Start` 路由；它崩溃时下一次请求自动重启。
+
 ## 4. IPC 协议
 
 ### 4.1 传输
@@ -122,6 +136,13 @@ Plugin → Host: Ready
 
 版本不匹配直接拒绝加载，管理面板显示“需要更新插件/Host”。
 
+**能力契约（2026-10-31）**：`Hello.capabilities` 必须与 manifest 的
+`capabilities` 完全一致（集合相等，顺序无关）。插件多报能力（例如运行时
+偷偷用 external-process）会被握手拒绝；manifest 多报而二进制没实现同样
+被拒绝——manifest 是展示给用户的合同，不能单方面加码或缩水。反引号内的
+能力名使用 manifest 记法：`network` / `filesystem:task` / `external-process` /
+`clipboard` / `http3`。
+
 ### 4.3 消息
 
 Host → Plugin：
@@ -133,6 +154,8 @@ Host → Plugin：
 | `Pause/Resume/Cancel { task_id }` | 生命周期控制 |
 | `SetBudget { task_id, connections, rate }` | 调整并发/限速 |
 | `Snapshot { task_id }` | 主动查询状态 |
+| `ServiceInit { socket }` | 仅服务插件：交付 daemon 本地端点，用于回调 |
+| `BridgeCall { request_id, payload }` | 仅服务插件：转发一个兼容协议请求 |
 | `Ping { request_id }` | 心跳探测，插件回 `Pong` |
 | `Shutdown` | 优雅退出 |
 
@@ -141,6 +164,7 @@ Plugin → Host：
 | 事件 | 作用 |
 | --- | --- |
 | `ProbeResult` | 支持度、协议、大小、文件名、建议 settings |
+| `BridgeResult { request_id, payload }` | 仅服务插件：兼容协议请求的应答 |
 | `Metadata` | 最终 URL、ETag、大小、文件列表 |
 | `Progress` | downloaded/total、speed、ETA、完成段数 |
 | `Detail` | 协议详情（chunks/peers/metrics），由 schema 描述 |
@@ -193,9 +217,20 @@ Discovered → Verified → Enabled → Running ⇄ Idle
 - 发现：扫描内置插件目录 + 用户插件目录；读取 `plugin.json`。
 - 校验：签名、sha256、`api`/Host 版本、平台可执行文件存在。
 - 启用/禁用：用户可在插件页禁用不用的协议，Host 不启动、不占内存。
-- 更新：签名的增量包；下载到 staging，校验后原子替换；保留上一版回滚。
-- 降级/隔离：连续崩溃或心跳失败进入隔离；不影响其他插件/任务。
-- 卸载：先停止插件，保留/清理任务数据由用户选择。
+- 更新：签名的包；下载到 staging，校验后原子替换；上一版保留在
+  `<data_dir>/plugin-backups/<id>`（不在插件扫描目录内，避免被当成重复 id）。
+- 回滚：`rollback_plugin` 把保留版本重新走一遍完整安装校验（manifest、Host
+  版本、签名、逐文件哈希），当前版本变成新的回滚点——可反复来回切。
+- 崩溃恢复：调用下一条命令时发现子进程已退出就丢弃句柄并重新 spawn
+  （`prune_dead`/`ensure_process`）；任务本身按既有失败/重试路径处理。
+  连续崩溃的指数退避与隔离尚未实现（见 §19）。
+- 卸载：`uninstall_plugin` 在任务运行期间拒绝；删除插件包与回滚备份，并
+  清除持久化的禁用标记，之后重新安装默认启用。任务数据不随插件删除。
+- 版本固定：`plugin_pins`（`id -> 版本`）让 `plugin_updates` /
+  `plugin_update_all` / 自动更新跳过该插件；手动安装与回滚不受限。
+- 外部进程策略：`plugin_external_process=false` 时，声明
+  `external-process` 的插件在 spawn 前被拒绝；空闲实例立即停止，运行中的
+  任务让当前进程跑完。
 
 ## 7. 任务路由
 
@@ -277,7 +312,10 @@ Host 内置 `metrics/chunks/peers/logs/table/text` 渲染器；插件只发数�
 ## 12. 安全与权限
 
 - 第一方插件仍最小权限：`network`、`filesystem:task`、`external-process`、
-  `clipboard`（如需要）分别声明。
+  `clipboard`（如需要）分别声明；握手时校验声明与实现一致（§4.2）。
+- `external-process` 有真实的用户策略闸门（`plugin_external_process`）：
+  关闭后这类插件不会启动，UI 的插件行显示「外部进程被设置阻止」。
+  `network`/`filesystem:task` 目前是声明与展示，不是 OS 级强制（沙箱未做）。
 - 默认只加载签名插件；release key 离线保存；开发模式可显式允许未签名。
 - 进程隔离 + OS 级沙箱（后续）：Linux Landlock/seccomp/bubblewrap，Windows Job Object/
   AppContainer，macOS sandbox profile；首版至少进程隔离 + 目录授权。
@@ -288,17 +326,19 @@ Host 内置 `metrics/chunks/peers/logs/table/text` 渲染器；插件只发数�
 
 ## 13. 管理面板
 
-Host 的“插件”页面（后续 UI）展示：
+Host 的“插件”页面（Slint，2026-10-31 已接真）展示/执行：
 
-- 已安装/已启用/运行中/隔离中
-- 版本、API 兼容性、协议 scheme、资源占用
-- 启用/禁用、卸载、更新、回滚
-- 插件设置（由 settings schema 生成）
-- 最近日志/崩溃次数/诊断包
-- 默认插件与可选插件分组
-- 当前任务使用的插件徽标/来源
+- 已安装/已启用数量、可更新数量（来自 daemon）
+- 名称、描述、版本、分类；**权限行**由 manifest capabilities 渲染
+  （网络 / 任务目录 / 外部进程 / 剪贴板 / HTTP3），被策略阻止时高亮说明
+- 启用/禁用（运行任务时 daemon 拒绝）
+- 卸载（运行任务时拒绝；删除包与回滚备份）
+- 回滚（存在上一版时显示）
+- 更新全部、自动更新插件、版本固定（`id=version; …`）
+- 插件目录、安装包路径、重新加载
 
-禁用插件后，对应 URL 的“新建下载”会提示安装/启用插件，而不是显示一个假进度条。
+任务运行中禁用/覆盖/回滚/卸载都会被 daemon 拒绝，错误经 notice toast 显示；
+禁用插件后新建对应 URL 的任务会提示安装/启用插件，而不是假进度条。
 
 ## 13.5 Host 级集成（不是下载插件）
 
@@ -347,12 +387,12 @@ Host 的“插件”页面（后续 UI）展示：
 | Phase | 内容 | 验收 |
 | --- | --- | --- |
 | P0 | Host/PluginSupervisor/SDK/IPC/fake 插件 | SDK/CLI/Host runtime 已完成；UI 接线待重设计 |
-| P1 | HTTP 插件（单流+分段+续传+校验） | 核心已实现（512 KiB/4 连接测试、100 字节续传）；1 GB soak 待补 |
+| P1 | HTTP 插件（单流+分段+续传+校验） | 核心已实现（512 KiB/4 连接测试、100 字节续传），HTTP/2 ALPN 已启用；1 GB soak 待补 |
 | P2 | PAC/调度/限速 + 插件管理页 | PAC/预算/插件启停生效 |
-| P3 | BitTorrent 插件 | 本地 seed/leech 已通；DHT/多文件/做种/崩溃恢复待补 |
-| P4 | FTP/FTPS、HLS/DASH、Metalink 插件 | FTP/FTPS、HLS/DASH 点播、HTTP 内置 Metalink 已实现；直播/多 Period 待补 |
+| P3 | BitTorrent 插件 | 本地 seed/leech、多文件选择、完成后做种已通；DHT 压测/崩溃恢复待补 |
+| P4 | FTP/FTPS、HLS/DASH、Metalink 插件 | FTP/FTPS、HLS 点播+直播、DASH 点播、HTTP 内置 Metalink 已实现；DASH 直播/多 Period 待补 |
 | P5 | 浏览器集成 + 可选插件：SFTP/WebDAV/S3、yt-dlp、ED2K、thunder、IPFS、RTMP | SFTP/WebDAV/S3/yt-dlp 已实现；ED2K/thunder/IPFS/RTMP 待做 |
-| P6 | 网盘插件：Google Drive/OneDrive/百度/阿里（最后） | OAuth/刷新/共享链接 |
+| P6 | 网盘插件：Google Drive/OneDrive/百度/阿里（最后） | 共享链接 + GDrive/OneDrive/Dropbox 私有文件 OAuth2 refresh（用户自建应用）；百度/阿里共享链接 OAuth 待补 |
 | P7 | 沙箱、自动更新、长稳、模糊测试 | 安全审计 + soak |
 
 ## 18. 插件矩阵
@@ -362,7 +402,7 @@ Host 的“插件”页面（后续 UI）展示：
 | 插件 | 默认携带 | 阶段 | 说明 |
 | --- | --- | --- | --- |
 | `http` | 是 | P1（已实现） | HTTP/HTTPS、Range、续传、SHA-256、Metalink 内置 |
-| `bt` | 是（懒启动） | P3（已实现） | librqbit；magnet/.torrent、initial peers、暂停/取消 |
+| `bt` | 是（懒启动） | P3（已实现） | librqbit；magnet/.torrent、initial peers、多文件选择、完成后做种、暂停/取消 |
 | `ftp` | 可选 | P4（已实现） | FTP + 显式 FTPS、REST 续传 |
 | `media` | 可选 | P4（已实现） | HLS/DASH VOD、AES-128、init/map、BaseURL |
 | `metalink` | 可选 | P4（HTTP 内置） | v3/v4 解析、优先级选源、SHA-256 |
@@ -372,7 +412,7 @@ Host 的“插件”页面（后续 UI）展示：
 | `ipfs` | 否 | P5（已实现） | IPFS/IPNS HTTP gateway |
 | `rtmp` | 否 | P5（已实现） | RTMP/RTSP 通过 ffmpeg 子进程 |
 | `ed2k` | 否 | P5+ | eDonkey 内核未实现 |
-| `gdrive` / `onedrive` / `dropbox` | 否 | P6（已实现共享链接） | 公开分享链接转直链；OAuth 私有文件待补 |
+| `gdrive` / `onedrive` / `dropbox` | 否 | P6（已实现） | 公开分享链接转直链；私有文件用 access_token / refresh_token（用户自建 OAuth 应用） |
 | `baidupan` / `aliyunpan` | 否 | P6（官方 API 基础） | `baidupan://<fs_id>` / `aliyunpan://<drive>/<file>` + access_token；共享链接 OAuth 待补 |
 
 默认安装只保证 HTTP 可用；BT/媒体等即使随包携带也不启动，用户首次使用或启用时
@@ -397,7 +437,8 @@ Host 的“插件”页面（后续 UI）展示：
 - `crates/aether-host` + `crates/aether-cli`：插件发现、按需启动、Probe 路由、事件分发、最终落盘、SQLite 任务库；CLI 已用真实 HTTP 插件跑通下载/续传。
 - `crates/aether-daemon`：常驻 Unix socket 服务，持有 PluginManager + SQLite，供浏览器/CLI/UI 接管下载。
 - `crates/aether-plugin-abi`：可选 cdylib 加载路径；Host 根据 manifest `kind` 选择进程或动态库。
-- 16 个真实插件均未接 Slint UI；剩余：ED2K，以及 UI 接线/调度/PAC。
+- 16 个真实插件均已由 daemon/Slint 管理与调度；剩余：ED2K、协议侧
+  DASH 直播 / BT 隔离与退避 / 云盘内置 OAuth 客户端、以及 OS 级沙箱。
 
 ## 20. 结论
 

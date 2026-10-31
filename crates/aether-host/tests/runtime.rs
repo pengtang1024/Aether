@@ -1,7 +1,7 @@
 //! End-to-end Host runtime test using the fake plugin binary.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use aether_host::{finalize_task, PluginManager, PluginRegistry};
@@ -212,6 +212,119 @@ fn loads_a_cdylib_plugin() {
     let moved = finalize_task(&staging, &final_dir, &files).unwrap();
     assert_eq!(fs::read(&moved[0]).unwrap().len(), 2048);
 
+    manager.shutdown();
+    fs::remove_dir_all(root).ok();
+}
+
+fn install_fake_package(root: &Path, capabilities: serde_json::Value) -> bool {
+    let Some(fake) = fake_binary() else {
+        return false;
+    };
+    let package = root.join("plugins").join("fake");
+    fs::create_dir_all(package.join("bin")).unwrap();
+    let name = format!("aether-plugin-fake{}", std::env::consts::EXE_SUFFIX);
+    fs::copy(&fake, package.join("bin").join(&name)).unwrap();
+    let manifest = serde_json::json!({
+        "id": "fake",
+        "name": "Fake plugin",
+        "version": "0.1.0",
+        "api": aether_plugin_sdk::API_VERSION,
+        "protocols": ["http"],
+        "capabilities": capabilities,
+        "executable": { current_platform_key(): format!("bin/{name}") }
+    });
+    fs::write(
+        package.join("plugin.json"),
+        serde_json::to_vec_pretty(&manifest).unwrap(),
+    )
+    .unwrap();
+    true
+}
+
+#[test]
+fn host_policy_blocks_external_process_capability() {
+    let root = temp_dir("policy");
+    if !install_fake_package(
+        &root,
+        serde_json::json!(["network", "filesystem:task", "external-process"]),
+    ) {
+        eprintln!("fake plugin binary is not built; skipping");
+        return;
+    }
+    let registry = PluginRegistry::discover(&[root.join("plugins")]).unwrap();
+    let mut manager = PluginManager::new(registry, root.join("data"), "0.2.0");
+    manager.set_allow_external_process(false);
+    let blocked = manager.probe("https://example.com/file.bin");
+    let error = blocked[0].error.as_deref().unwrap_or_default();
+    assert!(
+        error.contains("needs capability external-process"),
+        "policy error should name the capability: {error}"
+    );
+
+    // Allowing it again reaches the handshake: the test binary does not
+    // implement external-process, so the capability contract (not the
+    // policy) is now the reason it refuses.
+    manager.set_allow_external_process(true);
+    let allowed = manager.probe("https://example.com/file.bin");
+    let error = allowed[0].error.as_deref().unwrap_or_default();
+    assert!(
+        !error.contains("needs capability external-process"),
+        "policy should stop blocking: {error}"
+    );
+    assert!(
+        error.contains("does not report manifest capability external-process"),
+        "the capability contract must still hold: {error}"
+    );
+    manager.shutdown();
+    fs::remove_dir_all(root).ok();
+}
+
+#[cfg(unix)]
+#[test]
+fn restarts_a_crashed_plugin_on_the_next_command() {
+    let root = temp_dir("restart");
+    if !install_fake_package(&root, serde_json::json!(["network", "filesystem:task"])) {
+        eprintln!("fake plugin binary is not built; skipping");
+        return;
+    }
+    let registry = PluginRegistry::discover(&[root.join("plugins")]).unwrap();
+    let mut manager = PluginManager::new(registry, root.join("data"), "0.2.0");
+    assert!(manager.probe("https://example.com/a.bin")[0]
+        .result
+        .as_ref()
+        .is_some_and(|probe| probe.supported));
+    let first = manager.running_pid("fake").expect("running pid");
+
+    // Crash the plugin the way a segfault/OOM kill would (no protocol
+    // goodbye), then let the OS reap it.
+    let status = std::process::Command::new("kill")
+        .args(["-9", &first.to_string()])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    for _ in 0..50 {
+        std::thread::sleep(Duration::from_millis(20));
+        if std::process::Command::new("kill")
+            .args(["-0", &first.to_string()])
+            .status()
+            .map(|status| !status.success())
+            .unwrap_or(true)
+        {
+            break;
+        }
+    }
+
+    let second = manager
+        .probe("https://example.com/b.bin")
+        .into_iter()
+        .next()
+        .expect("outcome");
+    assert!(
+        second.result.as_ref().is_some_and(|probe| probe.supported),
+        "dead plugin should be replaced: {second:?}"
+    );
+    let restarted = manager.running_pid("fake").expect("running pid");
+    assert_ne!(first, restarted, "the host must spawn a fresh process");
     manager.shutdown();
     fs::remove_dir_all(root).ok();
 }

@@ -98,6 +98,14 @@ mod imp {
         InstallPlugin {
             path: String,
         },
+        /// Remove an installed plugin package (refused while tasks run).
+        UninstallPlugin {
+            row: i32,
+        },
+        /// Reinstall the retained previous version of a plugin.
+        RollbackPlugin {
+            row: i32,
+        },
         /// Re-scan the plugins directory without restarting the daemon.
         RescanPlugins,
         /// Check the update manifest and install every outdated plugin.
@@ -190,6 +198,18 @@ mod imp {
             let _ = self.commands.send(Command::InstallPlugin {
                 path: path.to_string(),
             });
+        }
+
+        /// Remove an installed plugin. The daemon refuses while its tasks
+        /// are running; the outcome surfaces through `take_notice`.
+        pub fn uninstall_plugin(&self, row: i32) {
+            let _ = self.commands.send(Command::UninstallPlugin { row });
+        }
+
+        /// Reinstall the retained previous version (same verification path
+        /// as a fresh install).
+        pub fn rollback_plugin(&self, row: i32) {
+            let _ = self.commands.send(Command::RollbackPlugin { row });
         }
 
         /// Ask the daemon to re-scan the plugins directory (count in the
@@ -524,6 +544,31 @@ mod imp {
                     let plugin_id = plugin.id.clone();
                     client.set_plugin_enabled(&plugin_id, enabled)?;
                     self.needs_refresh = true;
+                }
+                Command::UninstallPlugin { row } => {
+                    let Some(plugin) = self.plugins.get(row as usize) else {
+                        return Ok(());
+                    };
+                    let plugin_id = plugin.id.clone();
+                    client.uninstall_plugin(&plugin_id)?;
+                    self.needs_refresh = true;
+                    self.notice = Some(crate::i18n::tr(
+                        format!("已卸载插件 {plugin_id}"),
+                        format!("Uninstalled plugin {plugin_id}"),
+                    ));
+                }
+                Command::RollbackPlugin { row } => {
+                    let Some(plugin) = self.plugins.get(row as usize) else {
+                        return Ok(());
+                    };
+                    let plugin_id = plugin.id.clone();
+                    let value = client.rollback_plugin(&plugin_id)?;
+                    let version = value["version"].as_str().unwrap_or_default().to_string();
+                    self.needs_refresh = true;
+                    self.notice = Some(crate::i18n::tr(
+                        format!("已回滚插件 {plugin_id} 到 {version}"),
+                        format!("Rolled plugin {plugin_id} back to {version}"),
+                    ));
                 }
                 Command::InstallPlugin { path } => {
                     let value = client.install_plugin(&path)?;

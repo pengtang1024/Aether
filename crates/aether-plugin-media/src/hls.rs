@@ -1,10 +1,11 @@
 //! HLS playlist parsing, AES-128 decryption and segment download.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, OpenOptions};
 use std::io::Read;
 use std::path::Path;
 use std::sync::Arc;
+use std::thread;
 use std::time::{Duration, Instant};
 
 use aes::Aes128;
@@ -23,6 +24,13 @@ use crate::http;
 
 const STATE_FILE: &str = ".aether-hls-state.json";
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
+
+const LIVE_INTERVAL_DEFAULT_MS: u64 = 1_000;
+const LIVE_INTERVAL_MIN_MS: u64 = 500;
+const LIVE_INTERVAL_MAX_MS: u64 = 10_000;
+const LIVE_IDLE_POLLS_DEFAULT: u64 = 3;
+/// Consecutive playlist refresh failures tolerated before the task fails.
+const LIVE_PLAYLIST_MAX_FAILURES: u32 = 5;
 
 #[derive(Debug, Clone)]
 struct HlsSegment {
@@ -82,7 +90,7 @@ pub fn probe(client: &reqwest::blocking::Client, input: &str) -> HlsProbe {
         Ok((media, playlist_url)) => HlsProbe {
             supported: true,
             filename: Some(output_filename(&playlist_url, media.map.is_some())),
-            reason: (!media.endlist).then(|| "live HLS is not supported yet".into()),
+            reason: None,
         },
         Err(error) => HlsProbe {
             supported: true,
@@ -130,10 +138,42 @@ fn download_inner(
 
     let url = Url::parse(&task.url)?;
     let (media, playlist_url) = fetch_media(client, &url)?;
-    if !media.endlist {
-        return Err(MediaError::Protocol("live HLS is not supported yet".into()));
+    if media.endlist {
+        download_vod(
+            sender,
+            client,
+            task,
+            paths,
+            control,
+            progress,
+            media,
+            playlist_url,
+        )
+    } else {
+        download_live(
+            sender,
+            client,
+            task,
+            paths,
+            control,
+            progress,
+            media,
+            playlist_url,
+        )
     }
+}
 
+#[allow(clippy::too_many_arguments)]
+fn download_vod(
+    sender: &PluginSender,
+    client: &reqwest::blocking::Client,
+    task: &TaskSpec,
+    paths: &TaskPaths,
+    control: &TaskControl,
+    progress: &SharedProgress,
+    media: HlsMedia,
+    playlist_url: Url,
+) -> Result<(), MediaError> {
     fs::create_dir_all(&paths.staging)?;
     let has_map = media.map.is_some();
     let filename = task
@@ -322,6 +362,320 @@ fn download_inner(
     })?;
 
     Ok(())
+}
+
+/// Live (no `#EXT-X-ENDLIST`) behaviour: refresh the media playlist, append
+/// only segments that were not written yet, and keep the task alive until
+/// the publisher ends the stream or the task is canceled.
+///
+/// `transcode_to` is intentionally skipped: a live stream has no stable end
+/// to remux, so the note is reported through `plugin_state` instead.
+#[allow(clippy::too_many_arguments)]
+fn download_live(
+    sender: &PluginSender,
+    client: &reqwest::blocking::Client,
+    task: &TaskSpec,
+    paths: &TaskPaths,
+    control: &TaskControl,
+    progress: &SharedProgress,
+    mut media: HlsMedia,
+    mut playlist_url: Url,
+) -> Result<(), MediaError> {
+    fs::create_dir_all(&paths.staging)?;
+    let has_map = media.map.is_some();
+    let filename = task
+        .filename
+        .as_deref()
+        .and_then(sanitize_filename)
+        .unwrap_or_else(|| output_filename(&playlist_url, has_map));
+    let file_path = paths.staging.join(&filename);
+    let file = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .truncate(true)
+        .open(&file_path)?;
+
+    let config = LiveConfig::from_task(task);
+    let _ = sender.send(&PluginEvent::Metadata {
+        task_id: task.task_id.clone(),
+        metadata: Metadata {
+            final_url: playlist_url.to_string(),
+            size: None,
+            etag: None,
+            content_type: Some("application/vnd.apple.mpegurl".into()),
+            files: vec![],
+        },
+    });
+
+    let mut writer = LiveWriter {
+        file: &file,
+        client,
+        seen: HashSet::new(),
+        keys: HashMap::new(),
+        map_written: None,
+        offset: 0,
+        segments: 0,
+    };
+    let mut snapshot = ProgressSnapshot {
+        total: None,
+        connections: 1,
+        ..Default::default()
+    };
+    let mut last_progress = Instant::now() - PROGRESS_INTERVAL;
+    let mut first_batch = true;
+    let mut idle_polls = 0_u64;
+    let mut failures = 0_u32;
+
+    loop {
+        match writer.append(&media, control) {
+            Ok(added) => {
+                idle_polls = if added > 0 { 0 } else { idle_polls + 1 };
+                snapshot.downloaded = writer.offset;
+                snapshot.chunks_done = writer.segments as u32;
+                let throttled = last_progress.elapsed() >= PROGRESS_INTERVAL;
+                if added > 0 && (first_batch || throttled || media.endlist) {
+                    emit_live_progress(sender, task, &mut snapshot, progress);
+                    last_progress = Instant::now();
+                    first_batch = false;
+                }
+            }
+            Err(MediaError::Canceled) => {
+                return live_canceled(sender, task);
+            }
+            Err(error) => return Err(error),
+        }
+
+        if media.endlist {
+            break;
+        }
+
+        if !sleep_until_poll(control, config.interval) {
+            return live_canceled(sender, task);
+        }
+
+        match fetch_media(client, &playlist_url) {
+            Ok((next, next_url)) => {
+                media = next;
+                playlist_url = next_url;
+                failures = 0;
+            }
+            Err(error) => {
+                failures += 1;
+                if failures > LIVE_PLAYLIST_MAX_FAILURES {
+                    return Err(MediaError::Network(format!(
+                        "live playlist refresh failed {failures} times in a row: {error}"
+                    )));
+                }
+            }
+        }
+    }
+
+    if writer.segments == 0 && writer.map_written.is_none() {
+        return Err(MediaError::Protocol("playlist has no segments".into()));
+    }
+
+    file.sync_all()?;
+    snapshot.downloaded = writer.offset;
+    snapshot.chunks_done = writer.segments as u32;
+    emit_live_progress(sender, task, &mut snapshot, progress);
+
+    let checksum = aether_plugin_sdk::checksum::sha256_file(&file_path)?;
+    if let Some(expected) = &task.checksum {
+        if expected.algorithm != ChecksumAlgorithm::Sha256 {
+            return Err(MediaError::Protocol("only SHA-256 is supported".into()));
+        }
+        if !checksum.eq_ignore_ascii_case(&expected.value) {
+            let _ = fs::remove_file(&file_path);
+            return Err(MediaError::ChecksumMismatch);
+        }
+    }
+
+    let finished = FileInfo {
+        relative_path: filename,
+        size: writer.offset,
+        checksum: Some(Checksum {
+            algorithm: ChecksumAlgorithm::Sha256,
+            value: checksum,
+        }),
+    };
+    let mut plugin_state = serde_json::json!({
+        "playlist": playlist_url.to_string(),
+        "segments": writer.segments,
+        "live": true,
+        "idle_polls": idle_polls,
+        "idle_poll_limit": config.idle_polls,
+    });
+    if crate::transcode::target_container(task).is_some() {
+        plugin_state["transcode"] = serde_json::json!({
+            "ok": false,
+            "note": "transcode_to is skipped for live HLS",
+        });
+    }
+    sender.send(&PluginEvent::Completed {
+        task_id: task.task_id.clone(),
+        files: vec![finished],
+        plugin_state: Some(plugin_state),
+    })?;
+
+    Ok(())
+}
+
+/// A canceled live task reports `Failed`/`Canceled` so the host can finish
+/// the task deterministically; the VOD path keeps its silent cancellation.
+fn live_canceled(sender: &PluginSender, task: &TaskSpec) -> Result<(), MediaError> {
+    let _ = sender.send(&PluginEvent::Failed {
+        task_id: task.task_id.clone(),
+        error: MediaError::Canceled.to_plugin_error(),
+    });
+    Ok(())
+}
+
+struct LiveConfig {
+    interval: Duration,
+    idle_polls: u64,
+}
+
+impl LiveConfig {
+    fn from_task(task: &TaskSpec) -> Self {
+        let interval_ms = setting_u64(&task.settings, "hls_live_interval_ms")
+            .unwrap_or(LIVE_INTERVAL_DEFAULT_MS)
+            .clamp(LIVE_INTERVAL_MIN_MS, LIVE_INTERVAL_MAX_MS);
+        let idle_polls =
+            setting_u64(&task.settings, "hls_live_idle_polls").unwrap_or(LIVE_IDLE_POLLS_DEFAULT);
+        Self {
+            interval: Duration::from_millis(interval_ms),
+            idle_polls,
+        }
+    }
+}
+
+fn setting_u64(settings: &serde_json::Value, key: &str) -> Option<u64> {
+    settings.get(key).and_then(|value| {
+        value
+            .as_u64()
+            .or_else(|| value.as_str().and_then(|text| text.trim().parse().ok()))
+    })
+}
+
+struct LiveWriter<'a> {
+    file: &'a std::fs::File,
+    client: &'a reqwest::blocking::Client,
+    seen: HashSet<String>,
+    keys: HashMap<String, Vec<u8>>,
+    map_written: Option<String>,
+    offset: u64,
+    segments: u64,
+}
+
+impl LiveWriter<'_> {
+    /// Append a playlist's not-yet-written parts to the output file. Returns
+    /// the number of new media segments (the init map is not counted).
+    fn append(&mut self, media: &HlsMedia, control: &TaskControl) -> Result<u64, MediaError> {
+        let mut added = 0_u64;
+
+        if let Some(map) = &media.map {
+            let identity = map.as_str().to_string();
+            if self.map_written.as_deref() != Some(identity.as_str()) {
+                let bytes = http::get_bytes(self.client, map)?;
+                write_all_at(self.file, &bytes, self.offset)?;
+                self.offset += bytes.len() as u64;
+                self.map_written = Some(identity);
+            }
+        }
+
+        for segment in &media.segments {
+            if !control.wait_until_running() {
+                return Err(MediaError::Canceled);
+            }
+            if !self.seen.insert(segment_identity(segment)) {
+                continue;
+            }
+
+            let mut bytes = match segment.range {
+                Some((start, end)) => {
+                    let mut response =
+                        http::get_bytes_range(self.client, &segment.url, start, end)?;
+                    let mut buffer = Vec::new();
+                    response.read_to_end(&mut buffer)?;
+                    buffer
+                }
+                None => http::get_bytes(self.client, &segment.url)?,
+            };
+
+            if let Some(key) = &media.key {
+                let key_bytes = self.key_bytes(key)?;
+                let iv = key.iv.unwrap_or_else(|| sequence_iv(segment.sequence));
+                bytes = decrypt(bytes, &key_bytes, &iv)?;
+            }
+
+            write_all_at(self.file, &bytes, self.offset)?;
+            self.offset += bytes.len() as u64;
+            self.segments += 1;
+            added += 1;
+        }
+
+        Ok(added)
+    }
+
+    fn key_bytes(&mut self, key: &HlsKey) -> Result<Vec<u8>, MediaError> {
+        let identity = key.uri.to_string();
+        if let Some(bytes) = self.keys.get(&identity) {
+            return Ok(bytes.clone());
+        }
+        let bytes = http::get_bytes(self.client, &key.uri)?;
+        if bytes.len() != 16 {
+            return Err(MediaError::Protocol(format!(
+                "AES-128 key must be 16 bytes, got {}",
+                bytes.len()
+            )));
+        }
+        self.keys.insert(identity, bytes.clone());
+        Ok(bytes)
+    }
+}
+
+fn segment_identity(segment: &HlsSegment) -> String {
+    match segment.range {
+        Some((start, end)) => format!("{}|{}|{start}-{end}", segment.sequence, segment.url),
+        None => format!("{}|{}", segment.sequence, segment.url),
+    }
+}
+
+fn emit_live_progress(
+    sender: &PluginSender,
+    task: &TaskSpec,
+    snapshot: &mut ProgressSnapshot,
+    progress: &SharedProgress,
+) {
+    snapshot.seq = snapshot.seq.saturating_add(1);
+    *progress.lock().unwrap() = snapshot.clone();
+    let _ = sender.send(&PluginEvent::Progress {
+        task_id: task.task_id.clone(),
+        seq: snapshot.seq,
+        downloaded: snapshot.downloaded,
+        total: None,
+        speed_bps: 0,
+        eta_secs: None,
+        connections: 1,
+        chunks_done: Some(snapshot.chunks_done),
+        chunks_total: None,
+    });
+}
+
+/// Sleep for the poll interval in short slices so pause/cancel are honoured
+/// promptly. Returns false when the task was canceled.
+fn sleep_until_poll(control: &TaskControl, interval: Duration) -> bool {
+    let mut remaining = interval;
+    while !remaining.is_zero() {
+        if !control.wait_until_running() {
+            return false;
+        }
+        let step = remaining.min(Duration::from_millis(100));
+        thread::sleep(step);
+        remaining = remaining.saturating_sub(step);
+    }
+    !control.is_canceled()
 }
 
 struct SegmentJob {
@@ -599,5 +953,66 @@ mod tests {
             parse_iv("0x000102030405060708090A0B0C0D0E0F").unwrap(),
             [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
         );
+    }
+
+    #[test]
+    fn playlist_without_endlist_is_live() {
+        let text =
+            "#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:7\n#EXTINF:2.0,\nseg7.ts\n";
+        let base = Url::parse("https://example.com/live/index.m3u8").unwrap();
+        let HlsPlaylist::Media(media) = parse_playlist(text, &base).unwrap() else {
+            panic!("expected media playlist");
+        };
+        assert!(!media.endlist);
+        assert_eq!(media.segments.len(), 1);
+        assert_eq!(media.segments[0].sequence, 7);
+    }
+
+    #[test]
+    fn segment_identity_distinguishes_ranges() {
+        let url = Url::parse("https://example.com/seg.ts").unwrap();
+        let whole = HlsSegment {
+            url: url.clone(),
+            range: None,
+            sequence: 3,
+        };
+        let ranged = HlsSegment {
+            url,
+            range: Some((0, 99)),
+            sequence: 3,
+        };
+        assert_ne!(segment_identity(&whole), segment_identity(&ranged));
+    }
+
+    #[test]
+    fn live_settings_are_clamped() {
+        let task = |settings: serde_json::Value| TaskSpec {
+            task_id: "t".into(),
+            url: "https://example.com/index.m3u8".into(),
+            filename: None,
+            settings,
+            plugin_state: None,
+            expected_size: None,
+            checksum: None,
+            proxy: None,
+        };
+
+        let default = LiveConfig::from_task(&task(serde_json::json!({})));
+        assert_eq!(default.interval, Duration::from_millis(1_000));
+        assert_eq!(default.idle_polls, 3);
+
+        let low = LiveConfig::from_task(&task(serde_json::json!({"hls_live_interval_ms": 10})));
+        assert_eq!(low.interval, Duration::from_millis(500));
+
+        let high =
+            LiveConfig::from_task(&task(serde_json::json!({"hls_live_interval_ms": 99_999})));
+        assert_eq!(high.interval, Duration::from_millis(10_000));
+
+        let custom = LiveConfig::from_task(&task(serde_json::json!({
+            "hls_live_interval_ms": "750",
+            "hls_live_idle_polls": 8,
+        })));
+        assert_eq!(custom.interval, Duration::from_millis(750));
+        assert_eq!(custom.idle_polls, 8);
     }
 }

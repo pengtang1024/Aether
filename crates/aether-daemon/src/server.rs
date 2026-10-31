@@ -15,14 +15,18 @@ use aether_host::{
     default_plugins_dir, ensure_space, finalize_task, human_bytes, NewTask, PluginEventEnvelope,
     PluginManager, PluginRegistry, ProxySetting, StoredTask, TaskState, TaskStore,
 };
-use aether_plugin_sdk::{Budget, HostCommand, PluginEvent, ProxyConfig, TaskPaths, TaskSpec};
+use aether_plugin_sdk::{
+    Budget, HostCommand, Init, LogLevel, PluginEvent, PluginKind, ProxyConfig, TaskPaths, TaskSpec,
+};
 use aether_update::UpdateClient;
 use fs2::FileExt;
 use serde_json::{json, Value};
 
 use crate::error::DaemonError;
 use crate::proto::{Request, Response};
-use crate::settings::{parse_hhmm, Limits, Settings, CONNECTIONS_DEFAULT, KEYS};
+use crate::settings::{
+    parse_hhmm, Limits, Settings, CONNECTIONS_DEFAULT, KEYS, RPC_LISTEN_DEFAULT,
+};
 use crate::transport::{Conn, Listener};
 
 pub struct DaemonConfig {
@@ -96,10 +100,40 @@ impl Default for DaemonConfig {
     }
 }
 
-struct Command {
-    request: Request,
-    respond: Sender<Response>,
-    subscriber: Option<Sender<serde_json::Value>>,
+pub(crate) struct Command {
+    pub(crate) request: Request,
+    pub(crate) respond: Sender<Response>,
+    pub(crate) subscriber: Option<Sender<serde_json::Value>>,
+}
+
+/// Subscribe a compatibility transport (aria2 WebSocket) to the same event
+/// stream the native `subscribe` method uses.
+pub(crate) fn subscribe_events(
+    commands: &Sender<Command>,
+) -> Option<mpsc::Receiver<serde_json::Value>> {
+    let (respond_tx, respond_rx) = mpsc::channel();
+    let (event_tx, event_rx) = mpsc::channel();
+    let request = Request {
+        id: 0,
+        method: "subscribe".into(),
+        url: None,
+        plugin: None,
+        dir: None,
+        task_id: None,
+        priority: None,
+        settings: serde_json::Value::Null,
+    };
+    commands
+        .send(Command {
+            request,
+            respond: respond_tx,
+            subscriber: Some(event_tx),
+        })
+        .ok()?;
+    match respond_rx.recv_timeout(Duration::from_secs(5)) {
+        Ok(response) if response.ok => Some(event_rx),
+        _ => None,
+    }
 }
 
 struct State {
@@ -108,6 +142,12 @@ struct State {
     download_dir: PathBuf,
     plugins_dir: PathBuf,
     data_dir: PathBuf,
+    /// Local endpoint handed to service plugins so they can call back into
+    /// the daemon instead of opening a competing listening socket.
+    socket: PathBuf,
+    /// aria2 compatibility bridge, shared with the TCP listener. `None` when
+    /// the plugin is missing or disabled (HTTP then answers 503).
+    aria2: Arc<Mutex<Option<Arc<crate::aria2::PluginBridge>>>>,
     active: HashSet<String>,
     update: Option<Arc<Mutex<serde_json::Value>>>,
     subscribers: Vec<Sender<serde_json::Value>>,
@@ -248,6 +288,12 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
     // tests can override a user's choice for one run.
     let settings_path = Settings::path(&config.download_dir);
     let mut settings = Settings::load(&settings_path);
+    // RPC is useful out of the box (CLI, second device): seed a loopback
+    // address and a token on first boot, then persist so the UI and the CLI
+    // read the same values. Explicit empty strings are preserved.
+    if settings.seed_rpc_defaults() {
+        settings.save(&settings_path)?;
+    }
     if let Some(pac) = &config.pac_url {
         settings.proxy = Some(ProxySetting::Pac {
             url: Some(pac.clone()),
@@ -266,6 +312,7 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
     });
     manager.set_proxy(init_proxy(settings.proxy.as_ref()));
     manager.set_network(settings.network());
+    manager.set_allow_external_process(settings.plugin_external_process.unwrap_or(true));
     let update_status = match (&config.update_url, &config.update_public_key) {
         (Some(url), Some(key)) => {
             let status = Arc::new(Mutex::new(serde_json::json!({
@@ -302,6 +349,8 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
         download_dir: config.download_dir.clone(),
         plugins_dir: config.plugins_dir.clone(),
         data_dir: data_dir.clone(),
+        socket: config.socket.clone(),
+        aria2: Arc::new(Mutex::new(None)),
         active: HashSet::new(),
         update: update_status,
         subscribers: Vec::new(),
@@ -327,18 +376,26 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
 
     recover_tasks(&mut state);
     restore_retries(&mut state);
+    // Compatibility services own no listening port: they receive requests
+    // from the daemon listener and call back over the local endpoint.
+    spawn_aria2_bridge(&mut state);
 
     let (command_tx, command_rx) = mpsc::channel::<Command>();
 
-    // Opt-in RPC over TCP. The CLI/env override wins over the persisted
-    // setting; anything wider than loopback must carry a token — checked
-    // here as well because the boot path bypasses `set_settings` and its
-    // validation.
+    // RPC over TCP: the CLI/env override wins over the persisted setting.
+    // Anything wider than loopback must carry a token — checked here as well
+    // because the boot path bypasses `set_settings` and its validation.
     let rpc_listen = config
         .rpc_listen
         .clone()
         .filter(|addr| !addr.trim().is_empty())
-        .or_else(|| state.settings.rpc_listen.clone());
+        .or_else(|| {
+            state
+                .settings
+                .rpc_listen
+                .clone()
+                .filter(|addr| !addr.trim().is_empty())
+        });
     if let Some(addr) = rpc_listen.as_deref() {
         // The effective pair is checked here too: the CLI/env override is
         // not part of `set_settings`, so its validation would miss it.
@@ -356,12 +413,35 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
                 "rpc_listen on a non-loopback address requires rpc_secret".into(),
             ));
         }
-        let listener = Listener::bind_tcp(addr.trim())
-            .map_err(|error| DaemonError::Protocol(format!("cannot listen on {addr}: {error}")))?;
-        eprintln!("aether-daemon: rpc listening on {addr} (token required)");
-        let rpc_tx = command_tx.clone();
-        let rpc_secret = state.rpc_secret.clone();
-        thread::spawn(move || rpc_accept_loop(listener, rpc_tx, rpc_secret));
+        // The default listener is a convenience, not a requirement: a busy
+        // port must not keep downloads from starting. Explicit addresses
+        // still fail loudly so a misconfiguration is visible.
+        let listener = match Listener::bind_tcp(addr.trim()) {
+            Ok(listener) => Some(listener),
+            Err(error) if addr.trim() == RPC_LISTEN_DEFAULT => {
+                eprintln!(
+                    "aether-daemon: cannot listen on default RPC address {addr}: {error}; \
+                     continuing without TCP RPC"
+                );
+                None
+            }
+            Err(error) => {
+                return Err(DaemonError::Protocol(format!(
+                    "cannot listen on {addr}: {error}"
+                )))
+            }
+        };
+        if let Some(listener) = listener {
+            if has_secret {
+                eprintln!("aether-daemon: rpc listening on {addr} (token required)");
+            } else {
+                eprintln!("aether-daemon: rpc listening on {addr} (no token; loopback only)");
+            }
+            let rpc_tx = command_tx.clone();
+            let rpc_secret = state.rpc_secret.clone();
+            let aria2 = state.aria2.clone();
+            thread::spawn(move || rpc_accept_loop(listener, rpc_tx, rpc_secret, aria2));
+        }
     }
 
     let accept_tx = command_tx.clone();
@@ -413,6 +493,7 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
     }
 
     state.manager.shutdown();
+    stop_aria2_bridge(&state);
     drop(accept_thread);
     #[cfg(unix)]
     let _ = fs::remove_file(&config.socket);
@@ -586,12 +667,14 @@ fn rpc_accept_loop(
     mut listener: Listener,
     commands: Sender<Command>,
     secret: std::sync::Arc<Mutex<Option<String>>>,
+    aria2: Arc<Mutex<Option<Arc<crate::aria2::PluginBridge>>>>,
 ) {
     loop {
         let Ok(conn) = listener.accept() else { break };
         let commands = commands.clone();
         let secret = secret.clone();
-        thread::spawn(move || rpc_client_loop(conn, commands, secret));
+        let aria2 = aria2.clone();
+        thread::spawn(move || rpc_client_loop(conn, commands, secret, aria2));
     }
 }
 
@@ -599,6 +682,7 @@ fn rpc_client_loop(
     stream: Conn,
     commands: Sender<Command>,
     secret: std::sync::Arc<Mutex<Option<String>>>,
+    aria2: Arc<Mutex<Option<Arc<crate::aria2::PluginBridge>>>>,
 ) {
     let reader_stream = match stream.try_clone() {
         Ok(stream) => stream,
@@ -608,6 +692,17 @@ fn rpc_client_loop(
     let mut writer = stream;
     let mut line = String::new();
     if reader.read_line(&mut line).unwrap_or(0) == 0 {
+        writer.shutdown();
+        return;
+    }
+    // One port, two protocols: HTTP goes to the aria2 compatibility bridge,
+    // the native JSON-lines protocol keeps its auth handshake below.
+    if crate::aria2::is_http_request(&line) {
+        let bridge = aria2.lock().ok().and_then(|slot| slot.clone());
+        let bridge = bridge
+            .as_deref()
+            .map(|bridge| bridge as &dyn crate::aria2::Bridge);
+        crate::aria2::serve_http(reader, &mut writer, &line, bridge, &secret, &commands);
         writer.shutdown();
         return;
     }
@@ -976,11 +1071,21 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
             Ok(json!({ "url": url, "pac": pac, "proxy": proxy, "pac_error": error }))
         }
         "plugins" => {
+            let allow_external = state.manager.allow_external_process();
+            let backup_root = state.data_dir.join("plugin-backups");
             let plugins = state
                 .manager
                 .registry()
                 .iter()
                 .map(|entry| {
+                    // A policy-blocked plugin is still listed (and can still
+                    // be disabled/uninstalled) but the UI must say why it
+                    // cannot start instead of failing at task time.
+                    let blocked = !allow_external
+                        && entry
+                            .manifest
+                            .capabilities
+                            .contains(&aether_plugin_sdk::Capability::ExternalProcess);
                     json!({
                         "id": entry.manifest.id,
                         "name": entry.manifest.name,
@@ -988,10 +1093,18 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
                         "protocols": entry.manifest.protocols,
                         "capabilities": entry.manifest.capabilities,
                         "enabled": entry.enabled,
+                        "blocked": blocked,
+                        "has_backup": backup_root
+                            .join(&entry.manifest.id)
+                            .join("plugin.json")
+                            .is_file(),
                     })
                 })
                 .collect::<Vec<_>>();
-            Ok(json!({ "plugins": plugins }))
+            Ok(json!({
+                "plugins": plugins,
+                "external_process_allowed": allow_external,
+            }))
         }
         "set_plugin_enabled" => {
             let plugin_id = request
@@ -1025,6 +1138,11 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
                 .manager
                 .registry_mut()
                 .set_enabled(&plugin_id, enabled)?;
+            let is_service = state
+                .manager
+                .registry()
+                .get(&plugin_id)
+                .is_some_and(|entry| entry.manifest.kind == PluginKind::Service);
             if !enabled {
                 state.manager.stop(&plugin_id);
                 state.live.retain(|task_id| {
@@ -1035,6 +1153,13 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
                         .flatten()
                         .is_none_or(|task| task.plugin_id != plugin_id)
                 });
+            }
+            if is_service {
+                if enabled {
+                    restart_aria2_bridge(state);
+                } else {
+                    stop_aria2_bridge(state);
+                }
             }
             state.store.set_plugin_disabled(&plugin_id, !enabled)?;
             let entry = state
@@ -1281,14 +1406,18 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
                     serde_json::from_value(value.clone()).map_err(|error| {
                         DaemonError::Protocol(format!("invalid rpc_listen: {error}"))
                     })?;
-                next.rpc_listen = text.filter(|text| !text.trim().is_empty());
+                // `Some("")` is an explicit "off"; `None` (null) returns to
+                // the built-in default on the next boot.
+                next.rpc_listen = text.map(|text| text.trim().to_string());
             }
             if let Some(value) = patch.get("rpc_secret") {
                 let text: Option<String> =
                     serde_json::from_value(value.clone()).map_err(|error| {
                         DaemonError::Protocol(format!("invalid rpc_secret: {error}"))
                     })?;
-                next.rpc_secret = text.filter(|text| !text.trim().is_empty());
+                // Same distinction: `Some("")` explicitly disables the token,
+                // `None` regenerates the default on the next boot.
+                next.rpc_secret = text.map(|text| text.trim().to_string());
             }
             if let Some(value) = patch.get("ffmpeg_path") {
                 let text: Option<String> =
@@ -1303,6 +1432,19 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
                         DaemonError::Protocol(format!("invalid plugin_auto_update: {error}"))
                     })?;
             }
+            if let Some(value) = patch.get("plugin_pins") {
+                let pins: Option<std::collections::BTreeMap<String, String>> =
+                    serde_json::from_value(value.clone()).map_err(|error| {
+                        DaemonError::Protocol(format!("invalid plugin_pins: {error}"))
+                    })?;
+                next.plugin_pins = pins.filter(|pins| !pins.is_empty());
+            }
+            if let Some(value) = patch.get("plugin_external_process") {
+                next.plugin_external_process =
+                    serde_json::from_value(value.clone()).map_err(|error| {
+                        DaemonError::Protocol(format!("invalid plugin_external_process: {error}"))
+                    })?;
+            }
             if let Some(value) = patch.get("app_auto_update") {
                 next.app_auto_update = serde_json::from_value(value.clone()).map_err(|error| {
                     DaemonError::Protocol(format!("invalid app_auto_update: {error}"))
@@ -1312,7 +1454,18 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
 
             let network_before = state.settings.network();
             let proxy_changed = patch.contains_key("proxy");
+            let external_process_before = state.settings.plugin_external_process.unwrap_or(true);
             state.settings = next;
+            let external_process_after = state.settings.plugin_external_process.unwrap_or(true);
+            state
+                .manager
+                .set_allow_external_process(external_process_after);
+            if external_process_before && !external_process_after {
+                // The policy only gates the next spawn; retire idle plugins
+                // that need an external process so the setting takes effect
+                // without a daemon restart. Busy plugins finish their task.
+                stop_idle_external_plugins(state);
+            }
             if proxy_changed {
                 // Applies to plugins spawned from now on; running downloads
                 // keep the proxy they started with. PAC is evaluated per task,
@@ -1364,8 +1517,11 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
             Ok(json!({ "settings": state.settings }))
         }
         "install_plugin" => install_plugin(state, request),
+        "uninstall_plugin" => uninstall_plugin(state, request),
+        "rollback_plugin" => rollback_plugin(state, request),
         "rescan_plugins" => {
             let total = rescan_registry(state)?;
+            restart_aria2_bridge(state);
             Ok(json!({ "plugins": total }))
         }
         "plugin_updates" => plugin_updates(state),
@@ -1434,6 +1590,91 @@ fn install_plugin(state: &mut State, request: Request) -> Result<Value, DaemonEr
     install_package(state, Path::new(path))
 }
 
+/// True while a task owned by `plugin_id` is still running. Disabling,
+/// replacing, rolling back or uninstalling a plugin must never pull the
+/// binary out from under a live download.
+fn plugin_is_busy(state: &State, plugin_id: &str) -> bool {
+    state.active.iter().any(|task_id| {
+        state
+            .store
+            .task(task_id)
+            .ok()
+            .flatten()
+            .is_some_and(|task| task.plugin_id == plugin_id)
+    })
+}
+
+/// Remove an installed plugin package. Refuses while its tasks are running
+/// (the same rule as disable/install), deletes the package and the retained
+/// rollback copy, and forgets the persisted disabled flag so a later reinstall
+/// starts enabled.
+fn uninstall_plugin(state: &mut State, request: Request) -> Result<Value, DaemonError> {
+    let plugin_id = request
+        .plugin
+        .clone()
+        .ok_or_else(|| DaemonError::Protocol("uninstall_plugin needs plugin".into()))?;
+    let entry = state
+        .manager
+        .registry()
+        .get(&plugin_id)
+        .ok_or_else(|| DaemonError::Protocol(format!("plugin {plugin_id} is not installed")))?;
+    // Canonicalize both sides: a symlinked package must not let the delete
+    // escape the plugins directory. The registry only accepts direct child
+    // packages, and `plugin_id` is validated by the manifest parser.
+    let canonical_root = fs::canonicalize(&state.plugins_dir)?;
+    let target = fs::canonicalize(&entry.root)?;
+    if target.parent() != Some(canonical_root.as_path()) {
+        return Err(DaemonError::Protocol(format!(
+            "plugin {plugin_id} does not live directly under the plugins directory"
+        )));
+    }
+    if plugin_is_busy(state, &plugin_id) {
+        return Err(DaemonError::Protocol(format!(
+            "plugin {plugin_id} still has running tasks"
+        )));
+    }
+    let is_service = entry.manifest.kind == PluginKind::Service;
+    state.manager.stop(&plugin_id);
+    if is_service {
+        stop_aria2_bridge(state);
+    }
+    state.live.retain(|task_id| {
+        state
+            .store
+            .task(task_id)
+            .ok()
+            .flatten()
+            .is_none_or(|task| task.plugin_id != plugin_id)
+    });
+    fs::remove_dir_all(&target)?;
+    let _ = fs::remove_dir_all(state.data_dir.join("plugin-backups").join(&plugin_id));
+    state.store.set_plugin_disabled(&plugin_id, false)?;
+    rescan_registry(state)?;
+    Ok(json!({ "plugin_id": plugin_id, "removed": true }))
+}
+
+/// Reinstall the retained previous version. The backup goes through the same
+/// verified install path as a fresh package (manifest, host range, signature
+/// and file hashes), and the currently installed copy becomes the new
+/// backup — rollback is repeatable, not destructive.
+fn rollback_plugin(state: &mut State, request: Request) -> Result<Value, DaemonError> {
+    let plugin_id = request
+        .plugin
+        .clone()
+        .ok_or_else(|| DaemonError::Protocol("rollback_plugin needs plugin".into()))?;
+    let backup = state.data_dir.join("plugin-backups").join(&plugin_id);
+    if !backup.join("plugin.json").is_file() {
+        return Err(DaemonError::Protocol(format!(
+            "plugin {plugin_id} has no retained previous version"
+        )));
+    }
+    let mut value = install_package(state, &backup)?;
+    if let Some(object) = value.as_object_mut() {
+        object.insert("rolled_back".into(), Value::Bool(true));
+    }
+    Ok(value)
+}
+
 /// An update client for the plugin channel, or `None` when the daemon was
 /// not configured with both the manifest URL and the release key (the same
 /// trust root the app-update loop uses).
@@ -1466,11 +1707,19 @@ fn plugin_updates(state: &State) -> Result<Value, DaemonError> {
         .iter()
         .map(|entry| (entry.manifest.id.clone(), entry.manifest.version.clone()))
         .collect();
+    let pins = state.settings.plugin_pins.clone().unwrap_or_default();
+    let pinned = manifest
+        .plugins
+        .keys()
+        .filter(|id| pins.contains_key(*id))
+        .cloned()
+        .collect::<Vec<_>>();
     let updates = manifest
         .plugins
         .iter()
         .filter(|(id, entry)| {
-            installed.get(*id).map(String::as_str) != Some(entry.version.as_str())
+            !pins.contains_key(*id)
+                && installed.get(*id).map(String::as_str) != Some(entry.version.as_str())
         })
         .map(|(id, entry)| {
             json!({
@@ -1480,7 +1729,7 @@ fn plugin_updates(state: &State) -> Result<Value, DaemonError> {
             })
         })
         .collect::<Vec<_>>();
-    Ok(json!({ "configured": true, "updates": updates }))
+    Ok(json!({ "configured": true, "updates": updates, "pinned": pinned }))
 }
 
 /// Download, verify and install every outdated plugin from the update
@@ -1502,9 +1751,15 @@ fn plugin_update_all(state: &mut State) -> Result<Value, DaemonError> {
         .map(|entry| (entry.manifest.id.clone(), entry.manifest.version.clone()))
         .collect();
 
+    let pins = state.settings.plugin_pins.clone().unwrap_or_default();
     let mut updated = Vec::new();
     let mut failed = Vec::new();
+    let mut skipped = Vec::new();
     for (id, entry) in &manifest.plugins {
+        if pins.contains_key(id) {
+            skipped.push(id.clone());
+            continue;
+        }
         if installed.get(id).map(String::as_str) == Some(entry.version.as_str()) {
             continue;
         }
@@ -1516,6 +1771,7 @@ fn plugin_update_all(state: &mut State) -> Result<Value, DaemonError> {
     Ok(json!({
         "updated": updated,
         "failed": failed,
+        "skipped_pinned": skipped,
         "up_to_date": updated.is_empty() && failed.is_empty(),
     }))
 }
@@ -1652,6 +1908,25 @@ fn install_package(state: &mut State, package: &Path) -> Result<Value, DaemonErr
         fs::remove_dir_all(&staging)?;
     }
     copy_dir(package, &staging)?;
+    // Keep exactly one previous version outside `plugins_dir` (a backup
+    // directory inside the scan root would be discovered as a duplicate
+    // plugin id). `rollback_plugin` installs it through this same verified
+    // path, so a rollback cannot bypass signature/integrity checks.
+    if target.is_dir() {
+        let backup_root = state.data_dir.join("plugin-backups");
+        fs::create_dir_all(&backup_root)?;
+        let backup = backup_root.join(&manifest.id);
+        let backup_staging =
+            backup_root.join(format!(".tmp-{}-{}", manifest.id, std::process::id()));
+        if backup_staging.exists() {
+            fs::remove_dir_all(&backup_staging)?;
+        }
+        copy_dir(&target, &backup_staging)?;
+        if backup.exists() {
+            fs::remove_dir_all(&backup)?;
+        }
+        fs::rename(&backup_staging, &backup)?;
+    }
     if let Err(error) = fs::rename(&target, &retired) {
         if target.exists() {
             fs::remove_dir_all(&staging)?;
@@ -1667,6 +1942,7 @@ fn install_package(state: &mut State, package: &Path) -> Result<Value, DaemonErr
     let _ = fs::remove_dir_all(&retired);
 
     rescan_registry(state)?;
+    restart_aria2_bridge(state);
     Ok(json!({
         "plugin_id": manifest.id,
         "version": manifest.version,
@@ -2381,6 +2657,98 @@ fn init_proxy(proxy: Option<&ProxySetting>) -> Option<ProxyConfig> {
 /// every idle plugin process is stopped; its next use respawns it with the
 /// new configuration. Plugins with running or paused work keep their process
 /// (and therefore their old settings) until that work finishes.
+/// Stop idle plugins that declare `external-process`; used when the policy
+/// flips to "blocked". Busy plugins keep running until their task ends.
+fn stop_idle_external_plugins(state: &mut State) {
+    let busy: HashSet<String> = state
+        .live
+        .iter()
+        .filter_map(|task_id| {
+            state
+                .store
+                .task(task_id)
+                .ok()
+                .flatten()
+                .map(|task| task.plugin_id)
+        })
+        .collect();
+    let ids = state
+        .manager
+        .registry()
+        .iter()
+        .filter(|entry| {
+            entry
+                .manifest
+                .capabilities
+                .contains(&aether_plugin_sdk::Capability::ExternalProcess)
+        })
+        .map(|entry| entry.manifest.id.clone())
+        .filter(|id| !busy.contains(id))
+        .collect::<Vec<_>>();
+    for id in ids {
+        state.manager.stop(&id);
+    }
+}
+
+/// Start the aria2 compatibility service when an enabled `kind: "service"`
+/// plugin declares the `aria2` protocol. Failure is logged, not fatal:
+/// downloads keep working and HTTP requests answer 503.
+fn spawn_aria2_bridge(state: &mut State) {
+    let launch = state
+        .manager
+        .registry()
+        .iter()
+        .find(|entry| {
+            entry.enabled
+                && entry.manifest.kind == PluginKind::Service
+                && entry
+                    .manifest
+                    .protocols
+                    .iter()
+                    .any(|protocol| protocol == "aria2")
+        })
+        .and_then(|entry| {
+            entry
+                .executable()
+                .ok()
+                .map(|executable| (entry.manifest.clone(), executable))
+        });
+    let Some((manifest, executable)) = launch else {
+        return;
+    };
+    let init = Init {
+        host_version: state.host_version.clone(),
+        data_dir: state.data_dir.to_string_lossy().into_owned(),
+        log_level: LogLevel::Info,
+        proxy: None,
+        limits: Default::default(),
+        network: None,
+    };
+    let socket = state.socket.to_string_lossy().into_owned();
+    match crate::aria2::PluginBridge::spawn(manifest, executable, init, socket) {
+        Ok(bridge) => {
+            eprintln!("aether-daemon: aria2 compatibility bridge ready");
+            *state.aria2.lock().unwrap() = Some(Arc::new(bridge));
+        }
+        Err(error) => eprintln!("aether-daemon: {error}"),
+    }
+}
+
+fn stop_aria2_bridge(state: &State) {
+    // Take the slot synchronously (so no new HTTP request picks it up), but
+    // stop the process on a worker thread: an in-flight bridge call holds the
+    // process mutex while it may be waiting on this same event loop.
+    let bridge = state.aria2.lock().ok().and_then(|mut slot| slot.take());
+    if let Some(bridge) = bridge {
+        thread::spawn(move || bridge.stop());
+    }
+}
+
+fn restart_aria2_bridge(state: &mut State) {
+    stop_aria2_bridge(state);
+    spawn_aria2_bridge(state);
+}
+
 fn restart_idle_plugins(state: &mut State) {
     let busy: HashSet<String> = state
         .live

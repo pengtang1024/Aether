@@ -19,7 +19,7 @@ use std::time::Duration;
 use serde::Serialize;
 use slint::ComponentHandle;
 use zbus::interface;
-use zbus::zvariant::{Array, Dict, Signature, Structure, Type, Value};
+use zbus::zvariant::{Array, Dict, ObjectPath, Signature, Structure, Type, Value};
 
 /// A signature literal that is correct by construction; `expect` documents
 /// that a failure here would be a source-code bug, not runtime input.
@@ -91,7 +91,7 @@ fn run(shared: Arc<TrayShared>, ready: mpsc::Sender<Result<(), String>>) {
         )
         .and_then(|_| {
             conn.object_server().at(
-                "/Menu",
+                MENU_PATH,
                 Menu {
                     shared: shared.clone(),
                 },
@@ -140,6 +140,11 @@ fn register_with_watcher(conn: &zbus::blocking::Connection, service: &str) -> Re
 // org.kde.StatusNotifierItem
 // ---------------------------------------------------------------------------
 
+/// The dbusmenu object path, exported below and announced through the
+/// StatusNotifierItem `Menu` property (Ubuntu's AppIndicator extension treats
+/// `Id` + `Menu` as required and drops the icon when either lookup fails).
+const MENU_PATH: &str = "/Menu";
+
 struct Item {
     shared: Arc<TrayShared>,
 }
@@ -169,6 +174,15 @@ impl Item {
     #[zbus(property)]
     fn icon_name(&self) -> &str {
         "aether"
+    }
+
+    /// Path of the dbusmenu object (exported below). Ubuntu's AppIndicator
+    /// extension treats `Id` + `Menu` as required properties and silently
+    /// drops the icon when either lookup fails — `ItemIsMenu` alone is not
+    /// enough.
+    #[zbus(property)]
+    fn menu(&self) -> ObjectPath<'static> {
+        ObjectPath::from_static_str(MENU_PATH).expect("static object path")
     }
 
     #[zbus(property)]
@@ -326,5 +340,19 @@ impl Menu {
                 _ => {}
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The `Menu` property must be a valid D-Bus object path: zbus derives the
+    /// property signature (`o`) from the Rust type, and a bad literal would
+    /// make the whole interface fail to export.
+    #[test]
+    fn menu_property_is_a_valid_object_path() {
+        let path = ObjectPath::from_static_str(MENU_PATH).expect("valid object path");
+        assert_eq!(path.as_str(), "/Menu");
     }
 }

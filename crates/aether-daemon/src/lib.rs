@@ -1,5 +1,6 @@
 //! Aether background daemon: SQLite + plugin runtime over a local socket.
 
+pub mod aria2;
 pub mod client;
 mod client_types;
 pub mod error;

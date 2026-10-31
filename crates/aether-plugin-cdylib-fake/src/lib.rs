@@ -109,6 +109,13 @@ impl Plugin for AbiFake {
             HostCommand::Init { .. } => {
                 return Err(SdkError::Protocol("init handled by ABI runner".into()))
             }
+            // Service/bridge commands target `kind: "service"` plugins
+            // (aria2 compatibility); download plugins must not accept them.
+            HostCommand::ServiceInit { .. } | HostCommand::BridgeCall { .. } => {
+                return Err(SdkError::Protocol(
+                    "service commands are not supported by this plugin".into(),
+                ));
+            }
             HostCommand::Ping { .. } | HostCommand::Shutdown => {
                 return Err(SdkError::Protocol(
                     "ping/shutdown handled by ABI runner".into(),

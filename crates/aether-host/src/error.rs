@@ -26,6 +26,12 @@ pub enum HostError {
     #[error("plugin is disabled: {0}")]
     PluginDisabled(String),
 
+    #[error("plugin {0} is a service bridge, not a downloader")]
+    ServicePlugin(String),
+
+    #[error("plugin {plugin} needs capability {capability}, which host policy blocks")]
+    CapabilityDenied { plugin: String, capability: String },
+
     #[error("path escapes the task staging directory: {0}")]
     UnsafePath(String),
 

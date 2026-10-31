@@ -172,8 +172,9 @@ fn remote_controls_a_running_daemon() {
     assert!(!remote_ok(&socket, &["list", "--json"]).contains(&held));
 
     // Settings round-trip, including an invalid object being rejected. A
-    // fresh daemon reports the scheduler limits it resolved at startup and
-    // nothing else: proxy and network stay absent until someone sets them.
+    // fresh daemon reports the scheduler limits it resolved at startup plus
+    // the RPC listener/token seeded on first boot; proxy and network stay
+    // absent until someone sets them.
     let settings: Value = serde_json::from_str(&remote_ok(&socket, &["settings"])).unwrap();
     let mut keys: Vec<&str> = settings
         .as_object()
@@ -188,7 +189,9 @@ fn remote_controls_a_running_daemon() {
             "connections",
             "max_concurrent",
             "max_speed_bps",
-            "retry_max"
+            "retry_max",
+            "rpc_listen",
+            "rpc_secret"
         ],
         "{settings}"
     );

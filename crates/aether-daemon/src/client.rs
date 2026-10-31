@@ -310,6 +310,30 @@ impl Client {
         )
     }
 
+    /// Remove an installed plugin package (refused while its tasks run).
+    pub fn uninstall_plugin(&mut self, plugin_id: &str) -> Result<Value, DaemonError> {
+        self.call(
+            "uninstall_plugin",
+            None,
+            Some(plugin_id),
+            None,
+            None,
+            json!({}),
+        )
+    }
+
+    /// Reinstall the retained previous version of a plugin.
+    pub fn rollback_plugin(&mut self, plugin_id: &str) -> Result<Value, DaemonError> {
+        self.call(
+            "rollback_plugin",
+            None,
+            Some(plugin_id),
+            None,
+            None,
+            json!({}),
+        )
+    }
+
     /// Re-scan the plugins directory and report the installed count.
     pub fn rescan_plugins(&mut self) -> Result<Value, DaemonError> {
         self.call("rescan_plugins", None, None, None, None, json!({}))

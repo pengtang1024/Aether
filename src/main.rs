@@ -12,6 +12,7 @@ mod chart;
 mod clipboard;
 mod i18n;
 mod instance;
+mod launch;
 mod model;
 mod tray;
 
@@ -26,6 +27,7 @@ use std::time::{Duration, Instant};
 
 use slint::{Model, ModelRc, Timer, TimerMode, VecModel};
 
+use aether_daemon::settings::{generate_rpc_secret, RPC_LISTEN_DEFAULT};
 use aether_daemon::PluginInfo;
 use backend::Backend;
 use chart::{chart_paths, chart_peak};
@@ -205,6 +207,10 @@ fn plugin_blurb(info: &PluginInfo) -> String {
         "aliyunpan" => i18n::tr("阿里云盘（官方 API）", "Aliyun Drive (official API)"),
         "thunder" => i18n::tr("迅雷链接", "Thunder links"),
         "ipfs" => i18n::tr("IPFS / IPNS 内容", "IPFS / IPNS content"),
+        "aria2" => i18n::tr(
+            "aria2 JSON-RPC 兼容（HTTP）",
+            "aria2 JSON-RPC compatibility (HTTP)",
+        ),
         other => {
             if info.protocols.is_empty() {
                 i18n::tr(format!("协议：{other}"), format!("Protocol: {other}"))
@@ -218,6 +224,71 @@ fn plugin_blurb(info: &PluginInfo) -> String {
     }
 }
 
+/// Capability labels shown in the plugin catalogue. These are the manifest
+/// contract, so they matter to users: "external process" means the plugin may
+/// run yt-dlp/ffmpeg, and the daemon can refuse that class outright.
+fn plugin_caps(info: &PluginInfo) -> String {
+    if info.capabilities.is_empty() {
+        return i18n::tr("无", "None");
+    }
+    info.capabilities
+        .iter()
+        .map(|capability| match capability.as_str() {
+            "network" => i18n::tr("网络", "Network"),
+            "filesystem:task" => i18n::tr("任务目录", "Task files"),
+            "external-process" => i18n::tr("外部进程", "External process"),
+            "clipboard" => i18n::tr("剪贴板", "Clipboard"),
+            "http3" => "HTTP/3".to_string(),
+            other => other.to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join(" · ")
+}
+
+/// Render the daemon's `plugin_pins` map as the text field's
+/// `id=version; id=version` form (sorted, so a refresh does not shuffle it).
+fn format_plugin_pins(value: &serde_json::Value) -> String {
+    let Some(pins) = value.as_object() else {
+        return String::new();
+    };
+    let mut entries = pins
+        .iter()
+        .filter_map(|(id, version)| version.as_str().map(|version| format!("{id}={version}")))
+        .collect::<Vec<_>>();
+    entries.sort();
+    entries.join("; ")
+}
+
+/// Parse the pin text field. Validation of ids/semver happens in the daemon
+/// (`set_settings`); this only rejects entries without an `=`.
+fn parse_plugin_pins(text: &str) -> Result<serde_json::Value, String> {
+    let mut pins = serde_json::Map::new();
+    for entry in text.split([';', '\n']) {
+        let entry = entry.trim();
+        if entry.is_empty() {
+            continue;
+        }
+        let (id, version) = entry.split_once('=').ok_or_else(|| {
+            i18n::tr(
+                format!("条目缺少 =：{entry}"),
+                format!("Missing = in {entry}"),
+            )
+        })?;
+        let (id, version) = (id.trim(), version.trim());
+        if id.is_empty() || version.is_empty() {
+            return Err(i18n::tr(
+                format!("条目不完整：{entry}"),
+                format!("Incomplete entry: {entry}"),
+            ));
+        }
+        pins.insert(
+            id.to_string(),
+            serde_json::Value::String(version.to_string()),
+        );
+    }
+    Ok(serde_json::Value::Object(pins))
+}
+
 /// Catalogue grouping; mirrors the filter tabs (全部/内置/已启用).
 fn plugin_category(id: &str) -> String {
     match id {
@@ -229,6 +300,7 @@ fn plugin_category(id: &str) -> String {
         "gdrive" | "onedrive" | "dropbox" | "baidupan" | "aliyunpan" | "thunder" => {
             i18n::tr("网盘", "Cloud drive")
         }
+        "aria2" => "RPC".into(),
         _ => i18n::tr("其他", "Other"),
     }
 }
@@ -241,9 +313,9 @@ fn plugin_icon(id: &str) -> i32 {
         "media" | "extractor" => 1, // play
         "rtmp" => 11,               // signal
         "webdav" | "s3" | "gdrive" | "onedrive" | "dropbox" | "baidupan" | "aliyunpan" => 3, // cloud
-        "thunder" => 11,
-        "ipfs" => 9, // layers
-        _ => 6,      // list
+        "thunder" | "aria2" => 11, // signal
+        "ipfs" => 9,               // layers
+        _ => 6,                    // list
     }
 }
 
@@ -443,15 +515,29 @@ fn refresh_rows(ui: &AppWindow, state: &Rc<RefCell<State>>) {
             ui.set_settings_plugin_auto_update(
                 settings["plugin_auto_update"].as_bool().unwrap_or(false),
             );
+            ui.set_settings_plugin_pins(format_plugin_pins(&settings["plugin_pins"]).into());
+            ui.set_settings_plugin_external_process(
+                settings["plugin_external_process"]
+                    .as_bool()
+                    .unwrap_or(true),
+            );
             // Missing means "on": that is what the update loop did before the
             // switch existed.
             ui.set_settings_app_auto_update(settings["app_auto_update"].as_bool().unwrap_or(true));
-            // RPC is configured through the same settings file; the token
-            // itself is never mirrored into the input field.
-            let rpc_listen = settings["rpc_listen"].as_str().unwrap_or("");
+            // RPC is configured through the same settings file. A missing
+            // address means an older daemon that has not seeded the default
+            // yet; an empty string is the explicit "off" state. The token is
+            // mirrored into the masked field so the random button can replace
+            // it and the user can copy the generated one.
+            let rpc_listen = settings["rpc_listen"]
+                .as_str()
+                .unwrap_or(RPC_LISTEN_DEFAULT)
+                .to_string();
             let rpc_secret = settings["rpc_secret"].as_str().unwrap_or("");
-            ui.set_settings_rpc_listen(rpc_listen.to_string().into());
-            ui.set_settings_rpc_status(rpc_status_text(rpc_listen, !rpc_secret.is_empty()).into());
+            ui.set_settings_rpc_listen(rpc_listen.clone().into());
+            ui.set_settings_rpc_listen_value(rpc_listen.clone().into());
+            ui.set_settings_rpc_secret_value(rpc_secret.to_string().into());
+            ui.set_settings_rpc_status(rpc_status_text(&rpc_listen, !rpc_secret.is_empty()).into());
             // Scheduled window (daemon-side; HH:MM strings, blank = unset).
             ui.set_settings_schedule_on(settings["schedule_on"].as_bool().unwrap_or(false));
             ui.set_settings_schedule_start(
@@ -709,12 +795,15 @@ fn refresh_rows(ui: &AppWindow, state: &Rc<RefCell<State>>) {
                 id: index as i32,
                 name: info.name.clone().into(),
                 description: plugin_blurb(info).into(),
+                caps: plugin_caps(info).into(),
                 version: info.version.clone().into(),
                 category: plugin_category(&info.id).into(),
                 kind: 0,
                 enabled: info.enabled,
+                blocked: info.blocked,
                 update: false,
                 featured: false,
+                can_rollback: info.has_backup,
                 icon: plugin_icon(&info.id),
                 tone: plugin_tone(&info.id),
             })
@@ -1231,6 +1320,15 @@ fn system_is_dark() -> bool {
 }
 
 fn main() -> Result<(), slint::PlatformError> {
+    // The autostart entries pass `--silent`, so a login launch stays in the
+    // tray without stealing focus. Manual launches have no flag and show the
+    // window; the request is still gated on a usable tray further down.
+    let silent = launch::requested_silent(
+        std::env::args_os()
+            .skip(1)
+            .map(|arg| arg.to_string_lossy().into_owned()),
+    );
+
     // One UI per user: a second launch would race for the daemon and the
     // tray, so it reports and exits. The guard lives for the whole process
     // (dropping it releases the lock).
@@ -1247,6 +1345,12 @@ fn main() -> Result<(), slint::PlatformError> {
         }
         other => other,
     };
+
+    // Keep the login entry we own healthy: an update may have moved the
+    // binary and entries written before this release lack `--silent`. A
+    // missing entry stays missing — deleting it is the user's off switch.
+    autostart::refresh();
+
     let ui = AppWindow::new()?;
     ui.set_app_version(env!("CARGO_PKG_VERSION").into());
 
@@ -1592,6 +1696,35 @@ fn main() -> Result<(), slint::PlatformError> {
                             i18n::tr("已关闭自动更新插件", "Automatic plugin updates are off").into()
                         });
                     }
+                    "plugin-external-process" => {
+                        let allowed = value.as_str() == "true";
+                        st.backend
+                            .set_setting(serde_json::json!({"plugin_external_process": allowed}));
+                        hint = Some(if allowed {
+                            i18n::tr(
+                                "已允许外部进程插件启动",
+                                "Plugins that need an external process may start",
+                            )
+                            .into()
+                        } else {
+                            i18n::tr(
+                                "已阻止外部进程插件：空闲实例已停止，运行中的任务当前进程跑完",
+                                "External-process plugins are blocked; idle instances stopped, running tasks finish their process",
+                            )
+                            .into()
+                        });
+                    }
+                    "plugin-pins" => match parse_plugin_pins(value.as_str()) {
+                        Ok(pins) => {
+                            st.backend
+                                .set_setting(serde_json::json!({"plugin_pins": pins}));
+                            hint = Some(i18n::tr(
+                                "版本固定已保存：更新检查会跳过这些插件",
+                                "Pins saved; update checks skip these plugins",
+                            ).into());
+                        }
+                        Err(error) => hint = Some(error),
+                    },
                     "app-auto-update" => {
                         let enabled = value.as_str() == "true";
                         st.backend
@@ -1974,6 +2107,57 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
+    // ---- plugin removal / rollback ------------------------------------------
+    {
+        let ui_handle = ui.as_weak();
+        let state = state.clone();
+        ui.on_plugin_remove(move |row| {
+            let Some(ui) = ui_handle.upgrade() else {
+                return;
+            };
+            let name = state
+                .borrow()
+                .plugins
+                .get(row as usize)
+                .map(|plugin| plugin.name.clone())
+                .unwrap_or_default();
+            state.borrow().backend.uninstall_plugin(row);
+            show_toast(
+                &ui,
+                &state,
+                &i18n::tr(
+                    format!("已请求卸载 {name}，有运行任务时会拒绝"),
+                    format!("Requested uninstalling {name}; refused while tasks are running"),
+                ),
+            );
+        });
+    }
+
+    {
+        let ui_handle = ui.as_weak();
+        let state = state.clone();
+        ui.on_plugin_rollback(move |row| {
+            let Some(ui) = ui_handle.upgrade() else {
+                return;
+            };
+            let name = state
+                .borrow()
+                .plugins
+                .get(row as usize)
+                .map(|plugin| plugin.name.clone())
+                .unwrap_or_default();
+            state.borrow().backend.rollback_plugin(row);
+            show_toast(
+                &ui,
+                &state,
+                &i18n::tr(
+                    format!("正在把 {name} 回滚到上一版…"),
+                    format!("Rolling {name} back to the previous version…"),
+                ),
+            );
+        });
+    }
+
     // ---- plugin toggles go to the daemon ------------------------------------
     {
         let ui_handle = ui.as_weak();
@@ -2087,43 +2271,60 @@ fn main() -> Result<(), slint::PlatformError> {
             let ui_handle = ui.as_weak();
             let state = state.clone();
             ui.on_rpc_apply(move |listen, secret| {
-            let Some(ui) = ui_handle.upgrade() else {
-                return;
-            };
-            let listen = listen.trim().to_string();
-            let secret = secret.trim().to_string();
-            let mut patch = serde_json::Map::new();
-            patch.insert(
-                "rpc_listen".into(),
-                if listen.is_empty() {
-                    serde_json::Value::Null
+                let Some(ui) = ui_handle.upgrade() else {
+                    return;
+                };
+                let listen = listen.trim().to_string();
+                let secret = secret.trim().to_string();
+                // The daemon rejects these too, but a local message beats a
+                // noticed-less optimistic toast: an empty token is legal on
+                // loopback only, and the address must be a socket address.
+                if !listen.is_empty() {
+                    match listen.parse::<std::net::SocketAddr>() {
+                        Ok(addr) if !addr.ip().is_loopback() && secret.is_empty() => {
+                            show_toast(
+                                &ui,
+                                &state,
+                                &i18n::tr(
+                                    "非回环地址必须设置访问令牌",
+                                    "A non-loopback address requires an access token",
+                                ),
+                            );
+                            return;
+                        }
+                        Ok(_) => {}
+                        Err(_) => {
+                            show_toast(
+                                &ui,
+                                &state,
+                                &i18n::tr(
+                                    "监听地址需要 ip:port，例如 127.0.0.1:6800",
+                                    "The listen address must be ip:port, e.g. 127.0.0.1:6800",
+                                ),
+                            );
+                            return;
+                        }
+                    }
+                }
+                // An empty string is an explicit choice: blank listen turns
+                // the listener off, blank token removes auth (loopback only).
+                state.borrow().backend.set_setting(serde_json::json!({
+                    "rpc_listen": listen,
+                    "rpc_secret": secret,
+                }));
+                let message = if listen.is_empty() {
+                    i18n::tr(
+                        "已关闭远程控制：重启 daemon 后生效",
+                        "Remote control disabled; applies after a daemon restart",
+                    )
                 } else {
-                    serde_json::json!(listen)
-                },
-            );
-            // An empty field means "keep the current token"; clearing is an
-            // explicit button so a stray blank apply cannot drop auth.
-            if !secret.is_empty() {
-                patch.insert("rpc_secret".into(), serde_json::json!(secret));
-            }
-            state
-                .borrow()
-                .backend
-                .set_setting(serde_json::Value::Object(patch));
-            ui.set_settings_rpc_secret_value("".into());
-            let message = if listen.is_empty() {
-                i18n::tr(
-                    "已关闭远程控制：重启 daemon 后生效",
-                    "Remote control disabled; applies after a daemon restart",
-                )
-            } else {
-                i18n::tr(
-                    "已保存 RPC 配置：监听地址重启后生效，令牌立即生效",
-                    "RPC settings saved; the address applies after a restart, the token immediately",
-                )
-            };
-            show_toast(&ui, &state, &message);
-        });
+                    i18n::tr(
+                        "已保存 RPC 配置：监听地址重启后生效，令牌立即生效",
+                        "RPC settings saved; the address applies after a restart, the token immediately",
+                    )
+                };
+                show_toast(&ui, &state, &message);
+            });
         }
         {
             let ui_handle = ui.as_weak();
@@ -2135,16 +2336,46 @@ fn main() -> Result<(), slint::PlatformError> {
                 state
                     .borrow()
                     .backend
-                    .set_setting(serde_json::json!({"rpc_secret": null}));
+                    .set_setting(serde_json::json!({"rpc_secret": ""}));
                 ui.set_settings_rpc_secret_value("".into());
                 show_toast(
                     &ui,
                     &state,
                     &i18n::tr(
-                        "已清除访问令牌：重启 daemon 后按新配置监听",
-                        "Access token cleared; the daemon applies it on the next start",
+                        "已清除访问令牌：立即生效（仅回环地址可用）",
+                        "Access token cleared; it applies immediately (loopback only)",
                     ),
                 );
+            });
+        }
+        {
+            let ui_handle = ui.as_weak();
+            let state = state.clone();
+            ui.on_rpc_random_secret(move || {
+                let Some(ui) = ui_handle.upgrade() else {
+                    return;
+                };
+                match generate_rpc_secret() {
+                    Some(secret) => {
+                        ui.set_settings_rpc_secret_value(secret.into());
+                        show_toast(
+                            &ui,
+                            &state,
+                            &i18n::tr(
+                                "已生成随机令牌：点击「应用」保存",
+                                "Random token generated; press Apply to save it",
+                            ),
+                        );
+                    }
+                    None => show_toast(
+                        &ui,
+                        &state,
+                        &i18n::tr(
+                            "无法从系统获取随机数，请手动填写令牌",
+                            "Could not read the OS random source; enter a token manually",
+                        ),
+                    ),
+                }
             });
         }
 
@@ -2440,7 +2671,21 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
-    ui.run()
+    // A silent start hides the window and leaves the tray as the way back.
+    // If the session refused a tray icon (GNOME without AppIndicator, macOS,
+    // a locked-down login session) hiding would strand the app with no entry
+    // point, so the request degrades to a normal visible start and says why.
+    if silent && !tray_up {
+        eprintln!("aether: --silent requested but no system tray is available; showing the window");
+    }
+    if launch::hide_on_start(silent, tray_up) {
+        // Nothing is visible, so the loop must survive "the last window was
+        // closed" and quit only when the tray menu asks it to.
+        slint::run_event_loop_until_quit()
+    } else {
+        ui.show()?;
+        slint::run_event_loop()
+    }
 }
 
 #[cfg(test)]
@@ -2547,5 +2792,30 @@ mod update_status_tests {
             no_token.contains("回环") || no_token.contains("loopback"),
             "{no_token}"
         );
+    }
+}
+
+#[cfg(test)]
+mod plugin_pin_tests {
+    use super::{format_plugin_pins, parse_plugin_pins};
+    use serde_json::json;
+
+    #[test]
+    fn pin_text_roundtrips_through_the_daemon_shape() {
+        let value = parse_plugin_pins("http=0.2.0; bt=1.0.0\ns3 = 0.1.0").unwrap();
+        assert_eq!(
+            value,
+            json!({"http": "0.2.0", "bt": "1.0.0", "s3": "0.1.0"})
+        );
+        assert_eq!(format_plugin_pins(&value), "bt=1.0.0; http=0.2.0; s3=0.1.0");
+        assert_eq!(format_plugin_pins(&json!(null)), "");
+        assert_eq!(parse_plugin_pins("  ; \n").unwrap(), json!({}));
+    }
+
+    #[test]
+    fn pin_text_rejects_entries_without_a_version() {
+        assert!(parse_plugin_pins("http").is_err());
+        assert!(parse_plugin_pins("http=").is_err());
+        assert!(parse_plugin_pins("=0.2.0").is_err());
     }
 }

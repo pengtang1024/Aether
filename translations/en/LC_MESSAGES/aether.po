@@ -757,8 +757,8 @@ msgstr "Search by name or URL"
 msgid "开机自启"
 msgstr "Start at login"
 
-msgid "登录系统时自动启动 Aether（由操作系统管理，删除自启项即关闭）"
-msgstr "Launch Aether when you sign in (managed by the OS; removing the autostart entry turns it off)"
+msgid "登录系统时静默启动 Aether（驻留托盘，不弹主窗口；由操作系统管理，删除自启项即关闭）"
+msgstr "Start Aether silently when you sign in — it stays in the tray without opening the main window (managed by the OS; removing the autostart entry turns it off)"
 
 msgid "关闭窗口"
 msgstr "Closing the window"
@@ -793,17 +793,20 @@ msgstr "CLI and other devices connect to the daemon"
 msgid "监听地址"
 msgstr "Listen address"
 
-msgid "例如 127.0.0.1:7777；留空关闭；非回环地址必须设置令牌；修改后重启 daemon 生效"
-msgstr "For example 127.0.0.1:7777; leave blank to turn it off; a non-loopback address requires a token; a restart applies the address"
+msgid "默认 127.0.0.1:6800；留空关闭；非回环地址必须设置令牌；修改后重启 daemon 生效"
+msgstr "Defaults to 127.0.0.1:6800; leave blank to turn it off; a non-loopback address requires a token; a restart applies the address"
 
 msgid "访问令牌"
 msgstr "Access token"
 
-msgid "留空保持不变；设置后立即生效（无需重启）"
-msgstr "Leave blank to keep the current token; a new token applies immediately (no restart)"
+msgid "默认自动生成；随机按钮换一个；留空表示不使用令牌（仅回环地址）；应用后立即生效"
+msgstr "Generated on first boot; the random button replaces it; leave blank to run without a token (loopback only); Apply takes effect immediately"
 
-msgid "留空保持不变"
-msgstr "Leave blank to keep it"
+msgid "留空表示不使用令牌"
+msgstr "Leave blank to run without a token"
+
+msgid "随机"
+msgstr "Random"
 
 msgid "状态"
 msgstr "Status"
@@ -813,3 +816,36 @@ msgstr "Clear token"
 
 msgid "未开启"
 msgstr "Off"
+
+msgid "权限："
+msgstr "Permissions: "
+
+msgid "（外部进程被设置阻止）"
+msgstr " (external process blocked by settings)"
+
+msgid "回滚"
+msgstr "Roll back"
+
+msgid "卸载"
+msgstr "Uninstall"
+
+msgid "固定插件版本"
+msgstr "Pin plugin versions"
+
+msgid "id=版本，多条用分号分隔；固定后自动/手动检查更新都会跳过该插件（仍可手动安装）"
+msgstr "id=version, separated by semicolons; update checks skip pinned plugins (manual install still works)"
+
+msgid "保存"
+msgstr "Save"
+
+msgid "允许外部进程"
+msgstr "Allow external processes"
+
+msgid "关闭后，声明 external-process 的插件（yt-dlp/ffmpeg）不会启动；运行中的任务跑完当前进程"
+msgstr "When off, plugins that declare external-process (yt-dlp/ffmpeg) do not start; running tasks finish on their current process"
+
+msgid "已允许外部进程插件启动"
+msgstr "External-process plugins may start"
+
+msgid "已阻止外部进程插件：空闲实例已停止，运行中的任务当前进程跑完"
+msgstr "External-process plugins blocked; idle instances stopped, running tasks finish their current process"

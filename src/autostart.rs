@@ -33,8 +33,10 @@ mod imp {
         } else {
             exe
         };
+        // `--silent` keeps a login launch in the tray: the window stays
+        // hidden unless the session has no tray to bring it back from.
         format!(
-            "[Desktop Entry]\nType=Application\nName=Aether\nComment=Aether download manager\nExec={exec}\nTerminal=false\nX-GNOME-Autostart-enabled=true\n"
+            "[Desktop Entry]\nType=Application\nName=Aether\nComment=Aether download manager\nExec={exec} --silent\nTerminal=false\nX-GNOME-Autostart-enabled=true\n"
         )
     }
 
@@ -88,7 +90,16 @@ mod imp {
         #[test]
         fn exec_is_quoted_when_the_path_has_spaces() {
             let entry = entry(Path::new("/opt/My Apps/aether"));
-            assert!(entry.contains("Exec=\"/opt/My Apps/aether\""), "{entry}");
+            assert!(
+                entry.contains("Exec=\"/opt/My Apps/aether\" --silent"),
+                "{entry}"
+            );
+        }
+
+        #[test]
+        fn login_entry_starts_silently() {
+            let entry = entry(Path::new("/usr/bin/aether"));
+            assert!(entry.contains("Exec=/usr/bin/aether --silent"), "{entry}");
         }
     }
 }
@@ -108,8 +119,9 @@ mod imp {
     pub fn set(enabled: bool) -> Result<(), String> {
         if enabled {
             let exe = std::env::current_exe().map_err(|error| error.to_string())?;
-            // Quoted so a path with spaces survives the login launch.
-            let data = format!("\"{}\"", exe.display());
+            // Quoted so a path with spaces survives the login launch;
+            // `--silent` keeps that launch in the tray.
+            let data = format!("\"{}\" --silent", exe.display());
             reg(&["add", KEY, "/v", VALUE, "/t", "REG_SZ", "/d", &data, "/f"])
                 .ok_or("reg add failed")?;
             Ok(())
@@ -144,6 +156,12 @@ mod imp {
         fn autostart_value_round_trips_through_the_registry() {
             set(true).expect("enable");
             assert!(is_enabled(), "Run value must exist after enable");
+            let output = Command::new("reg")
+                .args(["query", KEY, "/v", VALUE])
+                .output()
+                .expect("reg query must run");
+            let value = String::from_utf8_lossy(&output.stdout);
+            assert!(value.contains("--silent"), "{value}");
             set(false).expect("disable");
             assert!(!is_enabled(), "Run value must be gone after disable");
         }
@@ -171,7 +189,7 @@ mod imp {
              <plist version=\"1.0\">\n\
              <dict>\n\
              \t<key>Label</key><string>{LABEL}</string>\n\
-             \t<key>ProgramArguments</key><array><string>{exe}</string></array>\n\
+             \t<key>ProgramArguments</key><array><string>{exe}</string><string>--silent</string></array>\n\
              \t<key>RunAtLoad</key><true/>\n\
              </dict>\n\
              </plist>\n"
@@ -215,6 +233,7 @@ mod imp {
             let plist = plist(Path::new("/Applications/Aether & Co/aether"));
             assert!(plist.contains("<key>Label</key><string>com.pengtang1024.Aether</string>"));
             assert!(plist.contains("Aether &amp; Co"), "{plist}");
+            assert!(plist.contains("<string>--silent</string>"), "{plist}");
             assert!(plist.contains("<key>RunAtLoad</key><true/>"));
         }
     }
@@ -229,4 +248,19 @@ pub fn is_enabled() -> bool {
 /// can bounce the switch back and say why instead of pretending.
 pub fn set_enabled(enabled: bool) -> Result<(), String> {
     imp::set(enabled)
+}
+
+/// Rewrite an existing entry to the canonical form (this executable plus
+/// `--silent`). An AppImage update moves the binary, and entries written
+/// before the silent flag existed would keep launching visibly; refreshing
+/// on boot keeps the registration we own truthful. A missing entry stays
+/// missing: deleting it is how the user turns start-at-login off, and the
+/// switch must keep reporting that.
+pub fn refresh() {
+    if !is_enabled() {
+        return;
+    }
+    if let Err(error) = set_enabled(true) {
+        eprintln!("aether: could not refresh the autostart entry: {error}");
+    }
 }
