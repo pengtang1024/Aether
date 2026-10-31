@@ -3374,20 +3374,26 @@ fn existing_staging_root(state: &State, task_id: &str, final_dir: &Path) -> Path
 /// volume detection was wrong or the target mount refuses the hidden folder.
 fn prepare_staging(state: &State, task_id: &str, final_dir: &Path) -> std::io::Result<PathBuf> {
     let preferred = existing_staging_root(state, task_id, final_dir).join("staging");
-    match fs::create_dir_all(&preferred) {
-        Ok(()) => Ok(preferred),
+    let fallback = state
+        .download_dir
+        .join(".aether")
+        .join(task_id)
+        .join("staging");
+    create_dir_with_fallback(&preferred, &fallback)
+}
+
+/// Create `preferred`, falling back to `fallback` when the target mount is
+/// read-only, full enough to refuse a directory, or not a directory at all.
+fn create_dir_with_fallback(preferred: &Path, fallback: &Path) -> std::io::Result<PathBuf> {
+    match fs::create_dir_all(preferred) {
+        Ok(()) => Ok(preferred.to_path_buf()),
         Err(error) => {
             eprintln!(
                 "aether-daemon: cannot create staging under {}: {error}; using the download root",
                 preferred.display()
             );
-            let fallback = state
-                .download_dir
-                .join(".aether")
-                .join(task_id)
-                .join("staging");
-            fs::create_dir_all(&fallback)?;
-            Ok(fallback)
+            fs::create_dir_all(fallback)?;
+            Ok(fallback.to_path_buf())
         }
     }
 }
@@ -3536,11 +3542,43 @@ fn task_id(request: &Request) -> Result<String, DaemonError> {
 mod tests {
     use super::{parse_checksum, schedule_active};
     use serde_json::json;
+    use std::fs;
 
     #[test]
     fn same_filesystem_is_reflexive() {
         let dir = std::env::temp_dir();
         assert!(super::same_filesystem(&dir, &dir));
+    }
+
+    #[test]
+    fn same_filesystem_missing_paths_keep_centralized_staging() {
+        let dir = std::env::temp_dir();
+        let missing = dir.join("aether-missing-volume-target");
+        assert!(
+            super::same_filesystem(&dir, &missing),
+            "unknown metadata must keep the centralized staging root"
+        );
+    }
+
+    #[test]
+    fn staging_falls_back_when_the_preferred_path_is_blocked() {
+        let root = std::env::temp_dir().join(format!(
+            "aether-staging-fallback-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let blocker = root.join("not-a-directory");
+        fs::write(&blocker, b"x").unwrap();
+        let preferred = blocker.join("staging");
+        let fallback = root.join("fallback").join("staging");
+        let chosen = super::create_dir_with_fallback(&preferred, &fallback).unwrap();
+        assert_eq!(chosen, fallback);
+        assert!(fallback.is_dir());
+        fs::remove_dir_all(root).ok();
     }
 
     #[test]
