@@ -2,7 +2,7 @@
 Type=Application
 Version=1.0
 Name=Aether
-Comment=Native Material 3 download manager mockup
+Comment=Native Material 3 download manager
 Exec=aether
 Icon=aether
 Terminal=false

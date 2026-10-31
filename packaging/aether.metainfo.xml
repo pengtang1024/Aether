@@ -11,7 +11,9 @@
   </description>
   <launchable type="desktop-id">aether.desktop</launchable>
   <url type="homepage">https://github.com/pengtang1024/Aether</url>
-  <developer_name>pengtang1024</developer_name>
+  <developer id="io.github.pengtang1024">
+    <name>pengtang1024</name>
+  </developer>
   <content_rating type="oars-1.1"/>
   <screenshots>
     <screenshot type="default">
