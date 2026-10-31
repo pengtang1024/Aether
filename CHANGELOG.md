@@ -5,6 +5,8 @@ versioning; 0.x releases may still change structure.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-31
+
 ### Added
 
 - Silent start: `--silent` (alias `--minimized`) starts the daemon and the
