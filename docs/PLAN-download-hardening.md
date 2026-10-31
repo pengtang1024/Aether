@@ -279,7 +279,8 @@ fn create_staging_root(state, task_id, final_dir) -> Result<PathBuf, DaemonError
 - 故障注入：
   - 已在 Linux 覆盖 `kill -9` 插件；
   - 增加 daemon 重启中途恢复（复用现有 `spawn_daemon_at`）；
-  - 目标盘只读/磁盘满（Linux tmpfs 或 mock）。
+  - 目标盘只读/磁盘满（Linux tmpfs 或 mock）：已加 finalize 失败不销毁
+    staging 的回归测试；`ensure_space` 短缺/探测失败已有单测。
 - CI：nightly job 跑 `--ignored`，PR 只跑普通 E2E。
 
 ## 6. Phase D（可选）：下载中镜像 failover

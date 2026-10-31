@@ -167,8 +167,14 @@ mod tests {
     use aether_plugin_sdk::{Checksum, FileInfo};
 
     fn temp_dir(label: &str) -> PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("aether-finalize-{label}-{}", std::process::id()));
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "aether-finalize-{label}-{}-{nanos}",
+            std::process::id()
+        ));
         fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -191,6 +197,30 @@ mod tests {
         let moved = finalize_task(&staging, &final_dir, &files).unwrap();
         assert_eq!(moved.len(), 1);
         assert_eq!(fs::read(final_dir.join("a.bin")).unwrap(), b"hello");
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn destination_failure_leaves_staging_intact() {
+        let root = temp_dir("dest-failure");
+        let staging = root.join("staging");
+        // A file where the final directory should be makes create_dir_all
+        // fail for every user (including CI containers running as root).
+        let final_dir = root.join("final");
+        fs::create_dir_all(&staging).unwrap();
+        fs::write(staging.join("a.bin"), b"hello").unwrap();
+        fs::write(&final_dir, b"not a directory").unwrap();
+        let files = vec![FileInfo {
+            relative_path: "a.bin".into(),
+            size: 5,
+            checksum: None,
+        }];
+        assert!(finalize_task(&staging, &final_dir, &files).is_err());
+        assert_eq!(
+            fs::read(staging.join("a.bin")).unwrap(),
+            b"hello",
+            "a failed finalize must not destroy the staged download"
+        );
         fs::remove_dir_all(root).ok();
     }
 
