@@ -560,6 +560,8 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
   - `plugins` RPC 新增 `blocked`、`has_backup`、`external_process_allowed`。
 - **协议能力**：
   - HTTP：reqwest 启用 `http2`（TLS ALPN）；HTTP/3 仍未启用。
+  - HTTP 镜像 failover：`TaskSpec.settings.mirrors` 中同 ETag/同大小的候选支持
+    中途切换，已完成分片保留；无 ETag 时不跨源拼接。
   - SFTP：私钥（`sftp_key` + passphrase）与 SSH agent；settings > URL query >
     URL 密码的优先级，`~` 展开；无凭据给出可操作错误。
   - WebDAV：PROPFIND Depth:0 取 size/ETag 并识别 collection；403/405/501/

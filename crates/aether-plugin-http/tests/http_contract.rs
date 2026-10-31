@@ -41,6 +41,10 @@ fn sha256_hex(data: &[u8]) -> String {
 }
 
 fn start_server(data: Vec<u8>) -> TestServer {
+    start_server_with_etag(data, ETAG)
+}
+
+fn start_server_with_etag(data: Vec<u8>, etag: &'static str) -> TestServer {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     let ranges = Arc::new(Mutex::new(Vec::new()));
@@ -58,7 +62,9 @@ fn start_server(data: Vec<u8>) -> TestServer {
             let ranges = server_ranges.clone();
             let headers = server_headers.clone();
             let targets = server_targets.clone();
-            thread::spawn(move || handle_connection(stream, &data, &ranges, &headers, &targets));
+            thread::spawn(move || {
+                handle_connection(stream, &data, &ranges, &headers, &targets, etag)
+            });
         }
     });
 
@@ -76,6 +82,7 @@ fn handle_connection(
     ranges: &Mutex<Vec<String>>,
     headers: &Mutex<Vec<String>>,
     targets: &Mutex<Vec<String>>,
+    etag: &str,
 ) {
     let mut request = Vec::new();
     let mut buffer = [0_u8; 1024];
@@ -151,7 +158,7 @@ fn handle_connection(
     };
 
     let mut response = format!(
-        "HTTP/1.1 {status}\r\nContent-Length: {body_len}\r\nContent-Type: application/octet-stream\r\nETag: {ETAG}\r\nAccept-Ranges: bytes\r\nConnection: close\r\n"
+        "HTTP/1.1 {status}\r\nContent-Length: {body_len}\r\nContent-Type: application/octet-stream\r\nETag: {etag}\r\nAccept-Ranges: bytes\r\nConnection: close\r\n"
     );
     if let Some(content_range) = content_range {
         response.push_str(&format!("Content-Range: {content_range}\r\n"));
@@ -161,6 +168,89 @@ fn handle_connection(
     let _ = stream.write_all(response.as_bytes());
     if method != "HEAD" {
         let _ = stream.write_all(&body);
+    }
+    let _ = stream.flush();
+}
+
+struct TruncatingServer {
+    addr: SocketAddr,
+    ranges: Arc<Mutex<Vec<String>>>,
+}
+
+/// Serve valid headers, then send only `cut` body bytes and close. This models
+/// a source that dies mid-range without changing its ETag/size.
+fn start_truncating_server(data: Vec<u8>, cut: usize) -> TruncatingServer {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let ranges = Arc::new(Mutex::new(Vec::new()));
+    let server_ranges = ranges.clone();
+    let data = Arc::new(data);
+    thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(stream) = stream else { continue };
+            let data = data.clone();
+            let ranges = server_ranges.clone();
+            thread::spawn(move || handle_truncating(stream, &data, cut, &ranges));
+        }
+    });
+    TruncatingServer { addr, ranges }
+}
+
+fn handle_truncating(mut stream: TcpStream, data: &[u8], cut: usize, ranges: &Mutex<Vec<String>>) {
+    let mut request = Vec::new();
+    let mut buffer = [0_u8; 1024];
+    loop {
+        let read = match stream.read(&mut buffer) {
+            Ok(0) | Err(_) => return,
+            Ok(read) => read,
+        };
+        request.extend_from_slice(&buffer[..read]);
+        if request.windows(4).any(|window| window == b"\r\n\r\n") {
+            break;
+        }
+    }
+    let text = String::from_utf8_lossy(&request);
+    let mut lines = text.lines();
+    let Some(request_line) = lines.next() else {
+        return;
+    };
+    let mut parts = request_line.split_whitespace();
+    let method = parts.next().unwrap_or("GET");
+    let mut range_header = None;
+    for line in lines {
+        if let Some((name, value)) = line.split_once(':') {
+            if name.eq_ignore_ascii_case("range") {
+                range_header = Some(value.trim().to_string());
+            }
+        }
+    }
+    if let Some(range) = &range_header {
+        ranges.lock().unwrap().push(range.clone());
+    }
+    let range = range_header
+        .as_deref()
+        .and_then(|value| parse_range(value, data.len()));
+    let (start, end) = range.unwrap_or((0, data.len() - 1));
+    let body_len = end - start + 1;
+    let status = if range_header.is_some() {
+        "206 Partial Content"
+    } else {
+        "200 OK"
+    };
+    let mut response = format!(
+        "HTTP/1.1 {status}\r\nContent-Length: {body_len}\r\nContent-Type: application/octet-stream\r\nETag: {ETAG}\r\nAccept-Ranges: bytes\r\nConnection: close\r\n"
+    );
+    if range_header.is_some() {
+        response.push_str(&format!(
+            "Content-Range: bytes {start}-{end}/{}\r\n",
+            data.len()
+        ));
+    }
+    response.push_str("\r\n");
+    let _ = stream.write_all(response.as_bytes());
+    if method != "HEAD" {
+        let sent = cut.min(body_len);
+        let _ = stream.write_all(&data[start..start + sent]);
     }
     let _ = stream.flush();
 }
@@ -308,6 +398,62 @@ fn wait_for_completed(plugin: &mut PluginProcess) {
         }
     }
     panic!("task did not complete");
+}
+
+fn wait_for_failed(plugin: &mut PluginProcess) -> aether_plugin_sdk::PluginError {
+    for _ in 0..100 {
+        match plugin.recv_event(Duration::from_secs(2)).unwrap() {
+            PluginEvent::Failed { task_id, error } if task_id == "task-1" => return error,
+            PluginEvent::Completed { .. } => panic!("task unexpectedly completed"),
+            _ => {}
+        }
+    }
+    panic!("task did not finish");
+}
+
+fn start_task_one_connection(
+    plugin: &mut PluginProcess,
+    url: String,
+    staging: PathBuf,
+    checksum: String,
+    settings: serde_json::Value,
+) {
+    plugin
+        .start_task(
+            TaskSpec {
+                task_id: "task-1".into(),
+                url,
+                filename: None,
+                settings,
+                plugin_state: None,
+                expected_size: Some(FILE_SIZE as u64),
+                checksum: Some(Checksum {
+                    algorithm: ChecksumAlgorithm::Sha256,
+                    value: checksum,
+                }),
+                proxy: None,
+            },
+            TaskPaths {
+                staging,
+                final_dir: PathBuf::from("/tmp/aether-final"),
+            },
+            Budget {
+                connections: 1,
+                per_host_connections: 1,
+                download_bps: 0,
+                upload_bps: 0,
+            },
+        )
+        .unwrap();
+}
+
+fn range_start(range: &str) -> Option<u64> {
+    range
+        .strip_prefix("bytes=")?
+        .split_once('-')?
+        .0
+        .parse()
+        .ok()
 }
 
 #[test]
@@ -612,4 +758,78 @@ fn honors_a_per_task_proxy_override() {
 
     plugin.shutdown().unwrap();
     fs::remove_dir_all(root).ok();
+}
+
+#[test]
+fn fails_over_mid_download_and_keeps_completed_ranges() {
+    let data = test_data();
+    let cut = 16 * 1024;
+    let primary = start_truncating_server(data.clone(), cut);
+    let mirror = start_server(data.clone());
+    let root = temp_dir("mid-failover");
+    let staging = root.join("staging");
+    fs::create_dir_all(&staging).unwrap();
+    let mirror_url = format!("http://{}/file.bin", mirror.addr);
+
+    let mut plugin = PluginProcess::spawn(manifest(), &executable(), init(&root)).unwrap();
+    start_task_one_connection(
+        &mut plugin,
+        format!("http://{}/file.bin", primary.addr),
+        staging.clone(),
+        sha256_hex(&data),
+        serde_json::json!({ "mirrors": [mirror_url] }),
+    );
+    wait_for_completed(&mut plugin);
+    plugin.shutdown().unwrap();
+
+    assert_eq!(fs::read(staging.join("file.bin")).unwrap(), data);
+    let primary_ranges = primary.ranges.lock().unwrap().clone();
+    assert!(
+        !primary_ranges.is_empty(),
+        "the primary must have been tried"
+    );
+    let mirror_ranges = mirror.ranges.lock().unwrap().clone();
+    assert!(!mirror_ranges.is_empty(), "the mirror must have been used");
+    // The probe uses a 1-byte `bytes=0-0` request; the actual download must
+    // resume strictly after the bytes the primary delivered.
+    assert!(
+        mirror_ranges
+            .iter()
+            .filter_map(|range| range_start(range))
+            .any(|start| start > 0),
+        "failover must resume after the bytes the primary delivered: {mirror_ranges:?}"
+    );
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn refuses_a_mirror_with_a_different_etag() {
+    let data = test_data();
+    let primary = start_truncating_server(data.clone(), 16 * 1024);
+    let mirror = start_server_with_etag(data.clone(), "\"different-etag\"");
+    let root = temp_dir("mid-failover-etag");
+    let staging = root.join("staging");
+    fs::create_dir_all(&staging).unwrap();
+    let mirror_url = format!("http://{}/file.bin", mirror.addr);
+
+    let mut plugin = PluginProcess::spawn(manifest(), &executable(), init(&root)).unwrap();
+    start_task_one_connection(
+        &mut plugin,
+        format!("http://{}/file.bin", primary.addr),
+        staging,
+        sha256_hex(&data),
+        serde_json::json!({ "mirrors": [mirror_url] }),
+    );
+    let error = wait_for_failed(&mut plugin);
+    assert!(
+        !error.message.is_empty(),
+        "the primary's failure must be reported"
+    );
+    plugin.shutdown().unwrap();
+    let mirror_ranges = mirror.ranges.lock().unwrap().clone();
+    assert!(
+        mirror_ranges.iter().all(|range| range == "bytes=0-0"),
+        "an incompatible mirror may only answer the probe, not a download: {mirror_ranges:?}"
+    );
+    fs::remove_dir_all(&root).ok();
 }

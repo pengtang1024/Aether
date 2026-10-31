@@ -2,7 +2,7 @@
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -125,9 +125,12 @@ fn run_inner(
             resolved_task.checksum = info.checksum;
         }
     }
-    // aria2 addUri accepts extra URIs as mirrors for the same file. Probe the
-    // primary first and fall back to a mirror only when it looks unhealthy;
-    // mid-download failover is not wired yet.
+    // The resume state must key on the stable source (the task/metalink URL),
+    // not the mirror selected for this run.
+    let resume_url = resolved_task.url.clone();
+    // aria2 addUri accepts extra URIs as mirrors for the same file. Probe
+    // every candidate once: the first healthy one becomes the starting source,
+    // the rest are kept for mid-download failover when ETag/size match.
     let mut candidates = vec![resolved_task.url.clone()];
     if let Some(mirrors) = resolved_task
         .settings
@@ -142,18 +145,30 @@ fn run_inner(
                 .map(str::to_string),
         );
     }
-    let primary = candidates.first().cloned().unwrap_or_default();
-    let mut info = client::probe_with(client, &primary, &extra);
-    if candidates.len() > 1 && (!info.supported || info.reason.is_some()) {
-        for candidate in &candidates[1..] {
-            let mirror = client::probe_with(client, candidate, &extra);
+    let probes = candidates
+        .iter()
+        .map(|candidate| {
+            (
+                candidate.clone(),
+                client::probe_with(client, candidate, &extra),
+            )
+        })
+        .collect::<Vec<_>>();
+    let mut active_url = candidates.first().cloned().unwrap_or_default();
+    let mut info = probes
+        .first()
+        .map(|(_, info)| info.clone())
+        .unwrap_or_else(|| client::probe_with(client, &active_url, &extra));
+    if probes.len() > 1 && (!info.supported || info.reason.is_some()) {
+        for (candidate, mirror) in &probes[1..] {
             if mirror.supported && mirror.reason.is_none() {
-                resolved_task.url = candidate.clone();
-                info = mirror;
+                active_url = candidate.clone();
+                info = mirror.clone();
                 break;
             }
         }
     }
+    resolved_task.url = active_url.clone();
     let task = &resolved_task;
 
     fs::create_dir_all(&paths.staging)?;
@@ -180,9 +195,33 @@ fn run_inner(
         1
     };
 
+    // Only same-file mirrors are eligible: Range support, identical size and
+    // an identical strong ETag. Weak/absent ETags cannot prove the two sources
+    // are the same bytes, so mid-download failover stays disabled.
+    let has_strong_etag = info
+        .etag
+        .as_deref()
+        .is_some_and(|etag| !etag.trim_start().starts_with("W/"));
+    let mut mirrors = vec![active_url.clone()];
+    if has_strong_etag {
+        for (candidate, mirror) in &probes {
+            if candidate == &active_url {
+                continue;
+            }
+            if mirror.supported
+                && mirror.reason.is_none()
+                && mirror.accept_ranges
+                && mirror.size == total
+                && mirror.etag == info.etag
+            {
+                mirrors.push(candidate.clone());
+            }
+        }
+    }
+
     let mut resume = load_or_create_state(
         paths,
-        &task.url,
+        &resume_url,
         info.etag.as_deref(),
         total,
         &filename,
@@ -209,7 +248,7 @@ fn run_inner(
 
     if resume.ranges.is_empty() {
         resume = ResumeState::new(
-            task.url.clone(),
+            resume_url.clone(),
             info.etag.clone(),
             total.unwrap_or(0),
             filename.clone(),
@@ -243,156 +282,190 @@ fn run_inner(
     });
 
     let file = Arc::new(file);
-    let (result_tx, result_rx) = mpsc::channel();
-    let mut workers = Vec::new();
-    for index in 0..range_count as usize {
-        let client = client.clone();
-        let url = task.url.clone();
-        let file = file.clone();
-        let shared = shared.clone();
-        let downloaded = downloaded.clone();
-        let control = control.clone();
-        let result_tx = result_tx.clone();
-        let extra = extra.clone();
-        let throttle = throttle.clone();
-        let budget = budget.clone();
-        workers.push(thread::spawn(move || {
-            let result = download_range(
-                &client,
-                &url,
-                &file,
-                index,
-                &shared,
-                &downloaded,
-                &control,
-                supports_range,
-                &extra,
-                &throttle,
-                &budget,
-            );
-            let _ = result_tx.send(result);
-        }));
-    }
-    drop(result_tx);
+    let mut mirror_index = 0_usize;
+    let mut final_error: Option<DownloadError> = None;
 
-    let mut active = range_count;
-    let mut first_error: Option<DownloadError> = None;
-    let mut last_bytes = total_downloaded;
-    let mut last_speed_time = Instant::now();
-    let mut last_progress = Instant::now() - PROGRESS_INTERVAL;
-    let mut last_state = Instant::now();
-    let mut disconnected = false;
-
+    // One attempt per compatible source. Completed ranges stay in `shared`,
+    // so a failover re-requests only the missing bytes.
     loop {
-        if control.is_canceled() {
-            break;
+        let attempt_url = mirrors[mirror_index].clone();
+        let stop = Arc::new(AtomicBool::new(false));
+        let (result_tx, result_rx) = mpsc::channel();
+        let mut workers = Vec::new();
+        for index in 0..range_count as usize {
+            let client = client.clone();
+            let url = attempt_url.clone();
+            let file = file.clone();
+            let shared = shared.clone();
+            let downloaded = downloaded.clone();
+            let control = control.clone();
+            let result_tx = result_tx.clone();
+            let extra = extra.clone();
+            let throttle = throttle.clone();
+            let budget = budget.clone();
+            let stop = stop.clone();
+            workers.push(thread::spawn(move || {
+                let result = download_range(
+                    &client,
+                    &url,
+                    &file,
+                    index,
+                    &shared,
+                    &downloaded,
+                    &control,
+                    supports_range,
+                    &extra,
+                    &throttle,
+                    &budget,
+                    &stop,
+                );
+                let _ = result_tx.send(result);
+            }));
         }
+        drop(result_tx);
+
+        let mut active = range_count;
+        let mut first_error: Option<DownloadError> = None;
+        let mut last_bytes = downloaded.load(Ordering::Relaxed);
+        let mut last_speed_time = Instant::now();
+        let mut last_progress = Instant::now() - PROGRESS_INTERVAL;
+        let mut last_state = Instant::now();
+        let mut disconnected = false;
 
         loop {
-            match result_rx.try_recv() {
-                Ok(Ok(())) => active = active.saturating_sub(1),
-                Ok(Err(error)) => {
-                    active = active.saturating_sub(1);
-                    if first_error.is_none() {
-                        first_error = Some(error);
-                    }
-                    // Stop the remaining workers as soon as one fails.
-                    if let Some(error) = &first_error {
-                        if !matches!(error, DownloadError::Canceled) {
-                            control.cancel();
+            if control.is_canceled() {
+                break;
+            }
+
+            loop {
+                match result_rx.try_recv() {
+                    Ok(Ok(())) => active = active.saturating_sub(1),
+                    Ok(Err(error)) => {
+                        active = active.saturating_sub(1);
+                        if first_error.is_none() {
+                            first_error = Some(error);
                         }
+                        // Stop the remaining workers without touching the
+                        // user's cancel/pause state: a mirror failover needs
+                        // the same TaskControl for the next attempt.
+                        stop.store(true, Ordering::Relaxed);
                     }
-                }
-                Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => {
-                    disconnected = true;
-                    break;
+                    Err(TryRecvError::Empty) => break,
+                    Err(TryRecvError::Disconnected) => {
+                        disconnected = true;
+                        break;
+                    }
                 }
             }
+
+            if disconnected || active == 0 {
+                break;
+            }
+
+            let now = Instant::now();
+            if now.duration_since(last_progress) >= PROGRESS_INTERVAL {
+                let bytes = downloaded.load(Ordering::Relaxed);
+                let elapsed = now.duration_since(last_speed_time).as_secs_f64();
+                let speed = if elapsed > 0.0 && !control.is_paused() {
+                    ((bytes.saturating_sub(last_bytes)) as f64 / elapsed) as u64
+                } else {
+                    0
+                };
+                last_bytes = bytes;
+                last_speed_time = now;
+                last_progress = now;
+
+                let (done, total_ranges) = {
+                    let state = shared.lock().unwrap();
+                    (
+                        state
+                            .ranges
+                            .iter()
+                            .filter(|range| range.is_complete())
+                            .count() as u32,
+                        state.ranges.len() as u32,
+                    )
+                };
+
+                let mut snapshot = progress.lock().unwrap();
+                snapshot.downloaded = bytes;
+                snapshot.total = total;
+                snapshot.speed_bps = speed;
+                snapshot.chunks_done = done;
+                snapshot.chunks_total = total_ranges;
+                snapshot.seq = snapshot.seq.saturating_add(1);
+
+                let _ = sender.send(&PluginEvent::Progress {
+                    task_id: task.task_id.clone(),
+                    seq: snapshot.seq,
+                    downloaded: bytes,
+                    total,
+                    speed_bps: speed,
+                    eta_secs: eta(bytes, total, speed),
+                    connections: if control.is_paused() { 0 } else { range_count },
+                    chunks_done: Some(done),
+                    chunks_total: Some(total_ranges),
+                });
+            }
+
+            if now.duration_since(last_state) >= STATE_INTERVAL {
+                persist_state(paths, &shared, sender);
+                last_state = now;
+            }
+
+            thread::sleep(Duration::from_millis(50));
         }
 
-        if disconnected || active == 0 {
+        for worker in workers {
+            if worker.join().is_err() && first_error.is_none() {
+                first_error = Some(DownloadError::Protocol("download worker panicked".into()));
+            }
+        }
+        if active > 0 && first_error.is_none() {
+            first_error = Some(DownloadError::Protocol(
+                "download worker stopped before the range completed".into(),
+            ));
+        }
+        persist_state(paths, &shared, sender);
+
+        let Some(error) = first_error else {
+            if control.is_canceled() && !is_complete(&shared, total) {
+                final_error = Some(DownloadError::Canceled);
+            }
+            break;
+        };
+
+        if matches!(error, DownloadError::Canceled) {
+            final_error = Some(error);
             break;
         }
 
-        let now = Instant::now();
-        if now.duration_since(last_progress) >= PROGRESS_INTERVAL {
-            let bytes = downloaded.load(Ordering::Relaxed);
-            let elapsed = now.duration_since(last_speed_time).as_secs_f64();
-            let speed = if elapsed > 0.0 && !control.is_paused() {
-                ((bytes.saturating_sub(last_bytes)) as f64 / elapsed) as u64
-            } else {
-                0
-            };
-            last_bytes = bytes;
-            last_speed_time = now;
-            last_progress = now;
-
-            let (done, total_ranges) = {
-                let state = shared.lock().unwrap();
-                (
-                    state
-                        .ranges
-                        .iter()
-                        .filter(|range| range.is_complete())
-                        .count() as u32,
-                    state.ranges.len() as u32,
-                )
-            };
-
-            let mut snapshot = progress.lock().unwrap();
-            snapshot.downloaded = bytes;
-            snapshot.total = total;
-            snapshot.speed_bps = speed;
-            snapshot.chunks_done = done;
-            snapshot.chunks_total = total_ranges;
-            snapshot.seq = snapshot.seq.saturating_add(1);
-
-            let _ = sender.send(&PluginEvent::Progress {
-                task_id: task.task_id.clone(),
-                seq: snapshot.seq,
-                downloaded: bytes,
-                total,
-                speed_bps: speed,
-                eta_secs: eta(bytes, total, speed),
-                connections: if control.is_paused() { 0 } else { range_count },
-                chunks_done: Some(done),
-                chunks_total: Some(total_ranges),
+        if mirror_retryable(&error) && mirror_index + 1 < mirrors.len() && !control.is_canceled() {
+            mirror_index += 1;
+            let next = &mirrors[mirror_index];
+            let _ = sender.send(&PluginEvent::Log {
+                level: aether_plugin_sdk::LogLevel::Warn,
+                message: format!(
+                    "source failed ({error}); switching to mirror {next} and keeping completed ranges"
+                ),
+                fields: Default::default(),
             });
+            continue;
         }
 
-        if now.duration_since(last_state) >= STATE_INTERVAL {
-            persist_state(paths, &shared, sender);
-            last_state = now;
-        }
-
-        thread::sleep(Duration::from_millis(50));
+        final_error = Some(error);
+        break;
     }
 
     control.cancel();
-    for worker in workers {
-        if worker.join().is_err() && first_error.is_none() {
-            first_error = Some(DownloadError::Protocol("download worker panicked".into()));
-        }
-    }
-    if active > 0 && first_error.is_none() {
-        first_error = Some(DownloadError::Protocol(
-            "download worker stopped before the range completed".into(),
-        ));
-    }
-    persist_state(paths, &shared, sender);
-
-    if let Some(DownloadError::InvalidRange) = first_error {
+    if let Some(DownloadError::InvalidRange) = final_error {
         // 416 means the server's view of the file changed; the saved ranges
         // are unusable, so drop them before the daemon retries from scratch.
         let _ = state::remove(&paths.staging);
         let _ = fs::remove_file(&file_path);
     }
-    if let Some(error) = first_error {
+    if let Some(error) = final_error {
         return Err(error);
-    }
-    if control.is_canceled() && first_error.is_none() && !is_complete(&shared, total) {
-        return Err(DownloadError::Canceled);
     }
 
     let final_size = file.metadata()?.len();
@@ -499,10 +572,14 @@ fn download_range(
     extra: &client::HeaderMap,
     throttle: &Arc<Mutex<Throttle>>,
     budget: &Arc<Mutex<Budget>>,
+    stop: &Arc<AtomicBool>,
 ) -> Result<(), DownloadError> {
     let mut attempts = 0;
 
     loop {
+        if stop.load(Ordering::Relaxed) {
+            return Err(DownloadError::Aborted);
+        }
         if !control.wait_until_running() {
             return Err(DownloadError::Canceled);
         }
@@ -569,6 +646,9 @@ fn download_range(
         let mut buffer = vec![0_u8; CHUNK];
         let read_result = (|| -> Result<(), DownloadError> {
             loop {
+                if stop.load(Ordering::Relaxed) {
+                    return Err(DownloadError::Aborted);
+                }
                 if !control.wait_until_running() {
                     return Err(DownloadError::Canceled);
                 }
@@ -619,6 +699,19 @@ fn download_range(
             }
         }
     }
+}
+
+/// Errors that justify trying the same byte ranges on another mirror. Disk
+/// errors, checksum/state failures and cancellation are not mirror problems.
+fn mirror_retryable(error: &DownloadError) -> bool {
+    matches!(
+        error,
+        DownloadError::Http(_)
+            | DownloadError::Read(_)
+            | DownloadError::HttpStatus(_)
+            | DownloadError::RangeIgnored
+            | DownloadError::Protocol(_)
+    )
 }
 
 fn retryable_error(error: &DownloadError) -> bool {
@@ -688,6 +781,9 @@ pub enum DownloadError {
     #[error("canceled")]
     Canceled,
 
+    #[error("download worker stopped")]
+    Aborted,
+
     #[error("checksum mismatch")]
     ChecksumMismatch,
 
@@ -720,6 +816,7 @@ impl DownloadError {
     pub fn to_plugin_error(&self) -> PluginError {
         match self {
             Self::Canceled => PluginError::new(ErrorKind::Canceled, "canceled"),
+            Self::Aborted => PluginError::new(ErrorKind::Internal, "download worker stopped"),
             Self::ChecksumMismatch => {
                 PluginError::new(ErrorKind::Checksum, "SHA-256 mismatch").retryable(true)
             }

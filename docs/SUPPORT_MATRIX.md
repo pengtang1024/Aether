@@ -20,7 +20,7 @@
 
 | 场景 | 插件 | 级别 | 阶段 | 备注 |
 | --- | --- | --- | --- | --- |
-| HTTP/HTTPS 1.1 | http | Core | **已实现** | Range、分段、续传、重定向、代理；鉴权后续 |
+| HTTP/HTTPS 1.1 | http | Core | **已实现** | Range、分段、续传、重定向、代理、同 ETag/同大小镜像中途 failover；鉴权后续 |
 | HTTP/2 | http | Core | **已实现** | reqwest 启用 `http2`，TLS ALPN 协商；HTTP/3 未启用 |
 | HTTP/3 / QUIC | http | Core | P1/P2 | 可选；UDP 失败回退 h2 |
 | FTP / FTPS | ftp | Optional | **已实现** | FTP + 显式 FTPS、REST/SIZE、SHA-256；MDTM 待补 |

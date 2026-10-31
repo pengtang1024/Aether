@@ -1,6 +1,6 @@
 # 下载链路硬化设计（9.75 → 10）
 
-> 状态：**Phase A/B/C 已实施；Phase C 补了 Windows 卷信息缺失时的 centralized 回退、Nightly soak workflow（aria2 HTTP/WS + BT serial）；真实 Windows 跨卷硬件环境仍不可在 CI 模拟，Phase D 可选**
+> 状态：**Phase A/B/C/D 已实施；Phase C 补了 Windows 卷信息缺失时的 centralized 回退、Nightly soak workflow（aria2 HTTP/WS + BT serial）；Phase D 已实现同 ETag/同大小镜像的中途 failover，并保留已完成分片。真实 Windows 跨卷硬件环境仍不可在 CI 模拟**
 > 当前基线：下载正确性 9.8 / 可靠性 9.7 / 性能 9.5 / 可维护性 8.8，综合约 **9.75/10**
 > 目标：把剩余的架构、跨平台和长期运行风险收敛到可验收状态。
 
@@ -285,9 +285,18 @@ fn create_staging_root(state, task_id, final_dir) -> Result<PathBuf, DaemonError
     的单测。
 - CI：nightly job 跑 `--ignored`，PR 只跑普通 E2E。
 
-## 6. Phase D（可选）：下载中镜像 failover
+## 6. Phase D（已具备实现）：下载中镜像 failover
 
-> 只有在真实用户需求出现时再做，默认不进入主线。
+> 实现采用更安全的“整任务换源”，而不是同一 range 内混用多个源。
+
+当前实现（`crates/aether-plugin-http/src/download.rs`）：
+
+- `mirrors` 只收 **同 size + 同 strong ETag** 的候选；没有 ETag 不参与。
+- 外层按 mirror 逐个尝试；每次失败用 `stop` 标志终止其余 worker，已完成 range 保留在 `shared`。
+- 换源后只请求缺失字节；`resume_url` 使用稳定的任务/metalink URL，而不是当前选中的 mirror，
+  保证重启后仍能匹配 resume state。
+- `RangeIgnored` / 读错误 / HTTP 状态错误可触发换源；`InvalidRange` 会清掉失效 state 再交给重试。
+- 不做同一 range 内跨源拼接：没有可靠 ETag/size 时宁可不切。
 
 - ResumeState 记录每个 range 的 `source_index`。
 - 规则：
@@ -297,6 +306,19 @@ fn create_staging_root(state, task_id, final_dir) -> Result<PathBuf, DaemonError
   - 全部镜像失败才返回错误。
 - 测试：双本地服务器，主源中途断流，镜像同 ETag；断言续传成功。
 - 风险：不同源的 Range 语义、ETag 缺失、文件内容不一致；没有校验时宁可不切换。
+
+### 6.1 实施记录
+
+- `TaskSpec.settings.mirrors` 的每个候选先 probe 一次；首个健康源作为起点。
+- 中途 failover 条件（严格）：镜像支持 Range、大小与主源相同、**ETag 必须存在且相等**；
+  没有 ETag 时不跨源拼接字节。
+- 任一 worker 返回可重试的网络/HTTP/Range 错误时，用 `stop` 标志停止其余 worker
+  （不改用户 cancel/pause 状态），按 `ResumeState` 里已完成的区间在下一个镜像上重发；
+  已完成分片不会重下。
+- 416/磁盘错误/校验失败/用户取消不触发 failover；所有镜像都失败才返回首个真实错误。
+- 测试：主源发送 16 KiB 后断流、镜像完整 → 最终文件字节一致，镜像收到的 Range
+  起点 > 0；镜像 ETag 不同 → 只允许 probe 的 `bytes=0-0`，不会收到下载 Range。
+- 新增日志（Warn）记录切换原因和目标镜像；`plugin_state` 仍记录初始 ETag/final_url。
 
 ## 7. 兼容与发布
 
@@ -318,5 +340,5 @@ fn create_staging_root(state, task_id, final_dir) -> Result<PathBuf, DaemonError
   `soak_http_clients`（`#[ignore]`，`AETHER_SOAK_SECS`）可重复跑；
   `.github/workflows/soak.yml` 每日跑 aria2 HTTP/WS soak 与 BT 串行契约测试。
   真实 Windows 跨卷硬件仍无法在 CI 模拟（已用反射/回退逻辑覆盖）。
-- [ ] Phase D（可选）：主源中途失败可切换到同 ETag 镜像，不影响已下载分片。
+- [x] Phase D：主源中途失败可切换到同 ETag/同大小镜像，已下载分片保留（有契约测试）。
 - [ ] 全 workspace check、fmt、clippy 通过；CHANGELOG/文档同步。

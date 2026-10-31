@@ -35,6 +35,10 @@ versioning; 0.x releases may still change structure.
   target's `.aether-staging` cannot be created; concurrent HTTP clients are
   covered by a new E2E, and an ignored `soak_http_clients` loop is available
   for nightly runs (`AETHER_SOAK_SECS`).
+- HTTP mirror failover: only same-size + same-strong-ETag mirrors are eligible;
+  a failed attempt stops the other workers, keeps completed ranges, and retries
+  the missing bytes on the next mirror. The resume state is keyed on the stable
+  task URL so switching sources does not discard progress after a restart.
 - Settings → Plugins now shows service health: `运行中`, `未启动`, and the
   last error text, sourced from the supervisor via the plugins RPC.
 - The task drawer now consumes the daemon's `task_detail` stream: BT tasks
