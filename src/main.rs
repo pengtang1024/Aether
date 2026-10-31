@@ -850,14 +850,48 @@ fn refresh_rows(ui: &AppWindow, state: &Rc<RefCell<State>>) {
 fn refresh_detail(ui: &AppWindow, state: &Rc<RefCell<State>>) {
     let mut st = state.borrow_mut();
     let detail_id = st.detail_id;
-    let Some(task) = st
-        .backend
-        .snapshot()
-        .tasks
-        .into_iter()
-        .find(|task| task.id == detail_id)
-    else {
+    let snapshot = st.backend.snapshot();
+    let Some(task) = snapshot.tasks.iter().find(|task| task.id == detail_id) else {
         return;
+    };
+    let detail = snapshot.details.get(&task.id);
+    let seeding = detail
+        .and_then(|detail| detail.get("seeding"))
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    let ratio = detail
+        .and_then(|detail| detail.get("ratio"))
+        .and_then(|value| value.as_f64())
+        .unwrap_or(0.0);
+    let uploaded = detail
+        .and_then(|detail| detail.get("uploaded_bytes"))
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
+    let seed_seconds = detail
+        .and_then(|detail| detail.get("seed_seconds"))
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
+    let peers = detail
+        .and_then(|detail| detail.get("peers"))
+        .and_then(|value| value.as_array())
+        .map_or(0, Vec::len);
+    let bt_text = if task.torrent {
+        i18n::tr(
+            format!(
+                "{} · 分享率 {ratio:.2} · 已上传 {} · 做种 {} · 节点 {peers}",
+                if seeding { "做种中" } else { "下载中" },
+                format_size(uploaded as f64),
+                format_eta(Some(seed_seconds as f64)),
+            ),
+            format!(
+                "{} · ratio {ratio:.2} · uploaded {} · seeded {} · {peers} peers",
+                if seeding { "seeding" } else { "downloading" },
+                format_size(uploaded as f64),
+                format_eta(Some(seed_seconds as f64)),
+            ),
+        )
+    } else {
+        String::new()
     };
 
     let (line, area) = chart_paths(&task.history);
@@ -900,6 +934,8 @@ fn refresh_detail(ui: &AppWindow, state: &Rc<RefCell<State>>) {
             format!("{done_chunks} / {CHUNK_COUNT} chunks done"),
         )
         .into(),
+        torrent: task.torrent,
+        bt_text: bt_text.into(),
     });
 
     if st.detail_data_for != st.detail_id {

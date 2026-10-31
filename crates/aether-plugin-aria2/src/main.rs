@@ -5,9 +5,9 @@
 //! plugin IPC channel. This process translates the call into native daemon
 //! requests over the trusted local endpoint it receives via `ServiceInit`.
 
+mod blobs;
 mod bridge;
 mod client;
-mod host;
 mod mapping;
 mod query;
 
@@ -18,8 +18,8 @@ use aether_plugin_sdk::{
 };
 use serde_json::{json, Value};
 
+use blobs::BlobStore;
 use client::DaemonClient;
-use host::TorrentHost;
 
 const PLUGIN_ID: &str = "aria2";
 const PLUGIN_VERSION: &str = "0.2.2";
@@ -27,8 +27,8 @@ const PLUGIN_VERSION: &str = "0.2.2";
 struct Aria2Plugin {
     socket: Option<String>,
     client: Option<DaemonClient>,
-    /// Lazily started on the first addTorrent/addMetalink call.
-    host: Option<TorrentHost>,
+    /// Set from `Init.data_dir`; blobs are served by the daemon listener.
+    blobs: Option<BlobStore>,
     session: String,
 }
 
@@ -41,41 +41,14 @@ impl Aria2Plugin {
         Self {
             socket: None,
             client: None,
-            host: None,
+            blobs: None,
             session: format!("aether-{}-{nanos}", std::process::id()),
         }
-    }
-
-    fn torrent_host(&mut self) -> Result<TorrentHost, String> {
-        if self.host.is_none() {
-            self.host = Some(TorrentHost::start()?);
-        }
-        self.host
-            .clone()
-            .ok_or_else(|| "torrent source unavailable".to_string())
     }
 
     fn bridge(&mut self, request: &Value) -> Value {
         let Some(socket) = self.socket.clone() else {
             return bridge_error("the daemon has not provided its local endpoint yet");
-        };
-        // Only start the loopback source when a call actually carries inline
-        // torrent/metalink bytes; the common polling path opens no socket.
-        let method = request
-            .get("method")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        let needs_host = matches!(
-            method,
-            "aria2.addTorrent" | "aria2.addMetalink" | "system.multicall"
-        );
-        let host = if needs_host {
-            match self.torrent_host() {
-                Ok(host) => Some(host),
-                Err(message) => return bridge_error(&message),
-            }
-        } else {
-            None
         };
         if self.client.is_none() {
             match DaemonClient::connect(&socket) {
@@ -85,7 +58,7 @@ impl Aria2Plugin {
         }
         let session = self.session.clone();
         let reply = match self.client.as_mut() {
-            Some(client) => bridge::handle(client, host.as_ref(), &session, request),
+            Some(client) => bridge::handle(client, self.blobs.as_ref(), &session, request),
             None => bridge_error("daemon client unavailable"),
         };
         // A transport failure should not poison the next request: drop the
@@ -114,6 +87,15 @@ impl Plugin for Aria2Plugin {
         &[]
     }
 
+    fn on_init(
+        &mut self,
+        _ctx: &mut PluginContext,
+        init: &aether_plugin_sdk::Init,
+    ) -> Result<(), SdkError> {
+        self.blobs = Some(BlobStore::new(std::path::PathBuf::from(&init.data_dir)));
+        Ok(())
+    }
+
     fn on_command(
         &mut self,
         ctx: &mut PluginContext,
@@ -123,6 +105,11 @@ impl Plugin for Aria2Plugin {
             HostCommand::ServiceInit { socket } => {
                 self.socket = Some(socket);
                 self.client = None;
+            }
+            HostCommand::ServiceAddress { listen } => {
+                if let Some(blobs) = self.blobs.as_mut() {
+                    blobs.set_base(&listen);
+                }
             }
             HostCommand::BridgeCall {
                 request_id,

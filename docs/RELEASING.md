@@ -30,8 +30,8 @@
   publish job runs after all builds finish, but only requires `version` and
   `linux` to succeed; Windows/macOS assets are attached when those builds pass.
   If one fails, note the missing platform in the release notes.
-- The `.deb` and AppImage include `LICENSE`, `THIRD_PARTY_NOTICES.md`,
-  `LICENSES/Slint-Royalty-free-2.0.md` and all staged plugins under
+- The `.deb` and AppImage include `LICENSE`, `THIRD_PARTY_NOTICES.md`, every
+  text under `LICENSES/` and all staged plugins under
   `/usr/lib/aether/plugins` (`make plugins`).
 - Windows/macOS packages currently contain the Host only; plugin packaging for
   those platforms is pending.
@@ -48,9 +48,8 @@ python3 scripts/check-license-bundles.py dist
 - `--check-recipes` verifies the source license files exist and that the
   Makefile, `package.yml` and Inno Setup recipe reference them.
 - The artifact check opens `.deb`, AppImage, ZIP and DMG files and requires a
-  non-empty MIT license file, `THIRD_PARTY_NOTICES.md` and the full
-  `Slint-Royalty-free-2.0.md` text. Inno Setup payloads are covered by the
-  recipe check.
+  non-empty MIT license file, `THIRD_PARTY_NOTICES.md` and every full license
+  text under `LICENSES/`. Inno Setup payloads are covered by the recipe check.
 - Do not publish a draft if either check fails. Fix the packaging first; do not
   remove the check.
 

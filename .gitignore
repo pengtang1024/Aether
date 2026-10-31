@@ -17,3 +17,9 @@
 
 # Stray download dir from runs without HOME set
 /downloads/
+
+# Python bytecode
+__pycache__/
+
+# Local skill scratch
+.taste-skill/

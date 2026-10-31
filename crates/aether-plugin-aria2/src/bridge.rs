@@ -4,8 +4,8 @@
 use base64::Engine;
 use serde_json::{json, Value};
 
+use crate::blobs::BlobStore;
 use crate::client::DaemonClient;
-use crate::host::TorrentHost;
 use crate::mapping;
 use crate::query;
 
@@ -34,7 +34,7 @@ pub type RpcResult = Result<Value, RpcError>;
 
 pub fn handle(
     client: &mut DaemonClient,
-    host: Option<&TorrentHost>,
+    host: Option<&BlobStore>,
     session: &str,
     request: &Value,
 ) -> Value {
@@ -57,7 +57,7 @@ pub fn handle(
 
 fn dispatch(
     client: &mut DaemonClient,
-    host: Option<&TorrentHost>,
+    host: Option<&BlobStore>,
     session: &str,
     method: &str,
     params: &[Value],
@@ -73,7 +73,8 @@ fn dispatch(
         "aria2.getGlobalStat" => query::global_stat(client),
         "aria2.getFiles" => query::files(client, params),
         "aria2.getUris" => query::uris(client, params),
-        "aria2.getPeers" | "aria2.getServers" => Ok(json!([])),
+        "aria2.getPeers" => query::peers(client, params),
+        "aria2.getServers" => query::servers(client, params),
         "aria2.getVersion" => Ok(json!({
             "version": "1.37.0",
             "enabledFeatures": ["BitTorrent", "Async DNS"],
@@ -89,12 +90,12 @@ fn dispatch(
         "aria2.getGlobalOption" => global_option(client),
         "aria2.changeGlobalOption" => change_global_option(client, params),
         "aria2.getOption" => query::option(client, params),
-        "aria2.changeOption" => Err(RpcError::new(
-            1,
-            "changeOption is not supported; the limit was fixed when the task was added",
-        )),
-        "aria2.changePosition" => Err(RpcError::new(1, "changePosition is not supported")),
-        "aria2.saveSession" => Ok(json!("OK")),
+        "aria2.changeOption" => change_option(client, params),
+        "aria2.changePosition" => change_position(client, params),
+        "aria2.saveSession" => {
+            client.call("save_session", json!({}))?;
+            Ok(json!("OK"))
+        }
         "aria2.shutdown" | "aria2.forceShutdown" => {
             client.call("shutdown", json!({}))?;
             Ok(json!("OK"))
@@ -140,6 +141,8 @@ const METHODS: &[&str] = &[
     "aria2.getGlobalOption",
     "aria2.changeGlobalOption",
     "aria2.getOption",
+    "aria2.changeOption",
+    "aria2.changePosition",
     "aria2.saveSession",
     "aria2.shutdown",
     "aria2.forceShutdown",
@@ -157,7 +160,13 @@ fn add_uri(client: &mut DaemonClient, params: &[Value]) -> RpcResult {
         .first()
         .and_then(Value::as_str)
         .ok_or_else(|| RpcError::new(-32602, "addUri needs at least one URI"))?;
-    let (settings, dir, pause) = add_options(params.get(1).and_then(Value::as_object));
+    let (mut settings, dir, pause) = add_options(params.get(1).and_then(Value::as_object));
+    // Extra URIs are mirrors for the same file; the HTTP plugin probes them
+    // when the primary source is down (mid-download failover is not wired).
+    let mirrors = uris.iter().skip(1).cloned().collect::<Vec<_>>();
+    if !mirrors.is_empty() {
+        settings["mirrors"] = json!(mirrors);
+    }
     let task_id = client.add(url, None, dir.as_deref(), settings)?;
     if pause {
         client.action("pause", &task_id)?;
@@ -165,19 +174,17 @@ fn add_uri(client: &mut DaemonClient, params: &[Value]) -> RpcResult {
     Ok(json!(mapping::gid(&task_id)))
 }
 
-fn add_torrent(
-    client: &mut DaemonClient,
-    host: Option<&TorrentHost>,
-    params: &[Value],
-) -> RpcResult {
+fn add_torrent(client: &mut DaemonClient, host: Option<&BlobStore>, params: &[Value]) -> RpcResult {
     let host = host.ok_or_else(|| RpcError::new(1, "torrent source unavailable"))?;
     let bytes = decode_payload(params.first(), "addTorrent needs a base64 torrent")?;
-    let url = host
-        .publish(bytes, "torrent", "application/x-bittorrent")
-        .map_err(RpcError::from)?;
+    let url = host.publish(bytes, "torrent").map_err(RpcError::from)?;
     // aria2's second parameter is a list of web-seed URIs; Aether adds the
     // inline torrent and ignores extra mirrors.
-    let (settings, dir, pause) = add_options(params.get(2).and_then(Value::as_object));
+    let (mut settings, dir, pause) = add_options(params.get(2).and_then(Value::as_object));
+    // A torrent carries its own file names; aria2's `out` does not apply.
+    if let Some(object) = settings.as_object_mut() {
+        object.remove("filename");
+    }
     // Force the BT plugin: the generic HTTP plugin would otherwise grab the
     // .torrent URL and download the file instead of starting the torrent.
     let task_id = client.add(&url, Some("bt"), dir.as_deref(), settings)?;
@@ -189,15 +196,16 @@ fn add_torrent(
 
 fn add_metalink(
     client: &mut DaemonClient,
-    host: Option<&TorrentHost>,
+    host: Option<&BlobStore>,
     params: &[Value],
 ) -> RpcResult {
     let host = host.ok_or_else(|| RpcError::new(1, "torrent source unavailable"))?;
     let bytes = decode_payload(params.first(), "addMetalink needs base64 XML")?;
-    let url = host
-        .publish(bytes, "metalink", "application/metalink4+xml")
-        .map_err(RpcError::from)?;
-    let (settings, dir, pause) = add_options(params.get(1).and_then(Value::as_object));
+    let url = host.publish(bytes, "metalink").map_err(RpcError::from)?;
+    let (mut settings, dir, pause) = add_options(params.get(1).and_then(Value::as_object));
+    if let Some(object) = settings.as_object_mut() {
+        object.remove("filename");
+    }
     let task_id = client.add(&url, Some("http"), dir.as_deref(), settings)?;
     if pause {
         client.action("pause", &task_id)?;
@@ -205,13 +213,105 @@ fn add_metalink(
     Ok(json!(mapping::gid(&task_id)))
 }
 
+fn change_option(client: &mut DaemonClient, params: &[Value]) -> RpcResult {
+    let gid = params
+        .first()
+        .and_then(Value::as_str)
+        .ok_or_else(|| RpcError::new(-32602, "changeOption needs a gid"))?;
+    let task = query::resolve(client, gid)?;
+    let task_id = task
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| RpcError::new(1, format!("GID {gid} not found")))?;
+    let options = params
+        .get(1)
+        .and_then(Value::as_object)
+        .ok_or_else(|| RpcError::new(-32602, "changeOption needs an options object"))?;
+    if let Some(limit) = options.get("max-download-limit") {
+        let limit = limit
+            .as_str()
+            .and_then(mapping::parse_size)
+            .ok_or_else(|| RpcError::new(1, "invalid max-download-limit"))?;
+        client.call(
+            "set_task_limit",
+            json!({ "task_id": task_id, "settings": { "max_speed_bps": limit } }),
+        )?;
+    }
+    // Upload limits and options Aether has no per-task knob for are accepted
+    // as no-ops rather than failing the whole call.
+    Ok(json!("OK"))
+}
+
+fn change_position(client: &mut DaemonClient, params: &[Value]) -> RpcResult {
+    let gid = params
+        .first()
+        .and_then(Value::as_str)
+        .ok_or_else(|| RpcError::new(-32602, "changePosition needs a gid"))?;
+    let task = query::resolve(client, gid)?;
+    let task_id = task
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| RpcError::new(1, format!("GID {gid} not found")))?;
+    let pos = params
+        .get(1)
+        .and_then(|value| {
+            value
+                .as_i64()
+                .or_else(|| value.as_str().and_then(|value| value.parse().ok()))
+        })
+        .ok_or_else(|| RpcError::new(-32602, "changePosition needs a numeric position"))?;
+    let how = params.get(2).and_then(Value::as_str).unwrap_or("POS_SET");
+    let order = client.call("queued_order", json!({}))?;
+    let mut ids = order
+        .get("tasks")
+        .and_then(Value::as_array)
+        .map(|ids| {
+            ids.iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let current = ids
+        .iter()
+        .position(|id| id == task_id)
+        .ok_or_else(|| RpcError::new(1, format!("GID {gid} is not in the waiting queue")))?;
+    let index = target_index(current as i64, ids.len() as i64, pos, how)
+        .ok_or_else(|| RpcError::new(1, format!("invalid changePosition mode: {how}")))?;
+    ids.remove(current);
+    ids.insert(index, task_id.to_string());
+    client.call("reorder_queue", json!({ "settings": { "order": ids } }))?;
+    Ok(json!(index))
+}
+
+/// aria2 position semantics: absolute, relative to current, or from the end.
+fn target_index(current: i64, len: i64, pos: i64, how: &str) -> Option<usize> {
+    if len <= 0 {
+        return None;
+    }
+    let index = match how {
+        "POS_SET" => pos,
+        "POS_CUR" => current + pos,
+        "POS_END" => len - 1 - pos,
+        _ => return None,
+    };
+    Some(index.clamp(0, len - 1) as usize)
+}
+
 fn decode_payload(payload: Option<&Value>, message: &str) -> Result<Vec<u8>, RpcError> {
     let payload = payload
         .and_then(Value::as_str)
         .ok_or_else(|| RpcError::new(-32602, message))?;
-    base64::engine::general_purpose::STANDARD
-        .decode(payload)
-        .map_err(|error| RpcError::new(1, format!("invalid base64 payload: {error}")))
+    for engine in [
+        &base64::engine::general_purpose::STANDARD,
+        &base64::engine::general_purpose::URL_SAFE,
+        &base64::engine::general_purpose::URL_SAFE_NO_PAD,
+    ] {
+        if let Ok(bytes) = engine.decode(payload) {
+            return Ok(bytes);
+        }
+    }
+    Err(RpcError::new(1, "invalid base64 payload"))
 }
 
 fn add_options(options: Option<&serde_json::Map<String, Value>>) -> (Value, Option<String>, bool) {
@@ -235,6 +335,16 @@ fn add_options(options: Option<&serde_json::Map<String, Value>>) -> (Value, Opti
                 }
             }
             "pause" => pause = value.as_str() == Some("true"),
+            "out" => {
+                if let Some(name) = value.as_str() {
+                    settings.insert("filename".into(), json!(name));
+                }
+            }
+            "checksum" => {
+                if let Some(text) = value.as_str() {
+                    settings.insert("checksum".into(), json!(text));
+                }
+            }
             "header" => {
                 for header in value.as_array().into_iter().flatten() {
                     if let Some(header) = header.as_str() {
@@ -385,7 +495,7 @@ fn change_global_option(client: &mut DaemonClient, params: &[Value]) -> RpcResul
 
 fn multicall(
     client: &mut DaemonClient,
-    host: Option<&TorrentHost>,
+    host: Option<&BlobStore>,
     session: &str,
     params: &[Value],
 ) -> RpcResult {
@@ -438,9 +548,22 @@ mod tests {
     }
 
     #[test]
+    fn maps_aria2_position_modes() {
+        assert_eq!(target_index(2, 5, 0, "POS_SET"), Some(0));
+        assert_eq!(target_index(2, 5, 99, "POS_SET"), Some(4));
+        assert_eq!(target_index(2, 5, -1, "POS_CUR"), Some(1));
+        assert_eq!(target_index(2, 5, 2, "POS_CUR"), Some(4));
+        assert_eq!(target_index(2, 5, 0, "POS_END"), Some(4));
+        assert_eq!(target_index(2, 5, 1, "POS_END"), Some(3));
+        assert_eq!(target_index(2, 5, 0, "BOGUS"), None);
+        assert_eq!(target_index(0, 0, 0, "POS_SET"), None);
+    }
+
+    #[test]
     fn maps_the_supported_add_options() {
         let options = json!({
             "dir": "/tmp/out",
+            "out": "custom.bin",
             "max-download-limit": "2M",
             "pause": "true",
             "referer": "https://example.test/",
@@ -453,6 +576,7 @@ mod tests {
         assert_eq!(settings["max_speed_bps"], json!(2 * 1024 * 1024));
         assert_eq!(settings["referrer"], "https://example.test/");
         assert_eq!(settings["cookies"], "a=b");
+        assert_eq!(settings["filename"], "custom.bin");
         // Unknown options are accepted and ignored.
         assert!(settings.get("split").is_none());
     }

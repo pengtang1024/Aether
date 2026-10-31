@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -12,11 +13,13 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use aether_host::pac::PacResolver;
 use aether_host::system_proxy::{self, SystemProxy, SYSTEM_PROXY_TTL};
 use aether_host::{
-    default_plugins_dir, ensure_space, finalize_task, human_bytes, NewTask, PluginEventEnvelope,
-    PluginManager, PluginRegistry, ProxySetting, StoredTask, TaskState, TaskStore,
+    default_plugins_dir, ensure_space, finalize_task_with_checksum, human_bytes, NewTask,
+    PluginEventEnvelope, PluginManager, PluginRegistry, ProxySetting, StoredTask, TaskState,
+    TaskStore,
 };
 use aether_plugin_sdk::{
-    Budget, HostCommand, Init, LogLevel, PluginEvent, PluginKind, ProxyConfig, TaskPaths, TaskSpec,
+    Budget, Checksum, ChecksumAlgorithm, HostCommand, PluginEvent, PluginKind, ProxyConfig,
+    TaskPaths, TaskSpec,
 };
 use aether_update::UpdateClient;
 use fs2::FileExt;
@@ -24,6 +27,7 @@ use serde_json::{json, Value};
 
 use crate::error::DaemonError;
 use crate::proto::{Request, Response};
+use crate::service::{ServiceBridge, ServiceStatus, ServiceSupervisor};
 use crate::settings::{
     parse_hhmm, Limits, Settings, CONNECTIONS_DEFAULT, KEYS, RPC_LISTEN_DEFAULT,
 };
@@ -104,6 +108,9 @@ pub(crate) struct Command {
     pub(crate) request: Request,
     pub(crate) respond: Sender<Response>,
     pub(crate) subscriber: Option<Sender<serde_json::Value>>,
+    /// Fired after the response bytes are written, so `shutdown` can wait for
+    /// the client to receive its ack before the process exits.
+    pub(crate) written: Option<mpsc::Receiver<()>>,
 }
 
 /// Subscribe a compatibility transport (aria2 WebSocket) to the same event
@@ -128,6 +135,7 @@ pub(crate) fn subscribe_events(
             request,
             respond: respond_tx,
             subscriber: Some(event_tx),
+            written: None,
         })
         .ok()?;
     match respond_rx.recv_timeout(Duration::from_secs(5)) {
@@ -142,12 +150,15 @@ struct State {
     download_dir: PathBuf,
     plugins_dir: PathBuf,
     data_dir: PathBuf,
-    /// Local endpoint handed to service plugins so they can call back into
-    /// the daemon instead of opening a competing listening socket.
-    socket: PathBuf,
-    /// aria2 compatibility bridge, shared with the TCP listener. `None` when
-    /// the plugin is missing or disabled (HTTP then answers 503).
-    aria2: Arc<Mutex<Option<Arc<crate::aria2::PluginBridge>>>>,
+    /// Shared lifecycle for `kind: "service"` plugins (aria2 compatibility).
+    services: Arc<crate::service::ServiceSupervisor>,
+    /// Loopback `ip:port` of the bound RPC listener, used by the aria2 plugin
+    /// to publish `addTorrent`/`addMetalink` blobs. `None` while RPC is off.
+    rpc_base: Option<String>,
+    /// Latest plugin detail payload per task (BT peers/seeding, HTTP chunks).
+    details: HashMap<String, serde_json::Value>,
+    /// Last time a task reported progress; drives the stall watchdog.
+    last_progress: HashMap<String, Instant>,
     active: HashSet<String>,
     update: Option<Arc<Mutex<serde_json::Value>>>,
     subscribers: Vec<Sender<serde_json::Value>>,
@@ -349,8 +360,14 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
         download_dir: config.download_dir.clone(),
         plugins_dir: config.plugins_dir.clone(),
         data_dir: data_dir.clone(),
-        socket: config.socket.clone(),
-        aria2: Arc::new(Mutex::new(None)),
+        services: ServiceSupervisor::new(
+            config.socket.clone(),
+            data_dir.clone(),
+            config.host_version.clone(),
+        ),
+        rpc_base: None,
+        details: HashMap::new(),
+        last_progress: HashMap::new(),
         active: HashSet::new(),
         update: update_status,
         subscribers: Vec::new(),
@@ -376,10 +393,7 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
 
     recover_tasks(&mut state);
     restore_retries(&mut state);
-    // Compatibility services own no listening port: they receive requests
-    // from the daemon listener and call back over the local endpoint.
-    spawn_aria2_bridge(&mut state);
-
+    cleanup_stale_staging(&state);
     let (command_tx, command_rx) = mpsc::channel::<Command>();
 
     // RPC over TCP: the CLI/env override wins over the persisted setting.
@@ -432,6 +446,14 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
             }
         };
         if let Some(listener) = listener {
+            let blob_listen = if parsed.ip().is_unspecified() {
+                format!("127.0.0.1:{}", parsed.port())
+            } else {
+                addr.trim().to_string()
+            };
+            state.rpc_base = Some(blob_listen.clone());
+            state.services.set_listen(Some(blob_listen));
+            state.services.sync(state.manager.registry());
             if has_secret {
                 eprintln!("aether-daemon: rpc listening on {addr} (token required)");
             } else {
@@ -439,8 +461,9 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
             }
             let rpc_tx = command_tx.clone();
             let rpc_secret = state.rpc_secret.clone();
-            let aria2 = state.aria2.clone();
-            thread::spawn(move || rpc_accept_loop(listener, rpc_tx, rpc_secret, aria2));
+            let bridge = Arc::new(ServiceBridge::new(state.services.clone(), "aria2"));
+            let blob_dir = state.data_dir.join("aria2-blobs");
+            thread::spawn(move || rpc_accept_loop(listener, rpc_tx, rpc_secret, bridge, blob_dir));
         }
     }
 
@@ -451,6 +474,8 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
     let mut shutdown = false;
     let mut last_idle_cleanup = std::time::Instant::now();
     let mut last_schedule_tick = std::time::Instant::now();
+    let mut last_health = Instant::now();
+    let mut last_stall = Instant::now();
     while !shutdown {
         // Idle: block on the command channel instead of polling plugins.
         if state.active.is_empty() {
@@ -469,6 +494,11 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
             }
             // Retry bookkeeping must run even when commands keep arriving.
             check_retries(&mut state);
+            if last_health.elapsed() >= Duration::from_secs(5) {
+                last_health = Instant::now();
+                recover_dead_plugins(&mut state);
+                check_stalled_tasks(&mut state);
+            }
             if last_schedule_tick.elapsed() >= Duration::from_secs(15) {
                 last_schedule_tick = std::time::Instant::now();
                 tick_schedule(&mut state);
@@ -483,9 +513,20 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
         match state.manager.recv_event(Duration::from_millis(100)) {
             Ok(Some(envelope)) => handle_event(&mut state, envelope),
             Ok(None) => {}
-            Err(error) => eprintln!("aether-daemon: plugin event error: {error}"),
+            Err(error) => {
+                eprintln!("aether-daemon: plugin event error: {error}");
+                recover_dead_plugins(&mut state);
+            }
         }
         check_retries(&mut state);
+        if last_health.elapsed() >= Duration::from_secs(5) {
+            last_health = Instant::now();
+            recover_dead_plugins(&mut state);
+        }
+        if last_stall.elapsed() >= Duration::from_secs(30) {
+            last_stall = Instant::now();
+            check_stalled_tasks(&mut state);
+        }
         if last_schedule_tick.elapsed() >= Duration::from_secs(15) {
             last_schedule_tick = std::time::Instant::now();
             tick_schedule(&mut state);
@@ -493,7 +534,7 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
     }
 
     state.manager.shutdown();
-    stop_aria2_bridge(&state);
+    state.services.stop_all();
     drop(accept_thread);
     #[cfg(unix)]
     let _ = fs::remove_file(&config.socket);
@@ -628,7 +669,7 @@ fn spawn_update_loop(
     });
 }
 
-fn dispatch(state: &mut State, command: Command) -> bool {
+fn dispatch(state: &mut State, mut command: Command) -> bool {
     let id = command.request.id;
     let method = command.request.method.clone();
     if method == "subscribe" {
@@ -638,12 +679,19 @@ fn dispatch(state: &mut State, command: Command) -> bool {
         let _ = command.respond.send(Response::ok(id, json!({"ok": true})));
         return false;
     }
+    let shutdown = method == "shutdown";
+    let written = command.written.take();
     let response = match handle_request(state, command.request) {
         Ok(value) => Response::ok(id, value),
         Err(error) => Response::err(id, error.to_string()),
     };
     let _ = command.respond.send(response);
-    method == "shutdown"
+    if shutdown {
+        if let Some(written) = written {
+            let _ = written.recv_timeout(Duration::from_secs(2));
+        }
+    }
+    shutdown
 }
 
 fn broadcast(state: &mut State, event: Value) {
@@ -663,18 +711,42 @@ fn accept_loop(mut listener: Listener, commands: Sender<Command>) {
 /// RPC over TCP: every connection must open with an `auth` request carrying
 /// the token before it may use any other method. The secret is read live, so
 /// a `set_settings` rotation applies to new connections immediately.
+/// Keep-alive means a connection can sit idle for a minute; cap the number
+/// of compat threads so a stuck client cannot exhaust the process.
+const MAX_RPC_CONNECTIONS: usize = 128;
+
+struct RpcConnectionGuard(Arc<AtomicUsize>);
+
+impl Drop for RpcConnectionGuard {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
 fn rpc_accept_loop(
     mut listener: Listener,
     commands: Sender<Command>,
     secret: std::sync::Arc<Mutex<Option<String>>>,
-    aria2: Arc<Mutex<Option<Arc<crate::aria2::PluginBridge>>>>,
+    bridge: Arc<ServiceBridge>,
+    blob_dir: PathBuf,
 ) {
+    let active = Arc::new(AtomicUsize::new(0));
     loop {
         let Ok(conn) = listener.accept() else { break };
+        if active.fetch_add(1, Ordering::SeqCst) >= MAX_RPC_CONNECTIONS {
+            active.fetch_sub(1, Ordering::SeqCst);
+            conn.shutdown();
+            continue;
+        }
+        let guard = RpcConnectionGuard(active.clone());
         let commands = commands.clone();
         let secret = secret.clone();
-        let aria2 = aria2.clone();
-        thread::spawn(move || rpc_client_loop(conn, commands, secret, aria2));
+        let bridge = bridge.clone();
+        let blob_dir = blob_dir.clone();
+        thread::spawn(move || {
+            let _guard = guard;
+            rpc_client_loop(conn, commands, secret, bridge, blob_dir)
+        });
     }
 }
 
@@ -682,7 +754,8 @@ fn rpc_client_loop(
     stream: Conn,
     commands: Sender<Command>,
     secret: std::sync::Arc<Mutex<Option<String>>>,
-    aria2: Arc<Mutex<Option<Arc<crate::aria2::PluginBridge>>>>,
+    bridge: Arc<ServiceBridge>,
+    blob_dir: PathBuf,
 ) {
     let reader_stream = match stream.try_clone() {
         Ok(stream) => stream,
@@ -698,11 +771,15 @@ fn rpc_client_loop(
     // One port, two protocols: HTTP goes to the aria2 compatibility bridge,
     // the native JSON-lines protocol keeps its auth handshake below.
     if crate::aria2::is_http_request(&line) {
-        let bridge = aria2.lock().ok().and_then(|slot| slot.clone());
-        let bridge = bridge
-            .as_deref()
-            .map(|bridge| bridge as &dyn crate::aria2::Bridge);
-        crate::aria2::serve_http(reader, &mut writer, &line, bridge, &secret, &commands);
+        crate::aria2::serve_http(
+            reader,
+            &mut writer,
+            &line,
+            Some(bridge.as_ref()),
+            &secret,
+            &commands,
+            &blob_dir,
+        );
         writer.shutdown();
         return;
     }
@@ -790,11 +867,13 @@ fn serve(reader: &mut BufReader<Conn>, writer: &mut Conn, commands: Sender<Comma
         let subscribe = request.method == "subscribe";
         let (respond_tx, respond_rx) = mpsc::channel();
         let (event_tx, event_rx) = mpsc::channel();
+        let (written_tx, written_rx) = mpsc::channel();
         if commands
             .send(Command {
                 request,
                 respond: respond_tx,
                 subscriber: subscribe.then_some(event_tx),
+                written: Some(written_rx),
             })
             .is_err()
         {
@@ -808,6 +887,7 @@ fn serve(reader: &mut BufReader<Conn>, writer: &mut Conn, commands: Sender<Comma
         if write_response(&mut *writer, &response).is_err() {
             break;
         }
+        let _ = written_tx.send(());
         if subscribe {
             if !accepted {
                 break;
@@ -865,7 +945,18 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
         }
         "add" => add_task(state, request),
         "list" => {
-            let tasks = state.store.list_tasks(100)?;
+            let limit = request
+                .settings
+                .get("limit")
+                .and_then(Value::as_u64)
+                .unwrap_or(100)
+                .clamp(1, 10_000) as usize;
+            let include_files = request
+                .settings
+                .get("include_files")
+                .and_then(Value::as_bool)
+                .unwrap_or(true);
+            let tasks = state.store.list_tasks_with_files(limit, include_files)?;
             // The UI needs the default root to show a path for tasks that use
             // it (records only carry non-default destinations).
             Ok(json!({
@@ -1002,6 +1093,26 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
                 }
             }
         }
+        "save_session" => save_session(state),
+        "task_summary" => {
+            let summary = state.store.summary()?;
+            let mut counts = serde_json::Map::new();
+            let mut download_speed_bps = 0_u64;
+            for (task_state, (count, speed)) in summary {
+                if task_state == "running" {
+                    download_speed_bps = download_speed_bps.saturating_add(speed);
+                }
+                counts.insert(task_state, json!(count));
+            }
+            Ok(json!({
+                "counts": counts,
+                "download_speed_bps": download_speed_bps,
+            }))
+        }
+        "set_task_limit" => set_task_limit(state, request),
+        "queued_order" => Ok(json!({ "tasks": state.store.waiting_order()? })),
+        "reorder_queue" => reorder_queue(state, request),
+        "get_peers" => get_peers(state, request),
         "cancel" => {
             let task_id = task_id(&request)?;
             let task = state
@@ -1035,6 +1146,8 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
             state.active.remove(&task_id);
             state.live.remove(&task_id);
             state.retries.remove(&task_id);
+            state.details.remove(&task_id);
+            state.last_progress.remove(&task_id);
             broadcast(
                 state,
                 json!({"event": "task_state", "task_id": task_id, "state": "canceled"}),
@@ -1055,8 +1168,15 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
             }
             // Staging/resume state is daemon-owned; finalized files live in the
             // download directory and survive the deletion.
-            let task_root = state.download_dir.join(".aether").join(&task_id);
-            let _ = fs::remove_dir_all(&task_root);
+            let centralized = state.download_dir.join(".aether").join(&task_id);
+            let _ = fs::remove_dir_all(&centralized);
+            cleanup_staging_parent(&centralized);
+            let final_dir = destination_dir(state, task.target_dir.as_deref());
+            let target_staging = final_dir.join(".aether-staging").join(&task_id);
+            let _ = fs::remove_dir_all(&target_staging);
+            cleanup_staging_parent(&target_staging);
+            state.details.remove(&task_id);
+            state.last_progress.remove(&task_id);
             state.store.delete_task(&task_id)?;
             broadcast(state, json!({"event": "task_deleted", "task_id": task_id}));
             Ok(json!({"task_id": task_id, "deleted": true}))
@@ -1073,11 +1193,26 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
         "plugins" => {
             let allow_external = state.manager.allow_external_process();
             let backup_root = state.data_dir.join("plugin-backups");
+            let service_status: HashMap<String, ServiceStatus> = state
+                .services
+                .statuses()
+                .into_iter()
+                .map(|status| (status.service.clone(), status))
+                .collect();
             let plugins = state
                 .manager
                 .registry()
                 .iter()
                 .map(|entry| {
+                    let service = entry
+                        .manifest
+                        .service
+                        .as_deref()
+                        .and_then(|service| service_status.get(service));
+                    let running = service.map_or_else(
+                        || state.manager.running_pid(&entry.manifest.id).is_some(),
+                        |status| status.running,
+                    );
                     // A policy-blocked plugin is still listed (and can still
                     // be disabled/uninstalled) but the UI must say why it
                     // cannot start instead of failing at task time.
@@ -1094,6 +1229,8 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
                         "capabilities": entry.manifest.capabilities,
                         "enabled": entry.enabled,
                         "blocked": blocked,
+                        "running": running,
+                        "last_error": service.and_then(|status| status.last_error.clone()),
                         "has_backup": backup_root
                             .join(&entry.manifest.id)
                             .join("plugin.json")
@@ -1155,11 +1292,7 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
                 });
             }
             if is_service {
-                if enabled {
-                    restart_aria2_bridge(state);
-                } else {
-                    stop_aria2_bridge(state);
-                }
+                state.services.sync(state.manager.registry());
             }
             state.store.set_plugin_disabled(&plugin_id, !enabled)?;
             let entry = state
@@ -1521,7 +1654,7 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
         "rollback_plugin" => rollback_plugin(state, request),
         "rescan_plugins" => {
             let total = rescan_registry(state)?;
-            restart_aria2_bridge(state);
+            state.services.sync(state.manager.registry());
             Ok(json!({ "plugins": total }))
         }
         "plugin_updates" => plugin_updates(state),
@@ -1633,11 +1766,7 @@ fn uninstall_plugin(state: &mut State, request: Request) -> Result<Value, Daemon
             "plugin {plugin_id} still has running tasks"
         )));
     }
-    let is_service = entry.manifest.kind == PluginKind::Service;
     state.manager.stop(&plugin_id);
-    if is_service {
-        stop_aria2_bridge(state);
-    }
     state.live.retain(|task_id| {
         state
             .store
@@ -1650,6 +1779,7 @@ fn uninstall_plugin(state: &mut State, request: Request) -> Result<Value, Daemon
     let _ = fs::remove_dir_all(state.data_dir.join("plugin-backups").join(&plugin_id));
     state.store.set_plugin_disabled(&plugin_id, false)?;
     rescan_registry(state)?;
+    state.services.sync(state.manager.registry());
     Ok(json!({ "plugin_id": plugin_id, "removed": true }))
 }
 
@@ -1942,7 +2072,7 @@ fn install_package(state: &mut State, package: &Path) -> Result<Value, DaemonErr
     let _ = fs::remove_dir_all(&retired);
 
     rescan_registry(state)?;
-    restart_aria2_bridge(state);
+    state.services.sync(state.manager.registry());
     Ok(json!({
         "plugin_id": manifest.id,
         "version": manifest.version,
@@ -1966,6 +2096,131 @@ fn copy_dir(from: &Path, to: &Path) -> Result<(), DaemonError> {
         // Symlinks/sockets/fifos are skipped: the package must be plain files.
     }
     Ok(())
+}
+
+/// Change one task's download limit. Queued tasks pick it up on start;
+/// running HTTP tasks receive a live `SetBudget`. BitTorrent's session-wide
+/// rate limiter has no per-task switch, so BT is rejected instead of silently
+/// ignoring the call.
+fn set_task_limit(state: &mut State, request: Request) -> Result<Value, DaemonError> {
+    let task_id = task_id(&request)?;
+    let limit = request
+        .settings
+        .get("max_speed_bps")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let task = state
+        .store
+        .task(&task_id)?
+        .ok_or_else(|| DaemonError::Protocol(format!("task {task_id} not found")))?;
+    if task.plugin_id == "bt" {
+        return Err(DaemonError::Protocol(
+            "per-task speed limits are not supported for BitTorrent".into(),
+        ));
+    }
+    let mut settings = task.settings.as_object().cloned().unwrap_or_default();
+    if limit == 0 {
+        settings.remove("max_speed_bps");
+    } else {
+        settings.insert("max_speed_bps".into(), json!(limit));
+    }
+    let settings = Value::Object(settings);
+    state.store.update_task_settings(&task_id, &settings)?;
+    if state.live.contains(&task_id) {
+        let budget = Budget {
+            connections: state.settings.connections.unwrap_or(CONNECTIONS_DEFAULT),
+            download_bps: if limit > 0 {
+                limit
+            } else {
+                state.max_speed_bps.unwrap_or(0)
+            },
+            ..Budget::default()
+        };
+        let _ = state.manager.send(
+            &task.plugin_id,
+            &HostCommand::SetBudget {
+                task_id: task_id.clone(),
+                budget,
+            },
+        );
+    }
+    Ok(json!({ "task_id": task_id, "settings": settings }))
+}
+
+/// Export the queued/running/paused URLs in aria2's session-line format.
+/// SQLite remains the restore source; this is a portable snapshot for users
+/// and clients that call `aria2.saveSession`.
+fn save_session(state: &State) -> Result<Value, DaemonError> {
+    let tasks = state.store.list_tasks_with_files(10_000, false)?;
+    let active = tasks
+        .into_iter()
+        .filter(|task| {
+            matches!(
+                task.state,
+                TaskState::Queued | TaskState::Running | TaskState::Paused
+            )
+        })
+        .collect::<Vec<_>>();
+    let mut text = String::new();
+    for task in &active {
+        text.push_str(&task.url);
+        text.push('\n');
+    }
+    let path = state.data_dir.join("aria2-session.txt");
+    let temporary = path.with_extension("txt.tmp");
+    fs::write(&temporary, text)?;
+    fs::rename(&temporary, &path)?;
+    Ok(json!({ "path": path, "count": active.len() }))
+}
+
+/// Live peer list for the aria2 compatibility layer. The BT plugin pushes
+/// peer snapshots through `Detail`; reading the cache keeps this off the
+/// daemon's main loop (no plugin round-trip).
+fn get_peers(state: &mut State, request: Request) -> Result<Value, DaemonError> {
+    let task_id = task_id(&request)?;
+    state
+        .store
+        .task(&task_id)?
+        .ok_or_else(|| DaemonError::Protocol(format!("task {task_id} not found")))?;
+    let peers = state
+        .details
+        .get(&task_id)
+        .and_then(|detail| detail.get("peers"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    Ok(json!({ "peers": peers }))
+}
+
+/// Apply an explicit waiting-queue order. Priorities are spaced by 200 and
+/// pre-compensated for the aging bonus (capped at 100), so the requested
+/// order survives future aging until the queue drains.
+fn reorder_queue(state: &mut State, request: Request) -> Result<Value, DaemonError> {
+    let order = request
+        .settings
+        .get("order")
+        .and_then(Value::as_array)
+        .ok_or_else(|| DaemonError::Protocol("reorder_queue needs settings.order".into()))?;
+    let now = now_ms();
+    let mut changes = Vec::with_capacity(order.len());
+    for (index, id) in order.iter().enumerate() {
+        let id = id
+            .as_str()
+            .ok_or_else(|| DaemonError::Protocol("reorder_queue entries must be strings".into()))?;
+        let task = state
+            .store
+            .task(id)?
+            .ok_or_else(|| DaemonError::Protocol(format!("task {id} not found")))?;
+        if !matches!(task.state, TaskState::Queued | TaskState::Paused) {
+            return Err(DaemonError::Protocol(format!("task {id} is not waiting")));
+        }
+        let age_minutes = ((now - task.created_at).max(0) / 1000 / 60) as i64;
+        let age = (age_minutes / 5).min(100);
+        let priority = 1_000_000 - (index as i64 * 200) - age;
+        changes.push((id.to_string(), priority as i32));
+    }
+    state.store.set_priorities(&changes)?;
+    promote_queued(state);
+    Ok(json!({ "reordered": changes.len() }))
 }
 
 fn add_task(state: &mut State, request: Request) -> Result<Value, DaemonError> {
@@ -2027,11 +2282,9 @@ fn add_task(state: &mut State, request: Request) -> Result<Value, DaemonError> {
     // Staging lives under the daemon-owned `.aether` tree; finalized files go
     // straight into the destination the client asked for.
     let target_dir = resolve_target_dir(state, request.dir.as_deref())?;
-    let task_root = state.download_dir.join(".aether").join(&task_id);
-    let staging = task_root.join("staging");
     let final_dir = target_dir.clone();
-    fs::create_dir_all(&staging)?;
     fs::create_dir_all(&final_dir)?;
+    let staging = prepare_staging(state, &task_id, &final_dir)?;
 
     // Only non-default destinations are persisted; `None` keeps following the
     // daemon's `--download-dir` if the user moves it.
@@ -2054,11 +2307,38 @@ fn add_task(state: &mut State, request: Request) -> Result<Value, DaemonError> {
             // statvfs can fail on exotic mounts; not a reason to block.
             Err(error) => eprintln!("aether-daemon: {error}; continuing"),
         }
+        // Staging always lives under the daemon's download root, which may be
+        // a different filesystem than a "save as" target. Check both.
+        let staging_root = staging
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| state.download_dir.join(".aether"));
+        let staging_reserved = reserved_staging(state);
+        match ensure_space(&staging_root, size.saturating_add(staging_reserved)) {
+            Ok(_) => {}
+            Err(error) if error.is_shortage() => {
+                return Err(DaemonError::Protocol(format!(
+                    "{error} (staging needs {}, other downloads reserve {})",
+                    human_bytes(size),
+                    human_bytes(staging_reserved)
+                )))
+            }
+            Err(error) => eprintln!("aether-daemon: {error}; continuing"),
+        }
     }
 
     // -100..=100 keeps a single task from starving the queue forever.
     let priority = request.priority.unwrap_or(0).clamp(-100, 100);
+    // aria2 `out` (and any native caller that asks) overrides the probe's
+    // suggested name; the http plugin already prefers task.filename.
+    let filename = request
+        .settings
+        .get("filename")
+        .and_then(Value::as_str)
+        .and_then(aether_plugin_sdk::fsutil::sanitize_filename)
+        .or_else(|| probe.suggested_filename.clone());
     let mut settings = request.settings;
+    let checksum = parse_checksum(&settings)?;
     // The daemon-wide ffmpeg path is a default, not an override: a task that
     // names its own binary (or none at all) keeps/loses to its own choice,
     // and the value is persisted so the record shows what will actually run.
@@ -2073,7 +2353,7 @@ fn add_task(state: &mut State, request: Request) -> Result<Value, DaemonError> {
         id: task_id.clone(),
         url: url.clone(),
         plugin_id: plugin_id.clone(),
-        filename: probe.suggested_filename.clone(),
+        filename: filename.clone(),
         settings: settings.clone(),
         state: TaskState::Queued,
         priority,
@@ -2083,11 +2363,11 @@ fn add_task(state: &mut State, request: Request) -> Result<Value, DaemonError> {
     let task = TaskSpec {
         task_id: task_id.clone(),
         url,
-        filename: probe.suggested_filename,
+        filename,
         settings,
         plugin_state: None,
         expected_size: probe.metadata.as_ref().and_then(|metadata| metadata.size),
-        checksum: None,
+        checksum,
         proxy: task_proxy,
     };
 
@@ -2123,6 +2403,57 @@ fn add_task(state: &mut State, request: Request) -> Result<Value, DaemonError> {
         "queued": !started,
         "dir": final_dir.to_string_lossy(),
         "priority": priority,
+    }))
+}
+
+/// Parse a task-level SHA-256 from settings. Accepts both aria2's
+/// `sha-256=<hex>` and the JSON object form `{algorithm, value}`.
+fn parse_checksum(settings: &Value) -> Result<Option<Checksum>, DaemonError> {
+    let Some(value) = settings.get("checksum") else {
+        return Ok(None);
+    };
+    let (algorithm, value) = match value {
+        Value::String(text) => {
+            let (algorithm, value) = text
+                .split_once(':')
+                .or_else(|| text.split_once('='))
+                .ok_or_else(|| {
+                    DaemonError::Protocol("checksum must be sha-256:<hex> or sha-256=<hex>".into())
+                })?;
+            (algorithm.to_string(), value.to_string())
+        }
+        Value::Object(map) => {
+            let algorithm = map
+                .get("algorithm")
+                .and_then(Value::as_str)
+                .ok_or_else(|| DaemonError::Protocol("checksum.algorithm is required".into()))?;
+            let value = map
+                .get("value")
+                .and_then(Value::as_str)
+                .ok_or_else(|| DaemonError::Protocol("checksum.value is required".into()))?;
+            (algorithm.to_string(), value.to_string())
+        }
+        _ => {
+            return Err(DaemonError::Protocol(
+                "checksum must be a string or object".into(),
+            ))
+        }
+    };
+    let algorithm = algorithm.trim().replace('_', "-").to_ascii_lowercase();
+    if algorithm != "sha256" && algorithm != "sha-256" {
+        return Err(DaemonError::Protocol(
+            "only SHA-256 checksums are supported".into(),
+        ));
+    }
+    let value = value.trim();
+    if value.len() != 64 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(DaemonError::Protocol(
+            "SHA-256 checksum must be 64 hex characters".into(),
+        ));
+    }
+    Ok(Some(Checksum {
+        algorithm: ChecksumAlgorithm::Sha256,
+        value: value.to_ascii_lowercase(),
     }))
 }
 
@@ -2206,6 +2537,7 @@ fn try_launch(
     );
     state.active.insert(task_id.clone());
     state.live.insert(task_id.clone());
+    state.last_progress.insert(task_id.clone(), Instant::now());
     broadcast(
         state,
         json!({"event": "task_state", "task_id": task_id, "state": "running"}),
@@ -2360,6 +2692,9 @@ fn resume_scheduled(state: &mut State, task_id: &str) {
         );
         let _ = state.store.set_state(task_id, TaskState::Running);
         state.active.insert(task_id.to_string());
+        state
+            .last_progress
+            .insert(task_id.to_string(), Instant::now());
         let _ = state
             .store
             .append_log(task_id, "info", "resumed by schedule", None);
@@ -2388,6 +2723,105 @@ fn resume_scheduled(state: &mut State, task_id: &str) {
                 .store
                 .fail_task(task_id, "internal", &error.to_string(), true);
         }
+    }
+}
+
+/// Fail tasks whose plugin process died. Paused tasks are left paused: their
+/// resume path restarts the plugin from the stored record.
+fn recover_dead_plugins(state: &mut State) {
+    let dead = state.manager.prune_dead();
+    if dead.is_empty() {
+        return;
+    }
+    for plugin_id in dead {
+        let affected: Vec<aether_host::StoredTask> = state
+            .live
+            .iter()
+            .filter_map(|task_id| state.store.task(task_id).ok().flatten())
+            .filter(|task| task.plugin_id == plugin_id)
+            .collect();
+        let mut failed_any = false;
+        for task in affected {
+            state.active.remove(&task.id);
+            state.live.remove(&task.id);
+            state.canceling.remove(&task.id);
+            state.last_progress.remove(&task.id);
+            if task.state == TaskState::Paused {
+                let _ = state.store.append_log(
+                    &task.id,
+                    "warn",
+                    &format!("plugin {plugin_id} exited while paused; resume will restart it"),
+                    None,
+                );
+                continue;
+            }
+            let message = format!("plugin {plugin_id} exited while the task was running");
+            let _ = state.store.fail_task(&task.id, "plugin", &message, true);
+            let _ = state.store.append_log(&task.id, "error", &message, None);
+            broadcast(
+                state,
+                json!({"event": "failed", "task_id": task.id, "error": message}),
+            );
+            schedule_retry(state, &task.id, &message);
+            failed_any = true;
+        }
+        if failed_any {
+            promote_queued(state);
+        }
+    }
+}
+
+/// A plugin that is alive but never reports progress again must not pin a
+/// concurrency slot forever. Five minutes is deliberately generous: the HTTP
+/// client has a 30 s read timeout, so a live task normally reports far sooner.
+fn check_stalled_tasks(state: &mut State) {
+    const STALL: Duration = Duration::from_secs(900);
+    let stalled: Vec<String> = state
+        .active
+        .iter()
+        .filter(|task_id| {
+            state
+                .last_progress
+                .get(*task_id)
+                .is_none_or(|last| last.elapsed() > STALL)
+        })
+        .cloned()
+        .collect();
+    let mut failed_any = false;
+    for task_id in stalled {
+        let Ok(Some(task)) = state.store.task(&task_id) else {
+            continue;
+        };
+        if task.state != TaskState::Running {
+            continue;
+        }
+        // A task that already downloaded its full size may be checksumming a
+        // very large file; that is not a stalled download.
+        if task.total.is_some_and(|total| task.downloaded >= total) {
+            continue;
+        }
+        let _ = state.manager.send(
+            &task.plugin_id,
+            &HostCommand::Cancel {
+                task_id: task_id.clone(),
+            },
+        );
+        state.active.remove(&task_id);
+        state.live.remove(&task_id);
+        state.canceling.remove(&task_id);
+        state.last_progress.remove(&task_id);
+        let message = format!("no progress for {} s", STALL.as_secs());
+        let _ = state.store.fail_task(&task_id, "timeout", &message, true);
+        let _ = state.store.append_log(&task_id, "error", &message, None);
+        broadcast(
+            state,
+            json!({"event": "failed", "task_id": task_id, "error": message}),
+        );
+        schedule_retry(state, &task_id, &message);
+        failed_any = true;
+    }
+    if failed_any {
+        promote_queued(state);
     }
 }
 
@@ -2486,11 +2920,10 @@ fn check_retries(state: &mut State) {
 /// (Re)start a task from its stored record if capacity allows. Ok(true) when
 /// the task is running afterwards, Ok(false) when it stayed queued.
 fn start_from_record(state: &mut State, task: &StoredTask) -> Result<bool, DaemonError> {
-    let task_root = state.download_dir.join(".aether").join(&task.id);
-    let staging = task_root.join("staging");
     let final_dir = destination_dir(state, task.target_dir.as_deref());
-    fs::create_dir_all(&staging)?;
     fs::create_dir_all(&final_dir)?;
+    let staging = prepare_staging(state, &task.id, &final_dir)?;
+    let checksum = parse_checksum(&task.settings).ok().flatten();
     let spec = TaskSpec {
         task_id: task.id.clone(),
         url: task.url.clone(),
@@ -2498,7 +2931,7 @@ fn start_from_record(state: &mut State, task: &StoredTask) -> Result<bool, Daemo
         settings: task.settings.clone(),
         plugin_state: task.plugin_state.clone(),
         expected_size: task.total,
-        checksum: None,
+        checksum,
         proxy: None,
     };
     // PAC is resolved again for every (re)start: the script may have changed
@@ -2519,6 +2952,7 @@ fn handle_event(state: &mut State, envelope: PluginEventEnvelope) {
             speed_bps,
             ..
         } => {
+            state.last_progress.insert(task_id.clone(), Instant::now());
             let _ = state
                 .store
                 .update_progress(&task_id, downloaded, total, speed_bps);
@@ -2533,22 +2967,67 @@ fn handle_event(state: &mut State, envelope: PluginEventEnvelope) {
                 }),
             );
         }
+        PluginEvent::Metadata { task_id, metadata } => {
+            if let Some(total) = metadata.size {
+                let _ = state.store.update_total(&task_id, total);
+            }
+            broadcast(
+                state,
+                json!({"event": "task_metadata", "task_id": task_id, "metadata": metadata}),
+            );
+        }
+        PluginEvent::Log {
+            level,
+            message,
+            fields,
+        } => {
+            if let Some(task_id) = fields
+                .get("task_id")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+            {
+                let fields = Value::Object(fields.into_iter().collect());
+                let _ = state.store.append_log(
+                    &task_id,
+                    &format!("{level:?}").to_ascii_lowercase(),
+                    &message,
+                    Some(&fields),
+                );
+            } else {
+                eprintln!("aether-daemon: plugin log: {message}");
+            }
+        }
+        PluginEvent::Detail { task_id, data } => {
+            state.details.insert(task_id.clone(), data.clone());
+            broadcast(
+                state,
+                json!({"event": "task_detail", "task_id": task_id, "detail": data}),
+            );
+        }
         PluginEvent::Completed { task_id, files, .. } => {
+            // A late completion after a watchdog failure/cancel must not
+            // resurrect the task.
+            if !state.active.contains(&task_id) && !state.live.contains(&task_id) {
+                return;
+            }
             state.active.remove(&task_id);
             state.live.remove(&task_id);
-            let task_root = state.download_dir.join(".aether").join(&task_id);
-            let staging = task_root.join("staging");
+            state.last_progress.remove(&task_id);
+            state.details.remove(&task_id);
             // The record is authoritative: a "save as" task must finalize into
             // the directory it was created with, even after a restart.
-            let target_dir = state
-                .store
-                .task(&task_id)
-                .ok()
-                .flatten()
-                .and_then(|task| task.target_dir);
+            let record = state.store.task(&task_id).ok().flatten();
+            let target_dir = record.as_ref().and_then(|task| task.target_dir.clone());
+            let expected = record
+                .as_ref()
+                .and_then(|task| parse_checksum(&task.settings).ok().flatten());
             let final_dir = destination_dir(state, target_dir.as_deref());
-            match finalize_task(&staging, &final_dir, &files) {
+            let staging_root = existing_staging_root(state, &task_id, &final_dir);
+            let staging = staging_root.join("staging");
+            match finalize_task_with_checksum(&staging, &final_dir, &files, expected.as_ref()) {
                 Ok(moved) => {
+                    let _ = fs::remove_dir_all(&staging_root);
+                    cleanup_staging_parent(&staging_root);
                     let _ = state.store.complete_task(&task_id, &files);
                     let names = moved
                         .iter()
@@ -2585,9 +3064,14 @@ fn handle_event(state: &mut State, envelope: PluginEventEnvelope) {
             promote_queued(state);
         }
         PluginEvent::Failed { task_id, error } => {
+            if !state.active.contains(&task_id) && !state.live.contains(&task_id) {
+                return;
+            }
             state.active.remove(&task_id);
             state.live.remove(&task_id);
             state.canceling.remove(&task_id);
+            state.last_progress.remove(&task_id);
+            state.details.remove(&task_id);
             if error.kind == aether_plugin_sdk::ErrorKind::Canceled {
                 let _ = state.store.set_state(&task_id, TaskState::Canceled);
                 let _ = state.store.reset_retry(&task_id);
@@ -2693,62 +3177,6 @@ fn stop_idle_external_plugins(state: &mut State) {
 /// Start the aria2 compatibility service when an enabled `kind: "service"`
 /// plugin declares the `aria2` protocol. Failure is logged, not fatal:
 /// downloads keep working and HTTP requests answer 503.
-fn spawn_aria2_bridge(state: &mut State) {
-    let launch = state
-        .manager
-        .registry()
-        .iter()
-        .find(|entry| {
-            entry.enabled
-                && entry.manifest.kind == PluginKind::Service
-                && entry
-                    .manifest
-                    .protocols
-                    .iter()
-                    .any(|protocol| protocol == "aria2")
-        })
-        .and_then(|entry| {
-            entry
-                .executable()
-                .ok()
-                .map(|executable| (entry.manifest.clone(), executable))
-        });
-    let Some((manifest, executable)) = launch else {
-        return;
-    };
-    let init = Init {
-        host_version: state.host_version.clone(),
-        data_dir: state.data_dir.to_string_lossy().into_owned(),
-        log_level: LogLevel::Info,
-        proxy: None,
-        limits: Default::default(),
-        network: None,
-    };
-    let socket = state.socket.to_string_lossy().into_owned();
-    match crate::aria2::PluginBridge::spawn(manifest, executable, init, socket) {
-        Ok(bridge) => {
-            eprintln!("aether-daemon: aria2 compatibility bridge ready");
-            *state.aria2.lock().unwrap() = Some(Arc::new(bridge));
-        }
-        Err(error) => eprintln!("aether-daemon: {error}"),
-    }
-}
-
-fn stop_aria2_bridge(state: &State) {
-    // Take the slot synchronously (so no new HTTP request picks it up), but
-    // stop the process on a worker thread: an in-flight bridge call holds the
-    // process mutex while it may be waiting on this same event loop.
-    let bridge = state.aria2.lock().ok().and_then(|mut slot| slot.take());
-    if let Some(bridge) = bridge {
-        thread::spawn(move || bridge.stop());
-    }
-}
-
-fn restart_aria2_bridge(state: &mut State) {
-    stop_aria2_bridge(state);
-    spawn_aria2_bridge(state);
-}
-
 fn restart_idle_plugins(state: &mut State) {
     let busy: HashSet<String> = state
         .live
@@ -2831,15 +3259,179 @@ fn resolve_system_pac(
     }
 }
 
-/// Bytes still to be written into `dir` by tasks that are already running.
+/// Whether two directories live on the same filesystem. Unknown metadata
+/// keeps the centralized staging root (the safe default).
+fn same_filesystem(left: &Path, right: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        match (fs::metadata(left), fs::metadata(right)) {
+            (Ok(left), Ok(right)) => left.dev() == right.dev(),
+            _ => true,
+        }
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        match (fs::metadata(left), fs::metadata(right)) {
+            (Ok(left), Ok(right)) => {
+                match (left.volume_serial_number(), right.volume_serial_number()) {
+                    (Some(left), Some(right)) => left == right,
+                    _ => false,
+                }
+            }
+            _ => true,
+        }
+    }
+}
+
+/// Centralized staging lives under the download root; a target on another
+/// filesystem gets its own hidden staging directory so finalization is a
+/// rename instead of a cross-device copy.
+fn task_staging_root(state: &State, task_id: &str, final_dir: &Path) -> PathBuf {
+    if same_filesystem(&state.download_dir, final_dir) {
+        state.download_dir.join(".aether").join(task_id)
+    } else {
+        final_dir.join(".aether-staging").join(task_id)
+    }
+}
+
+/// Drop staging directories left behind by a crash for tasks that are no
+/// longer runnable. The DB is the source of truth.
+fn cleanup_stale_staging(state: &State) {
+    let Ok(entries) = fs::read_dir(&state.data_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if !name.starts_with("task-") {
+            continue;
+        }
+        let keep = state.store.task(name).ok().flatten().is_some_and(|task| {
+            matches!(
+                task.state,
+                TaskState::Running | TaskState::Queued | TaskState::Paused
+            )
+        });
+        if !keep {
+            let _ = fs::remove_dir_all(&path);
+        }
+    }
+    if let Ok(tasks) = state.store.list_tasks_with_files(10_000, false) {
+        for task in tasks {
+            if task.state != TaskState::Completed {
+                continue;
+            }
+            let Some(target) = task.target_dir.as_deref() else {
+                continue;
+            };
+            let root = Path::new(target).join(".aether-staging").join(&task.id);
+            if root.is_dir() {
+                let _ = fs::remove_dir_all(&root);
+                cleanup_staging_parent(&root);
+            }
+        }
+    }
+}
+
+/// Remove the cross-device `.aether-staging` parent when the last task under
+/// it is gone. The centralized `.aether` parent is shared with the DB/settings
+/// and is intentionally left alone.
+fn cleanup_staging_parent(root: &Path) {
+    let Some(parent) = root.parent() else {
+        return;
+    };
+    if parent.file_name().and_then(|name| name.to_str()) == Some(".aether-staging") {
+        let _ = fs::remove_dir(parent);
+    }
+}
+
+/// Prefer an existing staging directory over the computed one: a mount can
+/// change between runs, and a partial download must not be abandoned.
+fn existing_staging_root(state: &State, task_id: &str, final_dir: &Path) -> PathBuf {
+    let centralized = state.download_dir.join(".aether").join(task_id);
+    let target = final_dir.join(".aether-staging").join(task_id);
+    if centralized.join("staging").is_dir() {
+        centralized
+    } else if target.join("staging").is_dir() {
+        target
+    } else {
+        task_staging_root(state, task_id, final_dir)
+    }
+}
+
+/// Prepare the staging directory, falling back to the centralized root when
+/// volume detection was wrong or the target mount refuses the hidden folder.
+fn prepare_staging(state: &State, task_id: &str, final_dir: &Path) -> std::io::Result<PathBuf> {
+    let preferred = existing_staging_root(state, task_id, final_dir).join("staging");
+    match fs::create_dir_all(&preferred) {
+        Ok(()) => Ok(preferred),
+        Err(error) => {
+            eprintln!(
+                "aether-daemon: cannot create staging under {}: {error}; using the download root",
+                preferred.display()
+            );
+            let fallback = state
+                .download_dir
+                .join(".aether")
+                .join(task_id)
+                .join("staging");
+            fs::create_dir_all(&fallback)?;
+            Ok(fallback)
+        }
+    }
+}
+
+/// Bytes still to be written into `dir` by running plus queued/paused tasks.
+/// The queue is included because a burst of adds must not each pass the check
+/// against the same free space.
 fn reserved_in(state: &State, dir: &Path) -> u64 {
-    state
+    let mut reserved: u64 = state
         .active
         .iter()
         .filter_map(|task_id| state.store.task(task_id).ok().flatten())
         .filter(|task| destination_dir(state, task.target_dir.as_deref()) == dir)
         .map(|task| task.total.unwrap_or(0).saturating_sub(task.downloaded))
-        .sum()
+        .sum();
+    if let Ok(tasks) = state.store.list_tasks_with_files(10_000, false) {
+        reserved = reserved.saturating_add(
+            tasks
+                .into_iter()
+                .filter(|task| {
+                    matches!(task.state, TaskState::Queued | TaskState::Paused)
+                        && destination_dir(state, task.target_dir.as_deref()) == dir
+                })
+                .map(|task| task.total.unwrap_or(0))
+                .sum::<u64>(),
+        );
+    }
+    reserved
+}
+
+/// Bytes that will eventually pass through the daemon's staging root.
+fn reserved_staging(state: &State) -> u64 {
+    let mut reserved: u64 = state
+        .active
+        .iter()
+        .filter_map(|task_id| state.store.task(task_id).ok().flatten())
+        .map(|task| task.total.unwrap_or(0).saturating_sub(task.downloaded))
+        .sum();
+    if let Ok(tasks) = state.store.list_tasks_with_files(10_000, false) {
+        reserved = reserved.saturating_add(
+            tasks
+                .into_iter()
+                .filter(|task| matches!(task.state, TaskState::Queued | TaskState::Paused))
+                .map(|task| task.total.unwrap_or(0))
+                .sum::<u64>(),
+        );
+    }
+    reserved
 }
 
 /// Where a task's files land: the recorded directory or the daemon default.
@@ -2938,7 +3530,29 @@ fn task_id(request: &Request) -> Result<String, DaemonError> {
 
 #[cfg(test)]
 mod tests {
-    use super::schedule_active;
+    use super::{parse_checksum, schedule_active};
+    use serde_json::json;
+
+    #[test]
+    fn same_filesystem_is_reflexive() {
+        let dir = std::env::temp_dir();
+        assert!(super::same_filesystem(&dir, &dir));
+    }
+
+    #[test]
+    fn parses_task_checksums() {
+        let hex = "a".repeat(64);
+        let checksum = parse_checksum(&json!({ "checksum": format!("sha-256={hex}") }))
+            .unwrap()
+            .unwrap();
+        assert_eq!(checksum.value, hex);
+
+        let object = json!({ "checksum": { "algorithm": "SHA256", "value": hex } });
+        assert!(parse_checksum(&object).unwrap().is_some());
+        assert!(parse_checksum(&json!({ "checksum": "md5=abc" })).is_err());
+        assert!(parse_checksum(&json!({ "checksum": "sha256=short" })).is_err());
+        assert!(parse_checksum(&json!({})).unwrap().is_none());
+    }
 
     #[test]
     fn schedule_window_decides_by_clock_time() {

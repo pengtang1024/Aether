@@ -119,7 +119,7 @@ fn write_package_with_capabilities(dir: &Path, id: &str, capabilities: Value) ->
         "id": id,
         "name": format!("Test plugin {id}"),
         "version": "1.0.0",
-        "api": 1,
+        "api": 2,
         "protocols": ["test"],
         "capabilities": capabilities,
         "executable": { current_platform_key(): "bin/plugin" },

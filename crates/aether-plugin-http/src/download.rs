@@ -28,13 +28,36 @@ const STATE_INTERVAL: Duration = Duration::from_secs(1);
 const MAX_RETRIES: u32 = 3;
 const CHUNK: usize = 64 * 1024;
 
-/// Run one task. Intended to be called from a plugin worker thread.
+/// Run one task with a private budget. Kept for plugins that reuse the HTTP
+/// downloader (cloud drives, IPFS gateways, …) and do not need live updates.
 pub fn run(
     sender: PluginSender,
     client: Client,
     task: TaskSpec,
     paths: TaskPaths,
     budget: Budget,
+    control: Arc<TaskControl>,
+    progress: SharedProgress,
+) {
+    run_with_budget(
+        sender,
+        client,
+        task,
+        paths,
+        Arc::new(Mutex::new(budget)),
+        control,
+        progress,
+    );
+}
+
+/// Run one task with a shared budget; `SetBudget` can change the limit while
+/// the download is running (aria2 `changeOption`).
+pub fn run_with_budget(
+    sender: PluginSender,
+    client: Client,
+    task: TaskSpec,
+    paths: TaskPaths,
+    budget: Arc<Mutex<Budget>>,
     control: Arc<TaskControl>,
     progress: SharedProgress,
 ) {
@@ -66,7 +89,7 @@ fn run_inner(
     client: &Client,
     task: &TaskSpec,
     paths: &TaskPaths,
-    budget: Budget,
+    budget: Arc<Mutex<Budget>>,
     control: Arc<TaskControl>,
     progress: &SharedProgress,
 ) -> Result<(), DownloadError> {
@@ -77,11 +100,19 @@ fn run_inner(
     let mut resolved_task = task.clone();
     let extra = client::headers_from_settings(&task.settings)
         .map_err(|error| DownloadError::Protocol(error.to_string()))?;
-    let speed_limit_bps = task
-        .settings
-        .get("max_speed_bps")
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or(budget.download_bps);
+    // The daemon already folds a per-task `max_speed_bps` into this budget;
+    // keep the old fallback for direct/contract callers.
+    let speed_limit_bps = {
+        let mut current = budget.lock().unwrap();
+        if let Some(limit) = task
+            .settings
+            .get("max_speed_bps")
+            .and_then(serde_json::Value::as_u64)
+        {
+            current.download_bps = limit;
+        }
+        current.download_bps
+    };
     let throttle = Arc::new(Mutex::new(Throttle::new(speed_limit_bps, Instant::now())));
 
     if let Some(info) = metalink::resolve_with(client, &task.url, &extra)
@@ -94,11 +125,39 @@ fn run_inner(
             resolved_task.checksum = info.checksum;
         }
     }
+    // aria2 addUri accepts extra URIs as mirrors for the same file. Probe the
+    // primary first and fall back to a mirror only when it looks unhealthy;
+    // mid-download failover is not wired yet.
+    let mut candidates = vec![resolved_task.url.clone()];
+    if let Some(mirrors) = resolved_task
+        .settings
+        .get("mirrors")
+        .and_then(serde_json::Value::as_array)
+    {
+        candidates.extend(
+            mirrors
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .filter(|url| !url.is_empty())
+                .map(str::to_string),
+        );
+    }
+    let primary = candidates.first().cloned().unwrap_or_default();
+    let mut info = client::probe_with(client, &primary, &extra);
+    if candidates.len() > 1 && (!info.supported || info.reason.is_some()) {
+        for candidate in &candidates[1..] {
+            let mirror = client::probe_with(client, candidate, &extra);
+            if mirror.supported && mirror.reason.is_none() {
+                resolved_task.url = candidate.clone();
+                info = mirror;
+                break;
+            }
+        }
+    }
     let task = &resolved_task;
 
     fs::create_dir_all(&paths.staging)?;
 
-    let info = client::probe_with(client, &task.url, &extra);
     if !info.supported {
         return Err(DownloadError::Protocol(
             info.reason.unwrap_or_else(|| "unsupported URL".into()),
@@ -116,7 +175,7 @@ fn run_inner(
     let total = task.expected_size.or(info.size).filter(|size| *size > 0);
     let supports_range = info.accept_ranges && total.is_some();
     let connections = if supports_range {
-        budget.connections.clamp(1, 16)
+        budget.lock().unwrap().connections.clamp(1, 16)
     } else {
         1
     };
@@ -196,6 +255,7 @@ fn run_inner(
         let result_tx = result_tx.clone();
         let extra = extra.clone();
         let throttle = throttle.clone();
+        let budget = budget.clone();
         workers.push(thread::spawn(move || {
             let result = download_range(
                 &client,
@@ -208,6 +268,7 @@ fn run_inner(
                 supports_range,
                 &extra,
                 &throttle,
+                &budget,
             );
             let _ = result_tx.send(result);
         }));
@@ -220,6 +281,7 @@ fn run_inner(
     let mut last_speed_time = Instant::now();
     let mut last_progress = Instant::now() - PROGRESS_INTERVAL;
     let mut last_state = Instant::now();
+    let mut disconnected = false;
 
     loop {
         if control.is_canceled() {
@@ -242,11 +304,14 @@ fn run_inner(
                     }
                 }
                 Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => break,
+                Err(TryRecvError::Disconnected) => {
+                    disconnected = true;
+                    break;
+                }
             }
         }
 
-        if active == 0 {
+        if disconnected || active == 0 {
             break;
         }
 
@@ -306,10 +371,23 @@ fn run_inner(
 
     control.cancel();
     for worker in workers {
-        let _ = worker.join();
+        if worker.join().is_err() && first_error.is_none() {
+            first_error = Some(DownloadError::Protocol("download worker panicked".into()));
+        }
+    }
+    if active > 0 && first_error.is_none() {
+        first_error = Some(DownloadError::Protocol(
+            "download worker stopped before the range completed".into(),
+        ));
     }
     persist_state(paths, &shared, sender);
 
+    if let Some(DownloadError::InvalidRange) = first_error {
+        // 416 means the server's view of the file changed; the saved ranges
+        // are unusable, so drop them before the daemon retries from scratch.
+        let _ = state::remove(&paths.staging);
+        let _ = fs::remove_file(&file_path);
+    }
     if let Some(error) = first_error {
         return Err(error);
     }
@@ -408,6 +486,7 @@ fn is_complete(shared: &Arc<Mutex<ResumeState>>, total: Option<u64>) -> bool {
     shared.lock().unwrap().is_complete()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn download_range(
     client: &Client,
     url: &str,
@@ -419,6 +498,7 @@ fn download_range(
     supports_range: bool,
     extra: &client::HeaderMap,
     throttle: &Arc<Mutex<Throttle>>,
+    budget: &Arc<Mutex<Budget>>,
 ) -> Result<(), DownloadError> {
     let mut attempts = 0;
 
@@ -492,12 +572,23 @@ fn download_range(
                 if !control.wait_until_running() {
                     return Err(DownloadError::Canceled);
                 }
-                let read = response.read(&mut buffer)?;
+                let read = match response.read(&mut buffer) {
+                    Ok(read) => read,
+                    // A mid-stream reset/timeout is resumable; a disk write
+                    // failure below is not, so the two paths stay distinct.
+                    Err(error) => return Err(DownloadError::Read(error)),
+                };
                 if read == 0 {
                     break;
                 }
-                // Shared token bucket: the limit applies to the whole task.
-                let delay = throttle.lock().unwrap().delay_for(read, Instant::now());
+                // Shared token bucket: the limit applies to the whole task,
+                // and `SetBudget` (aria2 changeOption) updates it live.
+                let limit = budget.lock().unwrap().download_bps;
+                let delay = {
+                    let mut throttle = throttle.lock().unwrap();
+                    throttle.set_limit(limit);
+                    throttle.delay_for(read, Instant::now())
+                };
                 if !delay.is_zero() {
                     // Waiting while paused costs nothing extra; the bucket
                     // refills only as real time passes.
@@ -534,8 +625,24 @@ fn retryable_error(error: &DownloadError) -> bool {
     match error {
         DownloadError::Http(error) => retryable_reqwest(error),
         DownloadError::HttpStatus(status) => retryable_status(*status),
+        DownloadError::Read(error) => retryable_read(error),
         _ => false,
     }
+}
+
+fn retryable_read(error: &io::Error) -> bool {
+    matches!(
+        error.kind(),
+        io::ErrorKind::UnexpectedEof
+            | io::ErrorKind::TimedOut
+            | io::ErrorKind::WouldBlock
+            | io::ErrorKind::Interrupted
+            | io::ErrorKind::ConnectionReset
+            | io::ErrorKind::ConnectionAborted
+            | io::ErrorKind::BrokenPipe
+            // reqwest's blocking read timeout is surfaced as `Other`.
+            | io::ErrorKind::Other
+    )
 }
 
 fn retryable_reqwest(error: &reqwest::Error) -> bool {
@@ -565,6 +672,9 @@ pub enum DownloadError {
 
     #[error("http error: {0}")]
     Http(#[from] reqwest::Error),
+
+    #[error("network read error: {0}")]
+    Read(io::Error),
 
     #[error("http status {0}")]
     HttpStatus(u16),
@@ -610,7 +720,9 @@ impl DownloadError {
     pub fn to_plugin_error(&self) -> PluginError {
         match self {
             Self::Canceled => PluginError::new(ErrorKind::Canceled, "canceled"),
-            Self::ChecksumMismatch => PluginError::new(ErrorKind::Checksum, "SHA-256 mismatch"),
+            Self::ChecksumMismatch => {
+                PluginError::new(ErrorKind::Checksum, "SHA-256 mismatch").retryable(true)
+            }
             Self::HttpStatus(status) => {
                 let kind = match status {
                     401 | 403 => ErrorKind::Auth,
@@ -631,8 +743,17 @@ impl DownloadError {
             Self::Http(error) => {
                 PluginError::new(ErrorKind::Protocol, Self::reqwest_message(error))
             }
-            Self::RangeIgnored | Self::InvalidRange => {
-                PluginError::new(ErrorKind::RangeMismatch, self.to_string())
+            Self::Read(error) => {
+                let kind = if retryable_read(error) {
+                    ErrorKind::Connect
+                } else {
+                    ErrorKind::Internal
+                };
+                PluginError::new(kind, error.to_string()).retryable(retryable_read(error))
+            }
+            Self::RangeIgnored => PluginError::new(ErrorKind::RangeMismatch, self.to_string()),
+            Self::InvalidRange => {
+                PluginError::new(ErrorKind::RangeMismatch, self.to_string()).retryable(true)
             }
             Self::State(error) => PluginError::new(ErrorKind::Internal, error.to_string()),
             Self::Sdk(error) => PluginError::new(ErrorKind::Internal, error.to_string()),

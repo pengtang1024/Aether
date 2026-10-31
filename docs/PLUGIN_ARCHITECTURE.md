@@ -71,7 +71,7 @@ aether-plugin-http/
   "id": "http",
   "name": "HTTP / HTTPS Downloader",
   "version": "0.2.0",
-  "api": 1,
+  "api": 2,
   "min_host": "0.2.0",
   "protocols": ["http", "https", "metalink"],
   "capabilities": ["network", "filesystem:task", "http3"],
@@ -103,14 +103,18 @@ aether-plugin-http/
 
 不是下载引擎，而是常驻兼容桥（当前为 `aria2` JSON-RPC）：
 
-- daemon 启动时按 manifest 的 `protocols`（如 `["aria2"]`）找到并拉起，空闲清理
-  不会停止它；启停/重装/回滚会重启桥。
+- daemon 启动时按 manifest 的 `service` 字段（如 `"aria2"`）找到并拉起，空闲
+  清理不会停止它；启停/重装/回滚由共享 `ServiceSupervisor` 统一处理。
+  `kind: "service"` 的 `protocols` 可以为空，普通下载插件仍要求非空。
+- `ServiceSupervisor` 为每个服务持有独立 slot 锁：慢服务不会阻塞其他服务；
+  进程退出后下一次请求自动重启；`plugins` RPC 会返回 `running` / `last_error`。
 - 插件**不监听端口**。daemon 在共享 TCP 端口上识别协议，把 HTTP 请求通过
   `BridgeCall { request_id, payload }` 发给插件，插件回 `BridgeResult`。
 - 握手后 daemon 发一次 `ServiceInit { socket }`：本地端点，插件用它回调 daemon
   的 JSON-lines 接口；令牌由 daemon 校验，插件拿不到 `rpc_secret`。
 - HTTP/WS 传输、CORS、令牌校验与 `aria2.onDownload*` 事件扇出都留在 daemon；
-  插件只做请求翻译，不接触端口与 `rpc_secret`。
+  插件只做请求翻译，不接触端口与 `rpc_secret`。`addTorrent`/`addMetalink` 的
+  内联字节由插件写入数据目录，daemon 通过 `/aria2-blobs/<token>` 提供。
 - 服务插件不参与 `Probe`/`Start` 路由；它崩溃时下一次请求自动重启。
 
 ## 4. IPC 协议
@@ -197,7 +201,7 @@ Plugin → Host：
 | `aether-plugin-abi` | 可选 cdylib C ABI + Rust 导出宏 |
 | `aether-plugin-cdylib-fake` | cdylib ABI 测试插件 |
 
-- 协议版本 `API_VERSION = 1`；帧上限 8 MiB；长度前缀为 `u32` big-endian。
+- 协议版本 `API_VERSION = 2`（新增 service/bridge/detail 命令；`api = 1` 的旧插件会被拒绝加载）；帧上限 8 MiB；长度前缀为 `u32` big-endian。
 - 握手：插件 `Hello` → Host `Init` → 插件 `Ready`；id/version/api 不匹配直接拒绝。
 - Host 侧 `PluginProcess` 负责 spawn、握手、请求/事件、2 秒优雅退出和强制 kill。
 - 运行测试：`cargo test --workspace`；手动跑 fake 插件：`cargo run -p aether-plugin-fake`。

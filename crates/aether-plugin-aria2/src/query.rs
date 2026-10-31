@@ -70,7 +70,7 @@ pub fn tell_stopped(client: &mut DaemonClient, params: &[Value]) -> RpcResult {
     let offset = number(params, 0, 0);
     let num = number(params, 1, 1000);
     let keys = keys_param(params, 2);
-    let (mut tasks, dir) = client.list()?;
+    let (mut tasks, dir) = client.list_basic()?;
     tasks.retain(|task| {
         matches!(
             task.get("state").and_then(Value::as_str),
@@ -84,30 +84,28 @@ pub fn tell_stopped(client: &mut DaemonClient, params: &[Value]) -> RpcResult {
 }
 
 pub fn global_stat(client: &mut DaemonClient) -> RpcResult {
-    let (tasks, _) = client.list()?;
-    let count = |states: &[&str]| {
-        tasks
-            .iter()
-            .filter(|task| {
-                task.get("state")
-                    .and_then(Value::as_str)
-                    .is_some_and(|state| states.contains(&state))
-            })
-            .count()
-            .to_string()
+    // Aggregate in SQLite instead of loading the whole task history.
+    let summary = client.call("task_summary", json!({}))?;
+    let count = |state: &str| {
+        summary
+            .get("counts")
+            .and_then(|counts| counts.get(state))
+            .and_then(Value::as_u64)
+            .unwrap_or(0)
     };
-    let speed: u64 = tasks
-        .iter()
-        .filter(|task| task.get("state").and_then(Value::as_str) == Some("running"))
-        .filter_map(|task| task.get("speed_bps").and_then(Value::as_u64))
-        .sum();
+    let waiting = count("queued") + count("paused");
+    let stopped = count("completed") + count("failed") + count("canceled");
+    let speed = summary
+        .get("download_speed_bps")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
     Ok(json!({
         "downloadSpeed": speed.to_string(),
         "uploadSpeed": "0",
-        "numActive": count(&["running"]),
-        "numWaiting": count(&["queued", "paused"]),
-        "numStopped": count(&["completed", "failed", "canceled"]),
-        "numStoppedTotal": count(&["completed", "failed", "canceled"]),
+        "numActive": count("running").to_string(),
+        "numWaiting": waiting.to_string(),
+        "numStopped": stopped.to_string(),
+        "numStoppedTotal": stopped.to_string(),
     }))
 }
 
@@ -132,6 +130,49 @@ pub fn uris(client: &mut DaemonClient, params: &[Value]) -> RpcResult {
     Ok(json!([{ "uri": url, "status": "used" }]))
 }
 
+pub fn peers(client: &mut DaemonClient, params: &[Value]) -> RpcResult {
+    let gid = params
+        .first()
+        .and_then(Value::as_str)
+        .ok_or_else(|| RpcError::new(-32602, "missing gid"))?;
+    let task = resolve(client, gid)?;
+    let task_id = task
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| RpcError::new(1, format!("GID {gid} not found")))?;
+    let result = client.call("get_peers", json!({ "task_id": task_id }))?;
+    Ok(result.get("peers").cloned().unwrap_or_else(|| json!([])))
+}
+
+pub fn servers(client: &mut DaemonClient, params: &[Value]) -> RpcResult {
+    let gid = params
+        .first()
+        .and_then(Value::as_str)
+        .ok_or_else(|| RpcError::new(-32602, "missing gid"))?;
+    let task = resolve(client, gid)?;
+    let url = task.get("url").and_then(Value::as_str).unwrap_or_default();
+    let speed = task.get("speed_bps").and_then(Value::as_u64).unwrap_or(0);
+    let mut servers = vec![json!({
+        "uri": url,
+        "currentUri": url,
+        "downloadSpeed": speed.to_string(),
+    })];
+    if let Some(mirrors) = task
+        .get("settings")
+        .and_then(|settings| settings.get("mirrors"))
+        .and_then(Value::as_array)
+    {
+        for mirror in mirrors.iter().filter_map(Value::as_str) {
+            servers.push(json!({
+                "uri": mirror,
+                "currentUri": mirror,
+                "downloadSpeed": "0",
+            }));
+        }
+    }
+    Ok(json!([{ "index": "1", "servers": servers }]))
+}
+
 pub fn option(client: &mut DaemonClient, params: &[Value]) -> RpcResult {
     let gid = params
         .first()
@@ -140,6 +181,10 @@ pub fn option(client: &mut DaemonClient, params: &[Value]) -> RpcResult {
     let task = resolve(client, gid)?;
     let settings = task.get("settings").cloned().unwrap_or(Value::Null);
     Ok(json!({
+        "dir": task
+            .get("target_dir")
+            .and_then(Value::as_str)
+            .unwrap_or_default(),
         "max-download-limit": settings
             .get("max_speed_bps")
             .and_then(Value::as_u64)

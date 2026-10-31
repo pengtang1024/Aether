@@ -8,7 +8,7 @@ use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use aether_daemon::settings::Settings;
 use aether_daemon::{Client, DaemonConfig};
@@ -279,6 +279,26 @@ fn http_and_native_protocols_share_the_port() {
     let stat = rpc(addr, 5, "aria2.getGlobalStat", json!(["token:s3cret"]));
     assert!(stat["result"]["numActive"].is_string(), "{stat}");
 
+    // Per-task limit: stored in settings and pushed to a live plugin.
+    let changed = rpc(
+        addr,
+        9,
+        "aria2.changeOption",
+        json!(["token:s3cret", gid, { "max-download-limit": "1K" }]),
+    );
+    assert_eq!(changed["result"], "OK", "{changed}");
+    let option = rpc(addr, 10, "aria2.getOption", json!(["token:s3cret", gid]));
+    assert_eq!(option["result"]["max-download-limit"], "1024", "{option}");
+    let servers = rpc(addr, 11, "aria2.getServers", json!(["token:s3cret", gid]));
+    assert!(
+        servers["result"][0]["servers"][0]["uri"].is_string(),
+        "{servers}"
+    );
+    // The fake downloader has no peers; the daemon short-circuits non-BT
+    // tasks instead of waiting on a plugin round-trip.
+    let peers = rpc(addr, 12, "aria2.getPeers", json!(["token:s3cret", gid]));
+    assert_eq!(peers["result"], json!([]), "{peers}");
+
     let multicall = rpc(
         addr,
         6,
@@ -295,16 +315,34 @@ fn http_and_native_protocols_share_the_port() {
     // Disabling the service plugin stops routing to it but keeps the port;
     // enabling it again starts a fresh bridge without a daemon restart.
     let mut local = Client::connect(&daemon.socket).unwrap();
+    assert!(local
+        .plugins()
+        .unwrap()
+        .iter()
+        .find(|plugin| plugin.id == "aria2")
+        .is_some_and(|plugin| plugin.running));
     local.set_plugin_enabled("aria2", false).unwrap();
+    assert!(!local
+        .plugins()
+        .unwrap()
+        .iter()
+        .find(|plugin| plugin.id == "aria2")
+        .is_some_and(|plugin| plugin.running));
     let disabled = rpc(addr, 7, "aria2.getVersion", json!(["token:s3cret"]));
     assert!(
         disabled["error"]["message"]
             .as_str()
             .unwrap_or_default()
-            .contains("not installed or enabled"),
+            .contains("not installed"),
         "{disabled}"
     );
     local.set_plugin_enabled("aria2", true).unwrap();
+    assert!(local
+        .plugins()
+        .unwrap()
+        .iter()
+        .find(|plugin| plugin.id == "aria2")
+        .is_some_and(|plugin| plugin.running));
     let enabled = rpc(addr, 8, "aria2.getVersion", json!(["token:s3cret"]));
     assert_eq!(enabled["result"]["version"], "1.37.0", "{enabled}");
 
@@ -408,6 +446,21 @@ fn websocket_answers_calls_and_pushes_notifications() {
     let reply: Value = serde_json::from_str(&reply).unwrap();
     assert_eq!(reply["result"]["version"], "1.37.0", "{reply}");
 
+    // Browsers may split large addTorrent payloads across continuation frames.
+    let text = json!({
+        "jsonrpc": "2.0",
+        "id": 3,
+        "method": "aria2.getVersion",
+        "params": ["token:s3cret"],
+    })
+    .to_string();
+    let split = text.len() / 2;
+    write_client_frame(&mut ws, 0x1, false, &text.as_bytes()[..split]);
+    write_client_frame(&mut ws, 0x0, true, &text.as_bytes()[split..]);
+    let reply = read_server_text(&mut ws).expect("no fragmented reply");
+    let reply: Value = serde_json::from_str(&reply).unwrap();
+    assert_eq!(reply["result"]["version"], "1.37.0", "{reply}");
+
     // A task added over HTTP must reach the WebSocket subscriber.
     let added = rpc(
         addr,
@@ -442,10 +495,14 @@ fn websocket_answers_calls_and_pushes_notifications() {
 }
 
 fn write_client_text(stream: &mut TcpStream, text: &str) {
-    let payload = text.as_bytes();
+    write_client_frame(stream, 0x1, true, text.as_bytes());
+}
+
+fn write_client_frame(stream: &mut TcpStream, opcode: u8, fin: bool, payload: &[u8]) {
     assert!(payload.len() < 126, "test payload too large");
     let mask = [0x12u8, 0x34, 0x56, 0x78];
-    let mut frame = vec![0x81, 0x80 | payload.len() as u8];
+    let first = if fin { 0x80 | opcode } else { opcode };
+    let mut frame = vec![first, 0x80 | payload.len() as u8];
     frame.extend_from_slice(&mask);
     for (index, byte) in payload.iter().enumerate() {
         frame.push(byte ^ mask[index % 4]);
@@ -475,4 +532,408 @@ fn read_server_text(stream: &mut TcpStream) -> Option<String> {
         0x8 => None,
         _ => Some(String::new()),
     }
+}
+
+#[test]
+fn change_position_reorders_the_waiting_queue() {
+    let Some(daemon) = spawn() else {
+        eprintln!("plugin binaries are not built; skipping");
+        return;
+    };
+    let addr = daemon.addr;
+    let mut local = Client::connect(&daemon.socket).unwrap();
+    // The first task occupies the only slot; the next two queue. `duration_ms`
+    // is the fake plugin's built-in sleep, keeping the first task running.
+    for name in ["a.bin", "b.bin", "c.bin"] {
+        let url = format!("http://example.test/{name}");
+        local
+            .add_with_settings(&url, None, None, json!({ "duration_ms": 5000 }))
+            .unwrap();
+    }
+
+    let waiting = rpc(addr, 1, "aria2.tellWaiting", json!(["token:s3cret", 0, 10]));
+    let tasks = waiting["result"].as_array().unwrap();
+    assert_eq!(tasks.len(), 2, "{waiting}");
+    let target = tasks[1]["gid"].as_str().unwrap().to_string();
+
+    let moved = rpc(
+        addr,
+        2,
+        "aria2.changePosition",
+        json!(["token:s3cret", target, 0, "POS_SET"]),
+    );
+    assert_eq!(moved["result"], 0, "{moved}");
+
+    let reordered = rpc(addr, 3, "aria2.tellWaiting", json!(["token:s3cret", 0, 10]));
+    let tasks = reordered["result"].as_array().unwrap();
+    assert_eq!(tasks[0]["gid"], target, "{reordered}");
+
+    local.shutdown().unwrap();
+}
+
+#[test]
+fn out_option_overrides_the_probed_filename() {
+    let Some(daemon) = spawn() else {
+        eprintln!("plugin binaries are not built; skipping");
+        return;
+    };
+    let addr = daemon.addr;
+    let mut local = Client::connect(&daemon.socket).unwrap();
+    let added = local
+        .add_with_settings(
+            "http://example.test/original.bin",
+            None,
+            None,
+            json!({ "filename": "custom.bin", "duration_ms": 5000 }),
+        )
+        .unwrap();
+    let task_id = added["task_id"].as_str().unwrap();
+    let gid = gid_of(task_id);
+
+    let status = rpc(addr, 1, "aria2.tellStatus", json!(["token:s3cret", gid]));
+    let path = status["result"]["files"][0]["path"]
+        .as_str()
+        .unwrap_or_default();
+    assert!(path.ends_with("custom.bin"), "{status}");
+    local.shutdown().unwrap();
+}
+
+fn gid_of(task_id: &str) -> String {
+    let value = task_id
+        .strip_prefix("task-")
+        .and_then(|suffix| suffix.parse::<u64>().ok())
+        .unwrap();
+    format!("{value:016x}")
+}
+
+#[test]
+fn task_checksum_is_enforced_at_finalize() {
+    let Some(daemon) = spawn() else {
+        eprintln!("plugin binaries are not built; skipping");
+        return;
+    };
+    let addr = daemon.addr;
+    let mut local = Client::connect(&daemon.socket).unwrap();
+    let expected = format!("sha256:{}", "0".repeat(64));
+    let added = local
+        .add_with_settings(
+            "http://example.test/checksum.bin",
+            None,
+            None,
+            json!({ "checksum": expected }),
+        )
+        .unwrap();
+    let task_id = added["task_id"].as_str().unwrap();
+    let gid = gid_of(task_id);
+
+    let mut last = Value::Null;
+    for _ in 0..40 {
+        last = rpc(addr, 1, "aria2.tellStatus", json!(["token:s3cret", gid]));
+        if last["result"]["status"] == "error" {
+            break;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    assert_eq!(last["result"]["status"], "error", "{last}");
+    let message = last["result"]["errorMessage"]
+        .as_str()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    assert!(message.contains("checksum"), "{last}");
+    local.shutdown().unwrap();
+}
+
+#[test]
+fn http_keep_alive_serves_multiple_requests() {
+    let Some(daemon) = spawn() else {
+        eprintln!("plugin binaries are not built; skipping");
+        return;
+    };
+    let addr = daemon.addr;
+    let mut stream = TcpStream::connect(addr).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+
+    for (id, close) in [(1, false), (2, true)] {
+        let body = json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": "aria2.getVersion",
+            "params": ["token:s3cret"],
+        })
+        .to_string();
+        let connection = if close { "close" } else { "keep-alive" };
+        let request = format!(
+            "POST /jsonrpc HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: {connection}\r\n\r\n{body}",
+            body.len()
+        );
+        stream.write_all(request.as_bytes()).unwrap();
+        stream.flush().unwrap();
+
+        let response = read_http_response(&mut stream);
+        assert_eq!(response["result"]["version"], "1.37.0", "{response}");
+    }
+
+    let mut local = Client::connect(&daemon.socket).unwrap();
+    local.shutdown().unwrap();
+}
+
+fn read_http_response(stream: &mut TcpStream) -> Value {
+    let mut head = Vec::new();
+    let mut byte = [0u8; 1];
+    while !head.ends_with(b"\r\n\r\n") {
+        stream.read_exact(&mut byte).unwrap();
+        head.push(byte[0]);
+    }
+    let head = String::from_utf8_lossy(&head);
+    let length = head
+        .lines()
+        .find_map(|line| {
+            line.split_once(':')
+                .filter(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+                .and_then(|(_, value)| value.trim().parse::<usize>().ok())
+        })
+        .unwrap_or(0);
+    let mut body = vec![0u8; length];
+    stream.read_exact(&mut body).unwrap();
+    serde_json::from_slice(&body).unwrap()
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn dead_plugin_process_fails_its_running_tasks() {
+    let Some(daemon) = spawn() else {
+        eprintln!("plugin binaries are not built; skipping");
+        return;
+    };
+    let mut local = Client::connect(&daemon.socket).unwrap();
+    let added = local
+        .add_with_settings(
+            "http://example.test/crash.bin",
+            None,
+            None,
+            json!({ "duration_ms": 5000 }),
+        )
+        .unwrap();
+    let task_id = added["task_id"].as_str().unwrap().to_string();
+
+    let plugin_dir = daemon.root.join("plugins/fake/bin");
+    let pid = (0..60)
+        .find_map(|_| {
+            let pid = find_plugin_pid(&plugin_dir);
+            if pid.is_none() {
+                thread::sleep(Duration::from_millis(50));
+            }
+            pid
+        })
+        .expect("fake plugin process was not started");
+    let status = std::process::Command::new("kill")
+        .args(["-9", &pid.to_string()])
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    let mut state = String::new();
+    for _ in 0..80 {
+        state = local.task(&task_id).unwrap()["task"]["state"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
+        if state == "failed" {
+            break;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    assert_eq!(state, "failed", "task should fail after its plugin died");
+    local.shutdown().unwrap();
+}
+
+#[cfg(target_os = "linux")]
+fn find_plugin_pid(directory: &Path) -> Option<u32> {
+    let needle = directory.to_string_lossy();
+    for entry in std::fs::read_dir("/proc").ok()? {
+        let Ok(entry) = entry else { continue };
+        let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() else {
+            continue;
+        };
+        let Ok(cmdline) = std::fs::read(entry.path().join("cmdline")) else {
+            continue;
+        };
+        if String::from_utf8_lossy(&cmdline).contains(needle.as_ref()) {
+            return Some(pid);
+        }
+    }
+    None
+}
+
+#[test]
+fn paused_task_stays_paused_while_progress_arrives() {
+    let Some(daemon) = spawn() else {
+        eprintln!("plugin binaries are not built; skipping");
+        return;
+    };
+    let mut local = Client::connect(&daemon.socket).unwrap();
+    let added = local
+        .add_with_settings(
+            "http://example.test/pause.bin",
+            None,
+            None,
+            json!({ "duration_ms": 5000 }),
+        )
+        .unwrap();
+    let task_id = added["task_id"].as_str().unwrap().to_string();
+    for _ in 0..40 {
+        let state = local.task(&task_id).unwrap()["task"]["state"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
+        if state == "running" {
+            break;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    local.pause(&task_id).unwrap();
+    // The fake plugin keeps emitting progress while paused; the store must
+    // not turn that into `running` again.
+    thread::sleep(Duration::from_millis(1200));
+    let state = local.task(&task_id).unwrap()["task"]["state"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
+    assert_eq!(state, "paused");
+    local.shutdown().unwrap();
+}
+
+#[test]
+fn save_session_writes_active_urls() {
+    let Some(daemon) = spawn() else {
+        eprintln!("plugin binaries are not built; skipping");
+        return;
+    };
+    let addr = daemon.addr;
+    let mut local = Client::connect(&daemon.socket).unwrap();
+    local
+        .add_with_settings(
+            "http://example.test/session.bin",
+            None,
+            None,
+            json!({ "duration_ms": 5000 }),
+        )
+        .unwrap();
+
+    let saved = rpc(addr, 1, "aria2.saveSession", json!(["token:s3cret"]));
+    assert_eq!(saved["result"], "OK", "{saved}");
+    let path = daemon.root.join("downloads/.aether/aria2-session.txt");
+    let text = std::fs::read_to_string(path).unwrap();
+    assert!(text.contains("session.bin"), "{text}");
+    local.shutdown().unwrap();
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn killed_service_is_replaced_on_the_next_request() {
+    let Some(daemon) = spawn() else {
+        eprintln!("plugin binaries are not built; skipping");
+        return;
+    };
+    let addr = daemon.addr;
+    let plugin_dir = daemon.root.join("plugins/aria2/bin");
+    let pid = (0..60)
+        .find_map(|_| {
+            let pid = find_plugin_pid(&plugin_dir);
+            if pid.is_none() {
+                thread::sleep(Duration::from_millis(50));
+            }
+            pid
+        })
+        .expect("aria2 service process was not started");
+    let status = std::process::Command::new("kill")
+        .args(["-9", &pid.to_string()])
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    let mut version = Value::Null;
+    for _ in 0..40 {
+        version = rpc(addr, 1, "aria2.getVersion", json!(["token:s3cret"]));
+        if version["result"]["version"] == "1.37.0" {
+            break;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    assert_eq!(version["result"]["version"], "1.37.0", "{version}");
+
+    let mut local = Client::connect(&daemon.socket).unwrap();
+    local.shutdown().unwrap();
+}
+
+#[test]
+fn concurrent_http_clients_share_the_service_bridge() {
+    let Some(daemon) = spawn() else {
+        eprintln!("plugin binaries are not built; skipping");
+        return;
+    };
+    let addr = daemon.addr;
+    let mut workers = Vec::new();
+    for worker in 0..8_u64 {
+        workers.push(thread::spawn(move || {
+            for request in 0..10_u64 {
+                let response = rpc(
+                    addr,
+                    worker * 1000 + request,
+                    "aria2.getVersion",
+                    json!(["token:s3cret"]),
+                );
+                assert_eq!(
+                    response["result"]["version"], "1.37.0",
+                    "worker {worker}: {response}"
+                );
+            }
+        }));
+    }
+    for worker in workers {
+        worker.join().unwrap();
+    }
+    let mut local = Client::connect(&daemon.socket).unwrap();
+    local.shutdown().unwrap();
+}
+
+#[test]
+#[ignore = "soak: set AETHER_SOAK_SECS to control duration"]
+fn soak_http_clients() {
+    let Some(daemon) = spawn() else {
+        eprintln!("plugin binaries are not built; skipping");
+        return;
+    };
+    let addr = daemon.addr;
+    let seconds = std::env::var("AETHER_SOAK_SECS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(30);
+    let deadline = Instant::now() + Duration::from_secs(seconds);
+    let mut workers = Vec::new();
+    for worker in 0..8_u64 {
+        workers.push(thread::spawn(move || {
+            let mut request = 0_u64;
+            while Instant::now() < deadline {
+                request += 1;
+                let response = rpc(
+                    addr,
+                    worker * 1_000_000 + request,
+                    "aria2.getVersion",
+                    json!(["token:s3cret"]),
+                );
+                assert_eq!(
+                    response["result"]["version"], "1.37.0",
+                    "worker {worker} request {request}: {response}"
+                );
+            }
+        }));
+    }
+    for worker in workers {
+        worker.join().unwrap();
+    }
+    let mut local = Client::connect(&daemon.socket).unwrap();
+    local.shutdown().unwrap();
 }

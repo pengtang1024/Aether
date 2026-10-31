@@ -12,6 +12,7 @@
 use std::io::{self, Read, Write};
 use std::net::Shutdown;
 use std::path::Path;
+use std::time::Duration;
 
 #[cfg(unix)]
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -127,6 +128,18 @@ impl Conn {
             ConnInner::Tcp(stream) => stream.try_clone().map(|stream| Self {
                 inner: ConnInner::Tcp(stream),
             }),
+        }
+    }
+
+    /// Set a read timeout on TCP connections (HTTP keep-alive idle limit).
+    /// Local sockets/pipes have no equivalent and are left unchanged.
+    pub fn set_read_timeout(&self, timeout: Option<Duration>) -> io::Result<()> {
+        match &self.inner {
+            ConnInner::Tcp(stream) => stream.set_read_timeout(timeout),
+            #[cfg(unix)]
+            ConnInner::Unix(_) => Ok(()),
+            #[cfg(windows)]
+            ConnInner::Pipe(_) => Ok(()),
         }
     }
 

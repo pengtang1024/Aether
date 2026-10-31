@@ -42,17 +42,70 @@ The alternative upstream options are GPL-3.0-only and
 `LicenseRef-Slint-Software-3.0`; see <https://slint.dev> for the full terms.
 Redistributions must comply with the selected license.
 
+## Full license texts
+
+Every license family that can ship in a binary is reproduced under
+[`LICENSES/`](LICENSES/):
+
+| Text | Applies to |
+| --- | --- |
+| `Apache-2.0.txt` | reqwest, hyper, tokio, serde and other Apache-2.0 crates |
+| `BSD-2-Clause.txt` | arrayref and other BSD-2-Clause crates |
+| `BSD-3-Clause.txt` | curve25519-dalek, ed25519-dalek and other BSD-3-Clause crates |
+| `ISC.txt` | libloading, aws-lc and other ISC crates |
+| `BSL-1.0.txt` | ryu and other Boost-licensed crates |
+| `CDLA-Permissive-2.0.txt` | webpki-roots certificate data |
+| `MPL-2.0.txt` | option-ext (via directories/dirs-sys on some targets) |
+| `Unicode-3.0.txt` | ICU4X / unicode-ident data |
+| `Zlib.txt` | miniz_oxide and other Zlib crates |
+| `Slint-Royalty-free-2.0.md` | Slint runtime and vendored Material 3 widgets |
+| `AWS-LC-LICENSE.txt` | AWS-LC / BoringSSL / OpenSSL code statically linked through `aws-lc-sys` |
+| `ring-LICENSE*.txt`, `ring-once_cell-*.txt`, `ring-fiat-LICENSE.txt` | `ring`'s ISC/BoringSSL/once_cell/fiat composite |
+| `libssh2-COPYING.txt`, `libssh2-*.txt` | bundled libssh2 (BSD-3 plus curl/FSFULLR/SAX-PD-2.0 portions) |
+| `QuickJS-LICENSE.txt` | QuickJS engine bundled by `rquickjs-sys` for PAC evaluation |
+| `moka-NOTICE.txt` | Moka's additional Apache-2.0 notice (frequency sketch / timer wheel) |
+| `SQLite-blessing.txt` | public-domain SQLite blessing (bundled `rusqlite`) |
+
+`Cargo.lock` is the authoritative, version-pinned inventory of every Rust
+dependency; [`docs/THIRD_PARTY_INVENTORY.md`](docs/THIRD_PARTY_INVENTORY.md)
+lists every compiled-in package with its SPDX expression and release targets,
+[`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md) reproduces the per-crate
+LICENSE/COPYING/NOTICE texts and copyright lines, and release builds also
+attach a CycloneDX SBOM. The texts above are shipped
+verbatim in source and binary distributions.
+
+**MPL-2.0 note:** `option-ext` (pulled by `directories`/`dirs-sys` on some
+targets) is used unmodified. Its complete source is available from crates.io
+at the exact version in `Cargo.lock`; the MPL-2.0 text is in
+`LICENSES/MPL-2.0.txt`. No MPL-covered file is modified by Aether.
+
 ## Rust dependencies
 
-The plugin crates use `serde`, `serde_json`, `rmp-serde`, `semver` and
-`thiserror`. They are permissively licensed (MIT and/or Apache-2.0) and are
-enumerated with exact versions in `Cargo.lock`.
+The workspace uses permissively licensed crates (MIT, Apache-2.0, BSD, ISC,
+Zlib, BSL-1.0, Unicode-3.0) plus the Slint exception described above and the
+MPL-2.0 `option-ext` note. Exact versions are enumerated in `Cargo.lock`; the
+release SBOM names every one.
 
 The Host bundles **QuickJS** through the `rquickjs` crate to evaluate PAC
-scripts (daemon only, not linked into plugins or the UI). QuickJS and
-`rquickjs`/`rquickjs-sys` are MIT-licensed, copyright Fabrice Bellard and the
-rquickjs contributors; the bundled C sources are compiled into `aether-daemon`.
+scripts (daemon only, not linked into plugins or the UI). QuickJS is
+MIT-licensed (copyright Fabrice Bellard, Charlie Gordon, Ben Noordhuis and
+Saúl Ibarra Corretgé); the full text is in
+`LICENSES/QuickJS-LICENSE.txt`. `rquickjs`/`rquickjs-sys` are MIT-licensed.
 Prefer updating `rquickjs` over patching the vendored QuickJS sources.
+
+**Bundled C libraries.** Several crates compile third-party C into the
+binaries, so their upstream composite licenses travel with the product:
+
+- `aws-lc-sys` (TLS) links AWS-LC, BoringSSL and OpenSSL-derived code —
+  `LICENSES/AWS-LC-LICENSE.txt` reproduces the full notice chain.
+- `ring` (Ed25519/TLS support) has ISC/BoringSSL/once_cell/fiat components —
+  see the `ring-*` texts.
+- `libssh2-sys` (SFTP) statically links libssh2; its COPYING plus the bundled
+  BSD/curl/FSFULLR/SAX-PD-2.0 texts are in `LICENSES/libssh2-*`.
+- `rusqlite`/`libsqlite3-sys` compile SQLite, which is public domain; the
+  blessing is preserved in `LICENSES/SQLite-blessing.txt`.
+- `moka` (DNS cache) has an additional Apache-2.0 notice for two files —
+  `LICENSES/moka-NOTICE.txt`.
 
 ## Distribution requirements
 

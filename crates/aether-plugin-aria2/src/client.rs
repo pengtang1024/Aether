@@ -63,7 +63,22 @@ impl DaemonClient {
     }
 
     pub fn list(&mut self) -> Result<(Vec<Value>, String), String> {
-        let result = self.call("list", json!({}))?;
+        self.list_with_files(true)
+    }
+
+    /// Same rows without the per-task `task_files` query (queue/history
+    /// listings only need filenames and state).
+    pub fn list_basic(&mut self) -> Result<(Vec<Value>, String), String> {
+        self.list_with_files(false)
+    }
+
+    fn list_with_files(&mut self, include_files: bool) -> Result<(Vec<Value>, String), String> {
+        // aria2 clients can page through the full history; the UI keeps its
+        // own 100-row default because it calls `list` without a limit.
+        let result = self.call(
+            "list",
+            json!({ "settings": { "limit": 10_000, "include_files": include_files } }),
+        )?;
         let tasks = result
             .get("tasks")
             .and_then(Value::as_array)

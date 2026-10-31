@@ -849,3 +849,6 @@ msgstr "External-process plugins may start"
 
 msgid "已阻止外部进程插件：空闲实例已停止，运行中的任务当前进程跑完"
 msgstr "External-process plugins blocked; idle instances stopped, running tasks finish their current process"
+
+msgid "BT 状态  "
+msgstr "BT status  "

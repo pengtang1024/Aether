@@ -2,7 +2,7 @@
   "id": "rtmp",
   "name": "RTMP / RTSP Capture",
   "version": "0.1.0",
-  "api": 1,
+  "api": 2,
   "min_host": "0.2.0",
   "protocols": ["rtmp", "rtmps", "rtsp"],
   "capabilities": ["network", "filesystem:task", "external-process"],

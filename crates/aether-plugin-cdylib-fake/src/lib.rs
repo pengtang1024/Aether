@@ -9,7 +9,7 @@ const MANIFEST: &str = r#"{
   "id": "abi-fake",
   "name": "ABI fake plugin",
   "version": "0.1.0",
-  "api": 1,
+  "api": 2,
   "kind": "cdylib",
   "protocols": ["http"],
   "capabilities": ["network", "filesystem:task"],
@@ -111,7 +111,9 @@ impl Plugin for AbiFake {
             }
             // Service/bridge commands target `kind: "service"` plugins
             // (aria2 compatibility); download plugins must not accept them.
-            HostCommand::ServiceInit { .. } | HostCommand::BridgeCall { .. } => {
+            HostCommand::ServiceInit { .. }
+            | HostCommand::ServiceAddress { .. }
+            | HostCommand::BridgeCall { .. } => {
                 return Err(SdkError::Protocol(
                     "service commands are not supported by this plugin".into(),
                 ));

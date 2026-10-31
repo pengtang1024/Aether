@@ -2,7 +2,7 @@
   "id": "baidupan",
   "name": "Baidu Netdisk (Official API)",
   "version": "0.1.0",
-  "api": 1,
+  "api": 2,
   "min_host": "0.2.0",
   "protocols": ["baidupan"],
   "capabilities": ["network", "filesystem:task"],

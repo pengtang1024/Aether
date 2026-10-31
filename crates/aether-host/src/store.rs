@@ -1,7 +1,7 @@
 //! SQLite persistence for tasks, files, plugin settings and task logs.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use aether_plugin_sdk::{Checksum, ChecksumAlgorithm, FileInfo};
@@ -149,13 +149,73 @@ pub struct TaskStore {
     connection: Connection,
 }
 
+/// Create the database file with owner-only permissions (Unix). On other
+/// platforms the default ACL/profile policy applies.
+fn restrict_file_permissions(path: &Path) -> Result<(), StoreError> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        if !path.exists() {
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .mode(0o600)
+                .open(path)?;
+        }
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    }
+    #[cfg(not(unix))]
+    let _ = path;
+    Ok(())
+}
+
+/// The data directory holds the task database, logs, update state and plugin
+/// backups; keep it traversable only by the owner on Unix.
+fn restrict_dir_permissions(path: &Path) -> Result<(), StoreError> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        // The daemon owns its data directory, but tests and embedders may put
+        // the database in a shared directory (e.g. /tmp). Never fail to open
+        // just because that directory is not ours to chmod; the 0600 database
+        // file is the primary protection.
+        if let Err(error) = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)) {
+            eprintln!(
+                "aether-store: cannot restrict {} to 0700: {error}",
+                path.display()
+            );
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = path;
+    Ok(())
+}
+
 impl TaskStore {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, StoreError> {
         let path = path.as_ref();
-        if let Some(parent) = path.parent() {
+        if let Some(parent) = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        {
             fs::create_dir_all(parent)?;
+            restrict_dir_permissions(parent)?;
         }
+        // The task table stores `TaskSpec.settings` verbatim, which can
+        // contain cookies, Authorization headers, proxy passwords and OAuth
+        // refresh tokens. Create the file as 0600 before SQLite touches it:
+        // the Unix VFS gives the journal the same mode as the database.
+        restrict_file_permissions(path)?;
         let connection = Connection::open(path)?;
+        restrict_file_permissions(path)?;
+        if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
+            for suffix in ["-wal", "-shm", "-journal"] {
+                let sibling: PathBuf = path.with_file_name(format!("{name}{suffix}"));
+                if sibling.exists() {
+                    restrict_file_permissions(&sibling)?;
+                }
+            }
+        }
         Self::configure(&connection)?;
         Self::migrate(&connection)?;
         Ok(Self { connection })
@@ -316,6 +376,16 @@ impl TaskStore {
     }
 
     pub fn list_tasks(&self, limit: usize) -> Result<Vec<StoredTask>, StoreError> {
+        self.list_tasks_with_files(limit, true)
+    }
+
+    /// `include_files = false` skips one `task_files` query per task; callers
+    /// that only need counts/queue order (aria2 tellWaiting/Stopped) use it.
+    pub fn list_tasks_with_files(
+        &self,
+        limit: usize,
+        include_files: bool,
+    ) -> Result<Vec<StoredTask>, StoreError> {
         let mut statement = self.connection.prepare(
             "SELECT id, url, plugin_id, filename, state, downloaded, total, speed_bps,
                     error_kind, error_message, error_retryable, settings, plugin_state,
@@ -327,10 +397,32 @@ impl TaskStore {
         let mut tasks = Vec::new();
         for row in rows {
             let mut task = row?;
-            task.files = self.files(&task.id)?;
+            if include_files {
+                task.files = self.files(&task.id)?;
+            }
             tasks.push(task);
         }
         Ok(tasks)
+    }
+
+    /// One row per state: `(task count, aggregate speed)`.
+    pub fn summary(&self) -> Result<std::collections::HashMap<String, (u64, u64)>, StoreError> {
+        let mut statement = self.connection.prepare(
+            "SELECT state, COUNT(*), COALESCE(SUM(speed_bps), 0)
+             FROM tasks GROUP BY state",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                (row.get::<_, i64>(1)? as u64, row.get::<_, i64>(2)? as u64),
+            ))
+        })?;
+        let mut summary = std::collections::HashMap::new();
+        for row in rows {
+            let (state, values) = row?;
+            summary.insert(state, values);
+        }
+        Ok(summary)
     }
 
     pub fn recoverable_tasks(&self) -> Result<Vec<StoredTask>, StoreError> {
@@ -374,7 +466,9 @@ impl TaskStore {
     ) -> Result<(), StoreError> {
         self.connection.execute(
             "UPDATE tasks SET downloaded = ?2, total = ?3, speed_bps = ?4,
-                    state = 'running', error_kind = NULL, error_message = NULL,
+                    state = CASE WHEN state IN ('running', 'queued') THEN 'running' ELSE state END,
+                    error_kind = CASE WHEN state IN ('running', 'queued') THEN NULL ELSE error_kind END,
+                    error_message = CASE WHEN state IN ('running', 'queued') THEN NULL ELSE error_message END,
                     updated_at = ?5
              WHERE id = ?1",
             params![
@@ -384,6 +478,26 @@ impl TaskStore {
                 speed_bps as i64,
                 now_ms()
             ],
+        )?;
+        Ok(())
+    }
+
+    /// Replace one task's settings JSON. Used by per-task option changes
+    /// (`aria2.changeOption`); the scheduler reads it on the next start.
+    pub fn update_task_settings(&self, id: &str, settings: &Value) -> Result<(), StoreError> {
+        self.connection.execute(
+            "UPDATE tasks SET settings = ?2, updated_at = ?3 WHERE id = ?1",
+            params![id, serde_json::to_string(settings)?, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    /// Persist the plugin's authoritative total before the first progress
+    /// sample (metadata can arrive earlier than bytes).
+    pub fn update_total(&self, id: &str, total: u64) -> Result<(), StoreError> {
+        self.connection.execute(
+            "UPDATE tasks SET total = ?2, updated_at = ?3 WHERE id = ?1",
+            params![id, total as i64, now_ms()],
         )?;
         Ok(())
     }
@@ -545,6 +659,33 @@ impl TaskStore {
             task.files = self.files(&task.id)?;
         }
         Ok(task)
+    }
+
+    /// Waiting queue (queued + paused) in the order the scheduler will pick
+    /// from, including the aging bonus. Used by aria2 `tellWaiting` and
+    /// `changePosition` so the compatibility view matches real behaviour.
+    pub fn waiting_order(&self) -> Result<Vec<String>, StoreError> {
+        let mut statement = self.connection.prepare(
+            "SELECT id FROM tasks WHERE state IN ('queued', 'paused')
+             ORDER BY (priority + MIN(100, (strftime('%s','now') - created_at / 1000) / 300)) DESC,
+                      created_at ASC, rowid ASC",
+        )?;
+        let rows = statement.query_map([], |row| row.get(0))?;
+        Ok(rows.collect::<Result<Vec<String>, _>>()?)
+    }
+
+    /// Apply one explicit queue order in a single transaction.
+    pub fn set_priorities(&mut self, changes: &[(String, i32)]) -> Result<(), StoreError> {
+        let now = now_ms();
+        let tx = self.connection.transaction()?;
+        for (id, priority) in changes {
+            tx.execute(
+                "UPDATE tasks SET priority = ?2, updated_at = ?3 WHERE id = ?1",
+                params![id, priority, now],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
     }
 
     /// Record a pending automatic retry: `attempts` failures so far and the
@@ -759,6 +900,38 @@ pub enum StoreError {
 mod tests {
     use super::*;
 
+    /// The task table can hold cookies, Authorization headers, proxy
+    /// passwords and OAuth refresh tokens. The database and its directory
+    /// must not be readable by other local users.
+    #[cfg(unix)]
+    #[test]
+    fn task_database_and_data_dir_are_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = std::env::temp_dir().join(format!(
+            "aether-db-perms-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("aether.db");
+        let _store = TaskStore::open(&path).expect("open store");
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600,
+            "task database must be owner-only"
+        );
+        assert_eq!(
+            std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777,
+            0o700,
+            "data directory must be owner-only"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
     #[test]
     fn backup_round_trips_a_task() {
         let mut store = TaskStore::open_in_memory().expect("memory store");
@@ -846,6 +1019,18 @@ mod tests {
         store.create_task(&high2).unwrap();
         let next = store.next_queued().unwrap().unwrap();
         assert_eq!(next.id, "low");
+    }
+
+    #[test]
+    fn progress_does_not_wake_a_paused_task() {
+        let mut store = TaskStore::open_in_memory().unwrap();
+        store.create_task(&new_task("paused")).unwrap();
+        store.set_state("paused", TaskState::Paused).unwrap();
+        store.update_progress("paused", 10, Some(100), 0).unwrap();
+        assert_eq!(
+            store.task("paused").unwrap().unwrap().state,
+            TaskState::Paused
+        );
     }
 
     #[test]

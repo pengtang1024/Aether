@@ -38,7 +38,7 @@
 | Usenet / NNTP | — | Not planned | — | 不在路线图 |
 | TFTP / Gopher / SCP | — | Not planned | — | 不在路线图 |
 | WebSocket / 长连接消息 | — | Not planned | — | 不是文件下载协议 |
-| aria2 JSON-RPC 客户端 | aria2（服务插件） | Optional | **已实现（HTTP/WS）** | 与原生 RPC 共用 6800：POST/GET `/jsonrpc`、CORS、`token:` 鉴权、常用方法与 `system.multicall`；多 URI 与 `out` 文件名覆盖只取/不生效（文件名由探测决定）；列表接口受 daemon `list` 的 100 条上限约束；`addTorrent`/`addMetalink` 通过插件内置回环临时源交给 BT/HTTP 插件（`addTorrent` 的 web seed 列表忽略；内联字节在插件内存中保留 24 小时，daemon/插件重启后尚未开始的排队任务会失效）；WebSocket `/jsonrpc` 支持调用与 `aria2.onDownload*` 通知；逐任务 `changeOption`/`changePosition` 尚未实现 |
+| aria2 JSON-RPC 客户端 | aria2（服务插件） | Optional | **已实现（HTTP/WS）** | 与原生 RPC 共用 6800：POST/GET `/jsonrpc`、CORS、`token:` 鉴权、常用方法与 `system.multicall`；多 URI 作为镜像在开始前探测（不做下载中切换），`out` 会覆盖探测文件名；`list` 默认 100 条，aria2 查询请求 10,000 条；`addTorrent`/`addMetalink` 通过 daemon 的 `/aria2-blobs/` 持久化路由交给 BT/HTTP 插件（`addTorrent` 的 web seed 列表忽略；内联字节重启后仍有效，7 天后清理；blob URL 绑定当前 RPC 端口，改端口后旧排队任务需重新添加）；WebSocket `/jsonrpc` 支持调用与 `aria2.onDownload*` 通知；`changeOption` 的 `max-download-limit` 支持实时/排队限速（BT 拒绝），`changePosition` 支持等待队列重排；`saveSession` 导出 `<data>/aria2-session.txt`（恢复仍以 SQLite 为准）；`getPeers` 对 BT 返回真实 IP/端口/状态（peerId 与实时速度为占位），其他插件返回空数组 |
 
 ## 3. 内容与来源
 

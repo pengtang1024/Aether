@@ -26,15 +26,23 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 NOTICE = "THIRD_PARTY_NOTICES.md"
-SLINT_LICENSE = "Slint-Royalty-free-2.0.md"
+TEXTS = "THIRD_PARTY_LICENSES.md"
 MIT_NAMES = ("LICENSE", "copyright")
 SUPPORTED_SUFFIXES = (".deb", ".AppImage", ".zip", ".dmg", ".exe")
 
 RECIPES = {
-    "Makefile": ("LICENSE", NOTICE, SLINT_LICENSE),
-    ".github/workflows/package.yml": ("LICENSE", NOTICE, SLINT_LICENSE),
-    "packaging/windows/aether.iss": ("LICENSE", NOTICE, "LICENSES\\*"),
+    "Makefile": ("LICENSE", NOTICE, TEXTS, "LICENSES/*"),
+    ".github/workflows/package.yml": ("LICENSE", NOTICE, TEXTS, "LICENSES/*"),
+    "packaging/windows/aether.iss": ("LICENSE", NOTICE, TEXTS, "LICENSES\\*"),
+    "scripts/stage-plugins.py": ("LICENSE", NOTICE, TEXTS, "LICENSES"),
 }
+
+
+def license_texts() -> list[Path]:
+    """Every full license text shipped under LICENSES/."""
+    return sorted(
+        path for path in (ROOT / "LICENSES").iterdir() if path.is_file()
+    )
 
 
 def fail(message: str) -> None:
@@ -43,10 +51,25 @@ def fail(message: str) -> None:
 
 def check_recipes() -> int:
     errors = 0
-    for name in ("LICENSE", NOTICE, f"LICENSES/{SLINT_LICENSE}"):
+    for name in ("LICENSE", NOTICE, TEXTS):
         path = ROOT / name
         if not path.is_file() or path.stat().st_size == 0:
             fail(f"missing or empty source license file: {name}")
+            errors += 1
+    # Slint RF 2.0 attribution: every published release note is the body of
+    # the download page, so each one must carry the badge (or the app must
+    # ship AboutSlint, which it currently does not).
+    for release in sorted((ROOT / "docs" / "releases").glob("*.md")):
+        if "Made with Slint" not in release.read_text(encoding="utf-8"):
+            fail(f"{release.relative_to(ROOT)} is missing the 'Made with Slint' badge")
+            errors += 1
+    texts = license_texts()
+    if not texts:
+        fail("LICENSES/ has no license texts")
+        errors += 1
+    for path in texts:
+        if path.stat().st_size == 0:
+            fail(f"empty license text: {path.name}")
             errors += 1
     for relative_path, needles in RECIPES.items():
         path = ROOT / relative_path
@@ -59,8 +82,23 @@ def check_recipes() -> int:
             if needle not in text:
                 fail(f"{relative_path} does not reference {needle}")
                 errors += 1
+    if errors:
+        return 1
+    for script in (
+        "scripts/generate-third-party-inventory.py",
+        "scripts/generate-third-party-licenses.py",
+    ):
+        result = subprocess.run(
+            [sys.executable, script, "--check"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            fail(f"{script} --check failed: {result.stdout}{result.stderr}")
+            errors += 1
     if errors == 0:
-        print("OK: license files and packaging recipes are present")
+        print("OK: license files, recipes and generated bundles are current")
     return 1 if errors else 0
 
 
@@ -173,15 +211,19 @@ def check_artifact(path: Path) -> int:
     ):
         missing.append(NOTICE)
     if not any(
-        Path(name).name == SLINT_LICENSE and size > 0 for name, size in names
+        Path(name).name == TEXTS and size > 0 for name, size in names
     ):
-        missing.append(SLINT_LICENSE)
+        missing.append(TEXTS)
+    shipped = {Path(name).name for name, size in names if size > 0}
+    for text in license_texts():
+        if text.name not in shipped:
+            missing.append(f"LICENSES/{text.name}")
 
     if missing:
         fail(f"{path.name} is missing: {', '.join(missing)}")
         return 1
     print(
-        f"OK: {path.name} carries LICENSE, {NOTICE} and {SLINT_LICENSE}",
+        f"OK: {path.name} carries LICENSE, {NOTICE}, {TEXTS} and all LICENSES texts",
     )
     return 0
 

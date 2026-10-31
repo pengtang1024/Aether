@@ -2,10 +2,11 @@
   "id": "aria2",
   "name": "aria2 RPC Compatibility",
   "version": "0.2.2",
-  "api": 1,
+  "api": 2,
   "kind": "service",
+  "service": "aria2",
   "min_host": "0.2.2",
-  "protocols": ["aria2"],
+  "protocols": [],
   "capabilities": [],
   "executable": {
     "linux-x86_64": "bin/aether-plugin-aria2-linux-x86_64",

@@ -44,8 +44,8 @@ scripts/build-extension.sh          # writes dist/aether-extension-<version>.zip
 Store copy (name, summaries, description, permission rationale) lives in
 `store-listing.md` — paste it into the Chrome Web Store / Edge / Firefox
 Add-ons forms. Submission itself is manual: it needs store accounts, and
-AMO additionally wants a privacy policy (start from the repository's
-`PRIVACY.md`).
+AMO additionally wants a privacy policy: use
+[`PRIVACY.md`](PRIVACY.md) (also linked from the repository root policy).
 
 Development builds keep working alongside a store install: the native
 manifest is keyed to the extension ID you install with (step 4 above).

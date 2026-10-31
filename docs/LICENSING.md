@@ -16,6 +16,8 @@
 - MIT 全文：[`LICENSE`](../LICENSE)
 - 第三方声明：[`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md)
 - Slint Royalty-free 2.0 全文：[`LICENSES/Slint-Royalty-free-2.0.md`](../LICENSES/Slint-Royalty-free-2.0.md)
+- 其它随二进制分发的许可全文（Apache-2.0 / BSD / ISC / BSL / CDLA / MPL / Unicode / Zlib）：
+  [`LICENSES/`](../LICENSES/)
 
 ## 2. 自有代码：MIT
 
@@ -153,7 +155,11 @@ Slint 源文件；对外仍应保留 `THIRD_PARTY_NOTICES.md` 与署名。
 
 - [`LICENSE`](../LICENSE) — MIT 全文
 - [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) — 第三方组件与许可范围
+- [`docs/THIRD_PARTY_INVENTORY.md`](THIRD_PARTY_INVENTORY.md) — 591 个随二进制分发的依赖（SPDX + 目标平台）
+- [`docs/LICENSE_AUDIT.md`](LICENSE_AUDIT.md) — 许可专项深度审计（复合 C 许可、Slint/MPL、产物矩阵）
+- [`THIRD_PARTY_LICENSES.md`](../THIRD_PARTY_LICENSES.md) — 逐 crate 许可/版权原文（591 包）
 - [`LICENSES/Slint-Royalty-free-2.0.md`](../LICENSES/Slint-Royalty-free-2.0.md) — Slint 许可全文
+- [`LICENSES/`](../LICENSES/) — 其它第三方许可全文（打包时全部携带）
 - [`docs/WITHDRAWN_RELEASES.md`](WITHDRAWN_RELEASES.md) — 已撤回的发布、资产哈希与撤回规则
 - [`docs/GAP_AUDIT.md`](GAP_AUDIT.md) — 许可、签名、分发相关的待办
 - [`docs/RELEASING.md`](RELEASING.md) — 发布时需携带的许可文件

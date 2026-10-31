@@ -13,7 +13,7 @@ pub mod system_proxy;
 
 pub use abi::AbiPlugin;
 pub use error::HostError;
-pub use finalize::finalize_task;
+pub use finalize::{finalize_task, finalize_task_with_checksum};
 pub use manager::{PluginEventEnvelope, PluginManager, ProbeOutcome};
 pub use proxy::ProxySetting;
 pub use registry::{PluginEntry, PluginRegistry};

@@ -9,10 +9,10 @@ use aether_plugin_sdk::{
     Checksum, ChecksumAlgorithm, FileInfo, Metadata, PluginEvent, PluginSender, TaskPaths, TaskSpec,
 };
 use anyhow::Context;
-use librqbit::api::TorrentIdOrHash;
+use librqbit::api::{Api, TorrentIdOrHash};
 use librqbit::{
-    AddTorrent, AddTorrentOptions, AddTorrentResponse, ManagedTorrent, Session, TorrentMetaV1Info,
-    TorrentStatsState,
+    AddTorrent, AddTorrentOptions, AddTorrentResponse, ManagedTorrent, Session, TorrentStatsState,
+    ValidatedTorrentMetaV1Info,
 };
 use thiserror::Error;
 use tokio::time::sleep;
@@ -23,6 +23,37 @@ use crate::settings::{self, BtSettings, FileSelector, TorrentFile};
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
 const SEED_DETAIL_INTERVAL: Duration = Duration::from_secs(1);
 const INIT_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Live peer list in aria2's object shape (used for `aria2.getPeers` via the
+/// daemon's cached `Detail` payload).
+pub(crate) fn peer_snapshot(session: &Arc<Session>, id: usize) -> Vec<serde_json::Value> {
+    let api = Api::new(session.clone(), None);
+    match api.api_peer_stats(TorrentIdOrHash::Id(id), Default::default()) {
+        Ok(snapshot) => snapshot
+            .peers
+            .into_iter()
+            .map(|(address, stats)| peer_json(address.as_str(), stats.state))
+            .collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+fn peer_json(address: &str, state: &str) -> serde_json::Value {
+    let (ip, port) = address.rsplit_once(':').unwrap_or((address, "0"));
+    let ip = ip.trim_start_matches('[').trim_end_matches(']');
+    serde_json::json!({
+        "peerId": "",
+        "ip": ip,
+        "port": port,
+        "bitfield": "",
+        "amChoking": "false",
+        "peerChoking": "false",
+        "downloadSpeed": "0",
+        "uploadSpeed": "0",
+        "seeder": "false",
+        "state": state,
+    })
+}
 
 pub struct BtProbe {
     pub supported: bool,
@@ -207,6 +238,7 @@ async fn run_inner(
         ..Default::default()
     };
     let mut last_progress = Instant::now() - PROGRESS_INTERVAL;
+    let mut last_peers = Instant::now() - SEED_DETAIL_INTERVAL;
     let mut seq = 0_u64;
 
     loop {
@@ -257,6 +289,18 @@ async fn run_inner(
                 chunks_total: None,
             });
             last_progress = Instant::now();
+        }
+
+        if last_peers.elapsed() >= SEED_DETAIL_INTERVAL {
+            let peers = peer_snapshot(session, handle.id());
+            let _ = sender.send(&PluginEvent::Detail {
+                task_id: task.task_id.clone(),
+                data: serde_json::json!({
+                    "seeding": false,
+                    "peers": peers,
+                }),
+            });
+            last_peers = Instant::now();
         }
 
         if let Some(error) = stats.error {
@@ -427,6 +471,7 @@ async fn seed_until_limit(context: SeedContext<'_>, seq: &mut u64) -> Result<See
                     "ratio": ratio,
                     "uploaded_bytes": uploaded,
                     "seed_seconds": elapsed.as_secs(),
+                    "peers": peer_snapshot(session, handle.id()),
                 }),
             });
             last_detail = Instant::now();
@@ -491,14 +536,14 @@ fn add_options(
 }
 
 fn files_from_info<Buf: AsRef<[u8]>>(
-    info: &TorrentMetaV1Info<Buf>,
+    info: &ValidatedTorrentMetaV1Info<Buf>,
 ) -> anyhow::Result<Vec<TorrentFile>> {
-    info.iter_file_details()?
+    info.iter_file_details()
         .map(|details| {
             Ok(TorrentFile {
                 path: details
                     .filename
-                    .to_pathbuf()?
+                    .to_pathbuf()
                     .to_string_lossy()
                     .replace('\\', "/"),
                 len: details.len,
@@ -600,5 +645,22 @@ impl BtError {
                 aether_plugin_sdk::PluginError::new(ErrorKind::Protocol, message.clone())
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod peer_tests {
+    use super::peer_json;
+
+    #[test]
+    fn peer_json_splits_ipv4_and_ipv6_addresses() {
+        let v4 = peer_json("1.2.3.4:6881", "live");
+        assert_eq!(v4["ip"], "1.2.3.4");
+        assert_eq!(v4["port"], "6881");
+
+        let v6 = peer_json("[::1]:6881", "live");
+        assert_eq!(v6["ip"], "::1");
+        assert_eq!(v6["port"], "6881");
+        assert_eq!(v6["state"], "live");
     }
 }

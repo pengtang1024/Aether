@@ -49,5 +49,10 @@ optionally intercept downloads, and attach cookies only when you enable it.
 
 **Description:** same body as above (first paragraph through permissions).
 
-**Privacy policy:** required by AMO; Aether's PRIVACY.md in the repository
-serves as the starting point (no telemetry, no remote code).
+**Privacy policy (AMO / Chrome Web Store):**
+https://github.com/pengtang1024/Aether/blob/main/browser-extension/PRIVACY.md
+
+**Limited Use disclosure:** the extension uses the `downloads`, `cookies`
+(optional) and host permissions only to hand a user-selected download to the
+local Aether daemon; it does not sell data, serve ads, or transfer data to the
+extension author or third parties. No remote code is loaded.

@@ -8,7 +8,14 @@ use aether_host::{finalize_task, PluginManager, PluginRegistry};
 use aether_plugin_sdk::{current_platform_key, Budget, PluginEvent, TaskPaths, TaskSpec};
 
 fn temp_dir(label: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("aether-host-{label}-{}", std::process::id()));
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let dir = std::env::temp_dir().join(format!(
+        "aether-host-{label}-{}-{nanos}",
+        std::process::id()
+    ));
     fs::create_dir_all(&dir).unwrap();
     dir
 }

@@ -4,7 +4,9 @@
 
 | Version | Supported |
 | --- | --- |
-| 0.1.x | Yes (UI mockup / early preview) |
+| 0.3.x | Yes |
+| 0.2.x | Security fixes only |
+| 0.1.x | No (withdrawn preview) |
 
 ## Reporting a vulnerability
 
@@ -29,11 +31,34 @@ update metadata, and signing pipeline. Out of scope: third-party downloads,
 DRM/paywall bypass, and vulnerabilities in upstream libraries that are already
 public (report those upstream as well).
 
+## Security support period and CRA reporting
+
+Aether provides security fixes for the current release line and the previous
+minor line; older releases receive fixes only when a backport is practical.
+The maintainer keeps the CycloneDX SBOM and `cargo-deny` advisory scan in CI
+(including a weekly scheduled run) and coordinates disclosure privately.
+
+Where the EU Cyber Resilience Act (CRA) applies, the maintainer's target is:
+
+- acknowledge a report within 72 hours;
+- issue an early warning to the relevant CSIRT/ENISA within 24 hours of
+  confirming an actively exploited vulnerability;
+- provide a final report within the CRA's 72-hour window and a fix or mitigation
+  in a signed update.
+
+These are engineering targets, not a warranty; the MIT licence's warranty
+disclaimer still applies.
+
 ## Current security posture
 
-- Plugins are first-party and will be signed/versioned; process isolation and
-  least-privilege path grants are planned.
-- Download paths are sanitized; checksum verification and atomic finalization are
-  planned with the engine.
-- Browser cookies/cloud tokens require explicit user consent and OS keyring
-  storage; no telemetry is enabled by default.
+- Plugins are first-party, signed/versioned, and run in separate processes.
+  There is **no OS-level sandbox yet** (Landlock/seccomp/AppContainer are
+  future work); the host validates executable paths and declared capabilities.
+- Download paths are sanitized by the host before finalization; plugins write
+  only inside the task staging directory. Checksums and atomic finalization are
+  implemented.
+- Browser cookies and cloud tokens require explicit user action. Credentials in
+  task settings are stored locally in plaintext inside an owner-only (`0600`)
+  SQLite database; OS keyring storage is not implemented yet.
+- No telemetry is enabled. See [PRIVACY.md](PRIVACY.md) for the exact data
+  flows.

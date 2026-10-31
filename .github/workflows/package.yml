@@ -93,10 +93,10 @@ jobs:
           install -m644 assets/logo-icon-256.png \
             AppDir/usr/share/icons/hicolor/256x256/apps/aether.png
           install -d AppDir/usr/share/doc/aether
-          install -m644 LICENSE THIRD_PARTY_NOTICES.md \
+          install -m644 LICENSE THIRD_PARTY_NOTICES.md THIRD_PARTY_LICENSES.md \
             AppDir/usr/share/doc/aether/
-          install -m644 LICENSES/Slint-Royalty-free-2.0.md \
-            AppDir/usr/share/doc/aether/
+          install -d AppDir/usr/share/doc/aether/licenses
+          install -m644 LICENSES/* AppDir/usr/share/doc/aether/licenses/
           install -d AppDir/usr/lib/aether/plugins
           cp -a build/plugins/. AppDir/usr/lib/aether/plugins/
           cp packaging/aether.desktop AppDir/aether.desktop
@@ -165,6 +165,7 @@ jobs:
             "assets/logo.ico",
             "LICENSE",
             "THIRD_PARTY_NOTICES.md",
+            "THIRD_PARTY_LICENSES.md",
             "LICENSES",
             "README.md"
           )
@@ -260,10 +261,9 @@ jobs:
           done
           iconutil -c icns Aether.iconset \
             -o Aether.app/Contents/Resources/aether.icns
-          cp LICENSE THIRD_PARTY_NOTICES.md Aether.app/Contents/Resources/
+          cp LICENSE THIRD_PARTY_NOTICES.md THIRD_PARTY_LICENSES.md Aether.app/Contents/Resources/
           mkdir -p Aether.app/Contents/Resources/licenses
-          cp LICENSES/Slint-Royalty-free-2.0.md \
-            Aether.app/Contents/Resources/licenses/
+          cp LICENSES/* Aether.app/Contents/Resources/licenses/
 
           codesign --force --deep --sign - Aether.app
           hdiutil create -volname "Aether" -srcfolder Aether.app \

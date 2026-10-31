@@ -410,6 +410,13 @@ export component TaskDrawer inherits FocusScope {
                     }
                 }
 
+                if root.detail.torrent: Text {
+                    text: @tr("BT 状态  ") + root.detail.bt-text;
+                    color: Aether.on-surface-variant;
+                    font-size: Aether.text-caption;
+                    overflow: elide;
+                }
+
                 HorizontalLayout {
                     spacing: 8px;
 

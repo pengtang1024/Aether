@@ -5,6 +5,11 @@
 # its Royalty-free 2.0 option (see THIRD_PARTY_NOTICES.md), and the same
 # dependency also offers GPL-3.0-only, which is what cargo-deny can
 # syntactically recognize in its tri-license expression.
+#
+# IMPORTANT: run this with `--workspace` (CI does). With the default
+# `default-members = ["."]`, cargo-deny would only audit the root package and
+# silently skip the 16 plugin binaries' dependency trees (librqbit/MPL,
+# libssh2, aws-lc, ...).
 
 [graph]
 all-features = true
@@ -20,6 +25,11 @@ ignore = [
     { id = "RUSTSEC-2026-0370", reason = "zvariant: transitive via Slint's winit backend; upstream merged into zbus 6, Slint pins 5.x" },
     { id = "RUSTSEC-2026-0371", reason = "zbus_names: transitive via Slint's winit backend; upstream merged into zbus 6, Slint pins 5.x" },
     { id = "RUSTSEC-2026-0372", reason = "zvariant_derive: transitive via Slint's winit backend; upstream merged into zbus 6, Slint pins 5.x" },
+    # ringbuf 0.4.8 is pinned by librqbit-utp 0.7 (the latest release). The
+    # vulnerable path is Consumer::skip/clear when an element's Drop panics;
+    # Aether's BT listener is TCP-only (ListenerMode::TcpOnly) and does not
+    # drive that path. Revisit when librqbit-utp moves to ringbuf >=0.5.2.
+    { id = "RUSTSEC-2026-0293", reason = "ringbuf pinned by librqbit-utp 0.7; affected Drop-panic path not used (TCP-only listener)" },
 ]
 
 [licenses]
@@ -35,6 +45,11 @@ allow = [
     "CDLA-Permissive-2.0",
     "Zlib",
     "BSL-1.0",
+    # Weak file-level copyleft. `option-ext` is pulled by `directories` /
+    # `dirs-sys` on some targets; it is unmodified and its source is public
+    # on crates.io, so MPL-2.0 §3.2/§3.3 obligations are met by shipping the
+    # text and keeping the source available (see THIRD_PARTY_NOTICES.md).
+    "MPL-2.0",
 ]
 exceptions = [
     # Slint: tri-licensed GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0

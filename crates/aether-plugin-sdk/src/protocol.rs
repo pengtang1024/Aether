@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 /// IPC/API major version. Bump only for breaking protocol changes.
-pub const API_VERSION: u16 = 1;
+pub const API_VERSION: u16 = 2;
 
 /// Host-to-plugin commands.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -63,6 +63,12 @@ pub enum HostCommand {
     /// daemon instead of opening its own listening socket.
     ServiceInit {
         socket: String,
+    },
+    /// Sent to a service plugin once the daemon's RPC listener is bound:
+    /// the loopback base URL it should use for published blobs (for example
+    /// `127.0.0.1:6800`). Absent when the listener is disabled.
+    ServiceAddress {
+        listen: String,
     },
     /// A compatibility-protocol request routed from the daemon listener to a
     /// service plugin. `payload` is protocol-specific JSON; the reply is a

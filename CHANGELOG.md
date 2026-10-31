@@ -5,6 +5,104 @@ versioning; 0.x releases may still change structure.
 
 ## [Unreleased]
 
+### Download reliability
+
+- Paused downloads no longer flip back to `running` on the next progress
+  sample; progress updates keep terminal/paused states intact.
+- Plugin crash recovery: a dead plugin process now fails/retries the tasks it
+  owned (paused tasks stay paused and restart on resume), and a 15-minute
+  no-progress watchdog frees a concurrency slot when a plugin is alive but
+  hung. Finalizing a very large checksum is exempt while `downloaded >= total`.
+- HTTP downloads retry mid-stream read resets/timeouts instead of treating them
+  as fatal; range support is verified with a real one-byte Range probe; a 416
+  discards stale resume state before the retry; a panicked worker can no longer
+  be mistaken for a completed preallocated file.
+- Task-level SHA-256: `add`/aria2 `checksum=sha-256=<hex>` is parsed by the
+  daemon, passed to the plugin, and verified again by the Host during
+  finalization (single-file tasks). A mismatch fails the task before the file
+  is moved into the download directory.
+- Staging and destination filesystems are both space-checked; finalization
+  validates every file before moving any, and refuses to overwrite after 999
+  same-name collisions instead of silently replacing an existing file.
+- `aria2.saveSession` now writes the active/queued/paused URLs to
+  `<data>/aria2-session.txt`; SQLite remains the restore source.
+- aria2 service lifecycle is now owned by a shared `ServiceSupervisor`
+  (`crates/aether-daemon/src/service.rs`) instead of the bespoke
+  `PluginBridge`/`spawn_aria2_bridge` path. Each service has its own slot lock,
+  crash respawn, and is visible through the plugins RPC (`running`,
+  `last_error`). Existing enable/disable/rescan/install flows call one `sync`.
+- Cross-filesystem staging now falls back to the centralized root if the
+  target's `.aether-staging` cannot be created; concurrent HTTP clients are
+  covered by a new E2E, and an ignored `soak_http_clients` loop is available
+  for nightly runs (`AETHER_SOAK_SECS`).
+- The task drawer now consumes the daemon's `task_detail` stream: BT tasks
+  show seeding state, ratio, uploaded bytes, seed time and peer count. The
+  data comes from the BT plugin's periodic detail events; non-BT tasks hide
+  the row.
+- `getGlobalStat` uses one aggregate query, and `tellWaiting`/`tellStopped`
+  skip the per-task file query; HTTP keep-alive now serves multiple JSON-RPC
+  requests per connection (60 s idle timeout), and shutdown waits for the
+  client's ack before the daemon exits.
+- Space checks now reserve queued/paused tasks too, not just the currently
+  active ones. Service plugins use a first-class `service` manifest field
+  (`protocols` may be empty) instead of a pseudo-protocol.
+- Cross-filesystem "save as" downloads stage next to the target
+  (`.aether-staging/<task>`) instead of always under the download root, so
+  finalization is a rename rather than a full copy. Crash residue is cleaned
+  on boot (completed/deleted tasks only), and the compat listener caps
+  concurrent connections at 128 to bound idle keep-alive threads.
+- Plugin protocol `API_VERSION` is now 2 (the service/bridge/detail commands
+  are a breaking addition); `api = 1` plugin packages are rejected instead of
+  failing at runtime.
+
+### Legal and privacy
+
+- `PRIVACY.md` now describes the real data flows: local task history, cookies,
+  headers, proxy passwords and OAuth tokens in the task database, fixed
+  500-line logs and optional diagnostics. The previous text still claimed a
+  mockup with no networking, OS-keyring token storage and configurable log
+  retention; none of that was true.
+- The task database and its data directory are owner-only on Unix
+  (`0600`/`0700`, including SQLite journal/WAL siblings), because task
+  settings can contain cookies and OAuth credentials. The database remains
+  unencrypted; `SECURITY.md` and the privacy policy now say so.
+- Every third-party license family that can ship in a binary is now reproduced
+  under `LICENSES/` and copied into `.deb`, AppImage, ZIP and DMG artifacts;
+  the release gate checks all of them. `MPL-2.0` (option-ext) is explicitly
+  allowed with its source-availability note, and the missing Slint backend
+  crates were added to the `cargo-deny` exceptions.
+- Added `docs/LEGAL_NOTICES.md` (content/BitTorrent/external tools/cloud
+  terms/trademarks/export/liability) and `docs/LEGAL_REVIEW.md` (engineering
+  compliance review, not legal advice). The browser extension gained
+  `PRIVACY.md` plus the Chrome Limited Use disclosure required for store
+  submission.
+- Deep licence audit: `docs/LICENSE_AUDIT.md` + generated
+  `docs/THIRD_PARTY_INVENTORY.md` (591 runtime packages). The bundled C
+  components now ship their exact upstream composites — AWS-LC/BoringSSL/
+  OpenSSL, ring's BoringSSL/once_cell/fiat texts, bundled libssh2 (including
+  curl/FSFULLR/SAX-PD), QuickJS, SQLite's public-domain blessing and moka's
+  NOTICE. `stage-plugins.py` puts the full licence bundle into standalone
+  plugin updates, and the browser-extension zip now carries the MIT notice.
+- Per-crate attribution is generated: `THIRD_PARTY_LICENSES.md` (591 runtime
+  packages, 382 deduplicated LICENSE/COPYING/NOTICE texts with copyright
+  lines), checked for drift in CI/packaging, and shipped in the app, installer,
+  plugin update packages and extension. `packaging/debian/copyright` is now a
+  DEP-5 file instead of a bare MIT copy; release notes are gated on the Slint
+  badge.
+- Dependency security wave: `libz-sys` 1.1.31, `suppaftp` 10.0.2 (CRLF command
+  injection), `hickory-resolver` 0.26.3 (DNS DoS), and `librqbit` 9.1
+  (quick-xml 0.41, removes unmaintained backoff/bincode/instant). BT, FTP and
+  HTTP plugin tests were adapted and pass. `ringbuf` 0.4.8 remains pinned by
+  librqbit-utp with a documented, non-reachable advisory exception.
+- The `cargo-deny` CI check was root-only because of
+  `default-members = ["."]`; a new `--workspace` license/source job audits the
+  16 plugin dependency trees too (which is how the MPL-2.0 `option-ext` and
+  librqbit/libssh2/aws-lc obligations surfaced). Workspace-wide advisories are
+  tracked separately because four transitive issues need dependency upgrades.
+- Release notes for 0.2.1, 0.2.2 and 0.3.0 now carry the "Made with Slint"
+  attribution; the Debian description no longer claims the plugins are
+  sandboxed (they are process-isolated; OS sandboxes are not implemented).
+
 ## [0.3.0] - 2026-10-31
 
 ### Added
@@ -24,19 +122,21 @@ versioning; 0.x releases may still change structure.
   loopback only, and Apply persists either choice. A busy default port is
   logged and skipped instead of stopping the daemon.
 - aria2 JSON-RPC compatibility is available as a new `kind: "service"` plugin
-  (`aria2`). The daemon keeps the single 6800 listener, detects HTTP on the
+  (`aria2`). The daemon keeps the single 6800 listener, detects HTTP/WS on the
   first line, validates aria2's `token:<rpc_secret>` convention, answers CORS
-  preflights, and forwards calls to the plugin, which translates them into
-  native daemon requests. Covered: `addUri`, `tellStatus/Active/Waiting/Stopped`,
-  `pause`/`unpause`/`remove` (+ all variants), `getGlobalStat`, `getVersion`,
-  `getSessionInfo`, `getFiles`/`getUris`, `getGlobalOption`/`changeGlobalOption`,
+  preflights, and forwards calls to the plugin. Covered: `addUri` (honors
+  `out`, probes extra URIs as startup mirrors), `addTorrent`/`addMetalink`
+  (inline base64 persisted under the daemon data directory and served at
+  `/aria2-blobs/<token>`, surviving restarts), `tellStatus/Active/Waiting/
+  Stopped`, pause/unpause/remove variants, `getGlobalStat`, `getVersion`,
+  `getSessionInfo`, `getFiles`/`getUris`/`getServers`/`getPeers` (live BT peer
+  addresses), `getGlobalOption`/`changeGlobalOption`, `getOption`/
+  `changeOption` (max-download-limit, live for HTTP), `changePosition`,
   `purgeDownloadResult`, `saveSession`, `shutdown`, `system.multicall` and
-  `system.listMethods`. `addTorrent`/`addMetalink` decode the inline base64
-  payload, publish it on a short-lived loopback URL inside the plugin, and
-  hand it to the BT/HTTP plugin. `ws://.../jsonrpc` serves calls and pushes
-  `aria2.onDownloadStart/Pause/Stop/Complete/Error` notifications from the
-  daemon event stream. Not yet supported: per-task `changeOption` /
-  `changePosition`.
+  `system.listMethods`. `ws://.../jsonrpc` serves calls and pushes
+  `aria2.onDownloadStart/Pause/Stop/Complete/Error`; fragmented frames and
+  `Expect: 100-continue` are handled. Remaining boundaries: BT per-task
+  limits, BT web seeds, and `getPeers` speeds/peer IDs are placeholders.
 
 ### Plugin capabilities and management
 

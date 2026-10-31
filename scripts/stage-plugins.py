@@ -96,7 +96,13 @@ def main() -> int:
             shutil.copy2(source, destination)
         destination.chmod(0o755)
         shutil.copy2(manifest_path, package / "plugin.json")
+        # Plugin updates are distributed as standalone packages too. Ship the
+        # same MIT + third-party licence bundle the app uses so a separately
+        # updated plugin is never missing its notices.
         shutil.copy2(root / "LICENSE", package / "LICENSE")
+        shutil.copy2(root / "THIRD_PARTY_NOTICES.md", package / "THIRD_PARTY_NOTICES.md")
+        shutil.copy2(root / "THIRD_PARTY_LICENSES.md", package / "THIRD_PARTY_LICENSES.md")
+        shutil.copytree(root / "LICENSES", package / "LICENSES")
         staged += 1
 
     print(f"staged {staged} plugins for {key} in {out}")

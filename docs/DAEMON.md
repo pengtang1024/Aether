@@ -337,12 +337,17 @@ daemon 是常驻入口，但“接管所有下载”还需要：
   `auth` 握手。HTTP 侧复用同一个 `rpc_secret`（aria2 约定：params 首项为
   `token:<secret>`），并返回 CORS 头；插件未安装/未启用时 HTTP 返回 JSON-RPC 错误。
   兼容层支持常用 aria2 方法与 `system.multicall`；`addTorrent`/`addMetalink`
-  会把内联 base64 解码后发布到插件内的回环临时地址，再交给 BT/HTTP 插件。
+  会把内联 base64 解码后写入 daemon 数据目录的 `aria2-blobs/`，由同一 6800
+  端口的 `/aria2-blobs/<token>` 路由提供给 BT/HTTP 插件（重启后仍有效，7 天清理）。
   支持 `ws://.../jsonrpc`：JSON-RPC 调用与
-  `aria2.onDownloadStart/Pause/Stop/Complete/Error` 通知；逐任务
-  `changeOption`/`changePosition` 仍不支持。
+  `aria2.onDownloadStart/Pause/Stop/Complete/Error` 通知。逐任务
+  `changeOption` 的 `max-download-limit` 支持实时限速（HTTP）与排队任务持久化，
+  BitTorrent 因会话级限速拒绝；`changePosition` 通过一次显式队列重排实现
+  （优先级 + 等待时长，重排后顺序稳定）。
 - socket 权限 0600；Windows 管道走默认 DACL（仅同用户）；本地请求只能由同
   用户发起。
-- `add` 的 URL/settings 会传给第一方插件；插件仍受 Host 最终落盘路径校验。
+- `add` 的 URL/settings 会传给第一方插件；插件仍受 Host 最终落盘路径校验。任务级
+  `checksum`（`sha-256=<hex>` 或 `sha256:<hex>`）在落盘前由 Host 再校验一次，
+  不信任插件自报的 checksum；多文件任务不允许设置任务级 checksum。
 - cdylib 插件在 Host 进程内运行，daemon 默认只加载 `kind: "process"` 的插件；
   启用 cdylib 需显式配置并接受崩溃风险。

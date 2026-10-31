@@ -157,7 +157,9 @@ impl Plugin for FtpPlugin {
             }
             // Service/bridge commands target `kind: "service"` plugins
             // (aria2 compatibility); download plugins must not accept them.
-            HostCommand::ServiceInit { .. } | HostCommand::BridgeCall { .. } => {
+            HostCommand::ServiceInit { .. }
+            | HostCommand::ServiceAddress { .. }
+            | HostCommand::BridgeCall { .. } => {
                 return Err(SdkError::Protocol(
                     "service commands are not supported by this plugin".into(),
                 ));

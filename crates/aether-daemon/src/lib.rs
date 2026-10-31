@@ -6,6 +6,7 @@ mod client_types;
 pub mod error;
 pub mod proto;
 pub mod server;
+pub mod service;
 pub mod settings;
 pub mod transport;
 

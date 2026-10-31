@@ -183,9 +183,10 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
   - **aria2 兼容（2026-10-31）**：新增 `kind: "service"` 插件（`aria2`），与原生
     RPC 共用 6800；首行识别 HTTP 后走 `POST/GET /jsonrpc` + CORS + `token:`，
     daemon 通过 `BridgeCall`/`BridgeResult` 转发给插件，插件用本地 socket 回调。
-    覆盖常用方法与 `system.multicall`，`addTorrent`/`addMetalink` 经插件内回环
-    临时源交给 BT/HTTP 插件；`ws://` 支持调用与 `aria2.onDownload*` 通知。
-    逐任务 `changeOption`/`changePosition` 未实现。`tests/aria2.rs` 实测
+    覆盖常用方法与 `system.multicall`，`addTorrent`/`addMetalink` 经 daemon 的
+    `/aria2-blobs/` 持久化路由交给 BT/HTTP 插件；`ws://` 支持调用与 `aria2.onDownload*` 通知；
+    `changeOption` 的 `max-download-limit` 支持 HTTP 实时/排队限速（BT 拒绝），
+    `changePosition` 通过显式队列重排实现。`tests/aria2.rs` 实测
     HTTP 与原生协议同端口共存、启停服务插件即时生效。
 - **明确不做**：TLS——文档写明「仅限可信网络或 SSH 隧道」。
 

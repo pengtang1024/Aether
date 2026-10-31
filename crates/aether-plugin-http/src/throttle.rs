@@ -21,6 +21,11 @@ impl Throttle {
         }
     }
 
+    /// Change the rate for the rest of the task; accumulated credit is kept.
+    pub fn set_limit(&mut self, limit_bps: u64) {
+        self.limit_bps = limit_bps;
+    }
+
     /// Bytes that may be consumed right now without sleeping.
     pub fn delay_for(&mut self, bytes: usize, now: Instant) -> Duration {
         if self.limit_bps == 0 || bytes == 0 {
@@ -118,6 +123,15 @@ mod tests {
         let total = transfer(Throttle::new(1000, instant_at(0)), 1000, 10);
         assert!(total >= Duration::from_millis(9000), "got {total:?}");
         assert!(total <= Duration::from_millis(11_000), "got {total:?}");
+    }
+
+    #[test]
+    fn limit_can_change_mid_transfer() {
+        let mut throttle = Throttle::new(1000, instant_at(0));
+        // Spend the first second's credit at 1 KB/s, then raise the limit.
+        throttle.delay_for(1000, instant_at(0));
+        throttle.set_limit(2000);
+        assert_eq!(throttle.delay_for(1000, instant_at(1)), Duration::ZERO);
     }
 
     #[test]

@@ -1,7 +1,7 @@
 //! The HTTP plugin state machine.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 use aether_plugin_sdk::{
@@ -29,7 +29,9 @@ pub struct HttpPlugin {
 struct TaskRecord {
     control: Arc<TaskControl>,
     progress: SharedProgress,
-    budget: Budget,
+    /// Shared with the download threads so `SetBudget` (aria2
+    /// `changeOption`) changes the live throttle without a restart.
+    budget: Arc<Mutex<Budget>>,
 }
 
 impl HttpPlugin {
@@ -83,13 +85,15 @@ impl HttpPlugin {
 
         let thread_control = control.clone();
         let thread_progress = progress.clone();
+        let budget = Arc::new(Mutex::new(budget));
+        let thread_budget = budget.clone();
         thread::spawn(move || {
-            download::run(
+            download::run_with_budget(
                 sender,
                 client,
                 task,
                 paths,
-                budget,
+                thread_budget,
                 thread_control,
                 thread_progress,
             );
@@ -214,7 +218,7 @@ impl Plugin for HttpPlugin {
             }
             HostCommand::SetBudget { task_id, budget } => {
                 if let Some(record) = self.tasks.get_mut(&task_id) {
-                    record.budget = budget;
+                    *record.budget.lock().unwrap() = budget;
                     log(
                         ctx,
                         format!(
@@ -259,7 +263,9 @@ impl Plugin for HttpPlugin {
             }
             // Service/bridge commands target `kind: "service"` plugins
             // (aria2 compatibility); download plugins must not accept them.
-            HostCommand::ServiceInit { .. } | HostCommand::BridgeCall { .. } => {
+            HostCommand::ServiceInit { .. }
+            | HostCommand::ServiceAddress { .. }
+            | HostCommand::BridgeCall { .. } => {
                 return Err(SdkError::Protocol(
                     "service commands are not supported by this plugin".into(),
                 ));

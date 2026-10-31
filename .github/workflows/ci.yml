@@ -5,6 +5,9 @@ on:
     branches: [main, 'release/**']
   pull_request:
     branches: [main]
+  # Weekly advisory/licence drift scan (CRA-style vulnerability monitoring).
+  schedule:
+    - cron: "0 3 * * 1"
 
 permissions:
   contents: read
@@ -78,11 +81,20 @@ jobs:
       - run: cargo check --workspace --all-targets
 
   cargo-deny:
-    name: Supply-chain policy (cargo-deny)
+    name: Supply-chain policy (cargo-deny --workspace)
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Generated licence bundles are current
+        run: |
+          python3 scripts/generate-third-party-inventory.py --check
+          python3 scripts/generate-third-party-licenses.py --check
+          python3 scripts/check-license-bundles.py --check-recipes
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
+          # Global args go before the subcommand. Without --workspace,
+          # cargo-deny roots the graph at default-members = ["."] and misses
+          # the 16 plugin dependency trees (librqbit/MPL, libssh2, aws-lc).
+          arguments: --workspace --all-features
           command: check
           rust-version: "1.92.0"

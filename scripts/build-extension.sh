@@ -15,6 +15,8 @@ mkdir -p "$OUT"
 cp -R "$ROOT/browser-extension/." "$STAGE/aether-extension/"
 # Internal docs and the store listing itself are not part of the upload.
 rm -f "$STAGE/aether-extension/README.md" "$STAGE/aether-extension/store-listing.md"
+# MIT requires the notice to travel with copies of the code.
+cp "$ROOT/LICENSE" "$STAGE/aether-extension/LICENSE"
 
 (cd "$STAGE/aether-extension" && zip -qr "$OUT/aether-extension-${VERSION}.zip" .)
 echo "wrote $OUT/aether-extension-${VERSION}.zip"

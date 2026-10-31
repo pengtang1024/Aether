@@ -12,7 +12,7 @@ use aether_plugin_sdk::{
     TaskPaths, TaskSpec,
 };
 use librqbit::limits::LimitsConfig;
-use librqbit::{Session, SessionOptions};
+use librqbit::{DhtSessionConfig, ListenerOptions, Session, SessionOptions};
 use url::Url;
 
 use crate::bt;
@@ -151,10 +151,20 @@ impl Plugin for BtPlugin {
                         .unwrap_or_else(|()| entry.to_string())
                 }
             });
+        // librqbit 9 moved DHT/listen knobs into structured configs. DHT
+        // persistence is still off: the plugin must not leave DHT state in
+        // the app data directory.
+        let dht = (!disable_dht).then(|| DhtSessionConfig {
+            persistence: None,
+            ..Default::default()
+        });
+        let listen = listen_port.map(|port| ListenerOptions {
+            listen_addr: (std::net::Ipv4Addr::UNSPECIFIED, port).into(),
+            ..Default::default()
+        });
         let options = SessionOptions {
-            disable_dht,
-            disable_dht_persistence: true,
-            listen_port_range: listen_port.map(|port| port..port + 1),
+            dht,
+            listen,
             ratelimits: LimitsConfig {
                 upload_bps,
                 download_bps: None,
@@ -242,7 +252,9 @@ impl Plugin for BtPlugin {
             }
             // Service/bridge commands target `kind: "service"` plugins
             // (aria2 compatibility); download plugins must not accept them.
-            HostCommand::ServiceInit { .. } | HostCommand::BridgeCall { .. } => {
+            HostCommand::ServiceInit { .. }
+            | HostCommand::ServiceAddress { .. }
+            | HostCommand::BridgeCall { .. } => {
                 return Err(SdkError::Protocol(
                     "service commands are not supported by this plugin".into(),
                 ));

@@ -32,7 +32,7 @@ fn temp_package(label: &str) -> PathBuf {
   "id": "demo",
   "name": "Demo plugin",
   "version": "1.2.3",
-  "api": 1,
+  "api": 2,
   "protocols": ["demo"],
   "capabilities": ["network"],
   "executable": { "linux-x86_64": "bin/plugin" }

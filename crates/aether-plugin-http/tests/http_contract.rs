@@ -319,6 +319,36 @@ fn manifest_file_is_valid() {
     manifest.validate().unwrap();
 }
 
+fn dead_addr() -> SocketAddr {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    drop(listener);
+    addr
+}
+
+#[test]
+fn uses_a_mirror_when_the_primary_looks_down() {
+    let data = test_data();
+    let server = start_server(data.clone());
+    let root = temp_dir("mirror");
+    let primary = format!("http://{}/file.bin", dead_addr());
+    let mirror = format!("http://{}/file.bin", server.addr);
+    let staging = root.join("staging");
+    fs::create_dir_all(&staging).unwrap();
+
+    let mut plugin = PluginProcess::spawn(manifest(), &executable(), init(&root)).unwrap();
+    start_task_with_settings(
+        &mut plugin,
+        primary,
+        staging,
+        sha256_hex(&data),
+        serde_json::json!({ "mirrors": [mirror] }),
+    );
+    wait_for_completed(&mut plugin);
+    plugin.shutdown().unwrap();
+    fs::remove_dir_all(&root).ok();
+}
+
 #[test]
 fn downloads_segmented_file_and_verifies_checksum() {
     let data = test_data();

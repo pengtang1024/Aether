@@ -22,6 +22,12 @@ pub struct PluginInfo {
     /// `external-process` and the user turned that capability off).
     #[serde(default)]
     pub blocked: bool,
+    /// Service plugin is currently running (download plugins report false).
+    #[serde(default)]
+    pub running: bool,
+    /// Last failure from a service plugin, if any.
+    #[serde(default)]
+    pub last_error: Option<String>,
     /// A previous version is retained and can be reinstalled.
     #[serde(default)]
     pub has_backup: bool,

@@ -170,7 +170,7 @@ fn signed_package(dir: &Path, id: &str, version: &str) -> PathBuf {
         "id": id,
         "name": format!("Test plugin {id}"),
         "version": version,
-        "api": 1,
+        "api": 2,
         "protocols": ["test"],
         "capabilities": ["network"],
         "executable": { current_platform_key(): "bin/plugin" },

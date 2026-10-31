@@ -119,6 +119,26 @@ fn executable() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_aether-plugin-bt"))
 }
 
+/// Build a single-file/dir torrent with librqbit 9's async API.
+fn make_torrent(runtime: &tokio::runtime::Runtime, path: &Path, name: &str) -> (Vec<u8>, String) {
+    let torrent = runtime
+        .block_on(async {
+            librqbit::create_torrent(
+                path,
+                CreateTorrentOptions {
+                    name: Some(name),
+                    trackers: Vec::new(),
+                    piece_length: Some(16 * 1024),
+                },
+                &librqbit::spawn_utils::BlockingSpawner::new(1),
+            )
+            .await
+        })
+        .unwrap();
+    let info_hash = torrent.info_hash().as_string();
+    (torrent.as_bytes().unwrap().to_vec(), info_hash)
+}
+
 fn free_port() -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -128,6 +148,17 @@ fn free_port() -> u16 {
 
 /// Start a session that serves `torrent_bytes` from `output_folder` and
 /// return its listen port.
+fn session_options(port: Option<u16>) -> SessionOptions {
+    SessionOptions {
+        dht: None,
+        listen: port.map(|port| librqbit::ListenerOptions {
+            listen_addr: (std::net::Ipv4Addr::UNSPECIFIED, port).into(),
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
+}
+
 fn start_seeder(
     runtime: &tokio::runtime::Runtime,
     output_folder: &Path,
@@ -137,15 +168,13 @@ fn start_seeder(
     let seeder = runtime
         .block_on(Session::new_with_opts(
             output_folder.to_path_buf(),
-            SessionOptions {
-                disable_dht: true,
-                disable_dht_persistence: true,
-                listen_port_range: Some(peer_port..peer_port + 1),
-                ..Default::default()
-            },
+            session_options(Some(peer_port)),
         ))
         .unwrap();
-    assert_eq!(seeder.tcp_listen_port(), Some(peer_port));
+    assert_eq!(
+        seeder.listen_addr().map(|addr| addr.port()),
+        Some(peer_port)
+    );
     let seed_handle = runtime.block_on(async {
         seeder
             .add_torrent(
@@ -287,16 +316,7 @@ fn downloads_from_a_local_seed() {
     fs::write(&seed_file, &data).unwrap();
 
     let runtime = runtime();
-    let torrent = runtime
-        .block_on(librqbit::create_torrent(
-            &seed_file,
-            CreateTorrentOptions {
-                name: Some("seed.bin"),
-                piece_length: Some(16 * 1024),
-            },
-        ))
-        .unwrap();
-    let torrent_bytes = torrent.as_bytes().unwrap().to_vec();
+    let (torrent_bytes, _info_hash) = make_torrent(&runtime, &seed_file, "seed.bin");
 
     let (seeder, seed_handle, peer_port) = start_seeder(&runtime, &seed_root, &torrent_bytes);
     let server = serve_torrent(torrent_bytes);
@@ -334,20 +354,8 @@ fn downloads_from_a_magnet_with_a_file_path() {
     fs::write(&seed_file, &data).unwrap();
 
     let runtime = runtime();
-    let torrent = runtime
-        .block_on(librqbit::create_torrent(
-            &seed_file,
-            CreateTorrentOptions {
-                name: Some("seed.bin"),
-                piece_length: Some(16 * 1024),
-            },
-        ))
-        .unwrap();
-    let torrent_bytes = torrent.as_bytes().unwrap().to_vec();
-    let magnet = format!(
-        "magnet:?xt=urn:btih:{}&dn=seed.bin",
-        torrent.info_hash().as_string()
-    );
+    let (torrent_bytes, info_hash) = make_torrent(&runtime, &seed_file, "seed.bin");
+    let magnet = format!("magnet:?xt=urn:btih:{info_hash}&dn=seed.bin");
 
     let (seeder, seed_handle, peer_port) = start_seeder(&runtime, &seed_root, &torrent_bytes);
     let root = temp_dir("download-magnet");
@@ -391,16 +399,7 @@ fn downloads_only_the_selected_files() {
     fs::write(pack.join("b.bin"), &b).unwrap();
 
     let runtime = runtime();
-    let torrent = runtime
-        .block_on(librqbit::create_torrent(
-            &pack,
-            CreateTorrentOptions {
-                name: Some("pack"),
-                piece_length: Some(16 * 1024),
-            },
-        ))
-        .unwrap();
-    let torrent_bytes = torrent.as_bytes().unwrap().to_vec();
+    let (torrent_bytes, _info_hash) = make_torrent(&runtime, &pack, "pack");
 
     let (seeder, seed_handle, peer_port) = start_seeder(&runtime, &pack, &torrent_bytes);
     let server = serve_torrent(torrent_bytes);
@@ -446,16 +445,7 @@ fn missing_selected_path_fails_the_task() {
     fs::write(&seed_file, &data).unwrap();
 
     let runtime = runtime();
-    let torrent = runtime
-        .block_on(librqbit::create_torrent(
-            &seed_file,
-            CreateTorrentOptions {
-                name: Some("seed.bin"),
-                piece_length: Some(16 * 1024),
-            },
-        ))
-        .unwrap();
-    let torrent_bytes = torrent.as_bytes().unwrap().to_vec();
+    let (torrent_bytes, _info_hash) = make_torrent(&runtime, &seed_file, "seed.bin");
     let server = serve_torrent(torrent_bytes);
 
     let root = temp_dir("download-missing");
@@ -489,16 +479,7 @@ fn seeds_until_the_ratio_is_reached() {
     fs::write(&seed_file, &data).unwrap();
 
     let runtime = runtime();
-    let torrent = runtime
-        .block_on(librqbit::create_torrent(
-            &seed_file,
-            CreateTorrentOptions {
-                name: Some("seed.bin"),
-                piece_length: Some(16 * 1024),
-            },
-        ))
-        .unwrap();
-    let torrent_bytes = torrent.as_bytes().unwrap().to_vec();
+    let (torrent_bytes, _info_hash) = make_torrent(&runtime, &seed_file, "seed.bin");
 
     let (seeder, seed_handle, peer_port) = start_seeder(&runtime, &seed_root, &torrent_bytes);
     let server = serve_torrent(torrent_bytes.clone());
@@ -535,11 +516,7 @@ fn seeds_until_the_ratio_is_reached() {
     let leecher = runtime
         .block_on(Session::new_with_opts(
             leech_root.clone(),
-            SessionOptions {
-                disable_dht: true,
-                disable_dht_persistence: true,
-                ..Default::default()
-            },
+            session_options(None),
         ))
         .unwrap();
     let leech_handle = runtime.block_on(async {

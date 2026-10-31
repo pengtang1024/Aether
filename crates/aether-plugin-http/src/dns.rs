@@ -11,9 +11,8 @@ use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 
 use aether_plugin_sdk::{IpMode, NetworkConfig};
-use hickory_resolver::config::{NameServerConfig, ResolverConfig, ResolverOpts};
-use hickory_resolver::name_server::TokioConnectionProvider;
-use hickory_resolver::proto::xfer::Protocol;
+use hickory_resolver::config::{ConnectionConfig, NameServerConfig, ResolverConfig, ResolverOpts};
+use hickory_resolver::net::runtime::TokioRuntimeProvider;
 use hickory_resolver::TokioResolver;
 use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 
@@ -23,16 +22,24 @@ pub fn custom_resolver(network: &NetworkConfig) -> Result<CustomResolver, String
     if servers.is_empty() {
         return Err("empty DNS server list".into());
     }
-    let mut config = ResolverConfig::new();
-    for server in servers {
-        config.add_name_server(NameServerConfig::new(server, Protocol::Udp));
-    }
+    // 0.26 splits the nameserver address from its per-protocol connection
+    // config; keep the user's port (custom DNS servers often run on 5353).
+    let name_servers = servers
+        .into_iter()
+        .map(|server| {
+            let mut connection = ConnectionConfig::udp();
+            connection.port = server.port();
+            NameServerConfig::new(server.ip(), true, vec![connection])
+        })
+        .collect();
+    let config = ResolverConfig::from_name_servers(name_servers);
     let mut options = ResolverOpts::default();
     options.timeout = Duration::from_secs(2);
     options.attempts = 2;
-    let resolver = TokioResolver::builder_with_config(config, TokioConnectionProvider::default())
+    let resolver = TokioResolver::builder_with_config(config, TokioRuntimeProvider::default())
         .with_options(options)
-        .build();
+        .build()
+        .map_err(|error| format!("dns resolver: {error}"))?;
     Ok(CustomResolver {
         resolver,
         ip_mode: network.ip_mode,

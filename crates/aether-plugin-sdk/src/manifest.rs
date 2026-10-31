@@ -39,6 +39,10 @@ pub struct PluginManifest {
     pub max_host: Option<String>,
     #[serde(default)]
     pub protocols: Vec<String>,
+    /// Service bridge name (for example `aria2`). Required for
+    /// `kind: "service"`, absent for download plugins.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service: Option<String>,
     #[serde(default)]
     pub capabilities: Vec<Capability>,
     /// Platform key -> executable path relative to the plugin package root.
@@ -98,7 +102,19 @@ impl PluginManifest {
             )));
         }
 
-        if self.protocols.is_empty() {
+        if self.kind == PluginKind::Service {
+            if self
+                .service
+                .as_deref()
+                .map(str::trim)
+                .filter(|service| !service.is_empty())
+                .is_none()
+            {
+                return Err(ManifestError::Invalid(
+                    "service plugins need a non-empty service name".into(),
+                ));
+            }
+        } else if self.protocols.is_empty() {
             return Err(ManifestError::Invalid("protocols must not be empty".into()));
         }
 
@@ -306,6 +322,18 @@ mod tests {
             manifest.resolve_executable(&root),
             Err(ManifestError::UnsafePath(_))
         ));
+    }
+
+    #[test]
+    fn service_plugins_use_a_service_name_instead_of_protocols() {
+        let mut manifest = minimal_manifest();
+        manifest.kind = PluginKind::Service;
+        manifest.service = Some("aria2".into());
+        manifest.protocols.clear();
+        manifest.validate().unwrap();
+
+        manifest.service = None;
+        assert!(manifest.validate().is_err());
     }
 
     #[test]

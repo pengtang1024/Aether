@@ -5,7 +5,7 @@
 //! list into [`crate::model::Task`] values, and accepts commands over a
 //! channel. The UI polls a cheap snapshot at its own pace.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 
 use aether_daemon::{PluginInfo, Stats};
 use serde_json::Value;
@@ -37,6 +37,8 @@ pub struct Snapshot {
     pub plugins: Vec<PluginInfo>,
     /// Current daemon settings (`get_settings`), `None` while disconnected.
     pub settings: Option<Value>,
+    /// Latest plugin detail payload per UI task id (BT peers/seeding, …).
+    pub details: HashMap<i32, Value>,
 }
 
 pub use imp::Backend;
@@ -154,6 +156,7 @@ mod imp {
                 stats: guard.snapshot.stats.clone(),
                 plugins: guard.snapshot.plugins.clone(),
                 settings: guard.snapshot.settings.clone(),
+                details: guard.snapshot.details.clone(),
             }
         }
 
@@ -277,6 +280,8 @@ mod imp {
         plugins: Vec<PluginInfo>,
         /// Daemon settings, from `get_settings` and `settings_changed` events.
         settings: Option<Value>,
+        /// Detail payloads from plugin `Detail` events, keyed by daemon id.
+        details: HashMap<String, Value>,
         /// Finished tasks (completed or failed), drained by the UI to run the
         /// "after done" action and the desktop notification.
         completed: VecDeque<Finished>,
@@ -823,12 +828,18 @@ mod imp {
                         ));
                     }
                 }
+                "task_detail" => {
+                    if let Some(detail) = event.get("detail") {
+                        self.details.insert(task_id, detail.clone());
+                    }
+                }
                 "task_deleted" => self.forget(&task_id),
                 _ => {}
             }
         }
 
         fn forget(&mut self, task_id: &str) {
+            self.details.remove(task_id);
             self.records.remove(task_id);
             self.order.retain(|id| id != task_id);
             if let Some(id) = self.ids.remove(task_id) {
@@ -896,6 +907,13 @@ mod imp {
                 .iter()
                 .map(|(task_id, record)| self.materialise(task_id, record))
                 .collect::<Vec<_>>();
+            let details = self
+                .details
+                .iter()
+                .filter_map(|(task_id, detail)| {
+                    self.ids.get(task_id).map(|id| (*id, detail.clone()))
+                })
+                .collect();
             let mut guard = shared.lock().unwrap();
             while let Some(entry) = self.completed.pop_front() {
                 if guard.completed.len() < 32 {
@@ -910,6 +928,7 @@ mod imp {
                 stats: self.stats.clone(),
                 plugins: self.plugins.clone(),
                 settings: self.settings.clone(),
+                details,
             };
         }
 
@@ -1080,6 +1099,19 @@ mod imp {
                 "host.test"
             );
         }
+        #[test]
+        fn task_detail_events_are_kept_until_delete() {
+            let mut worker = Worker::default();
+            worker.apply_event(json!({
+                "event": "task_detail",
+                "task_id": "task-1",
+                "detail": { "seeding": true, "ratio": 1.0, "peers": [] },
+            }));
+            assert_eq!(worker.details["task-1"]["seeding"], json!(true));
+            worker.forget("task-1");
+            assert!(worker.details.get("task-1").is_none());
+        }
+
         #[test]
         fn split_urls_handles_pasted_batches() {
             // One URL is the common case and must pass through unchanged.

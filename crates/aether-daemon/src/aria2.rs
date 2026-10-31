@@ -12,17 +12,16 @@
 //! `aria2.onDownload*` notifications from the daemon's task event stream.
 
 use std::io::{BufRead, BufReader, Read, Write};
-use std::path::PathBuf;
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use aether_plugin_sdk::{HostCommand, Init, PluginManifest, PluginProcess};
 use base64::Engine;
 use serde_json::{json, Value};
 use sha1::{Digest, Sha1};
 
+use crate::service::Bridge;
 use crate::transport::Conn;
 
 /// Maximum request body accepted from a client (aria2 clients stay far below
@@ -35,13 +34,6 @@ const MAX_HEADERS: usize = 128;
 const MAX_WS_FRAME: usize = 16 * 1024 * 1024;
 /// RFC 6455 handshake GUID.
 const WS_GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-
-/// The service-side translator. The daemon owns transport + authentication.
-pub(crate) trait Bridge: Send + Sync {
-    /// Translate one aria2 request (`{"method": ..., "params": [...]}`) into a
-    /// reply shaped `{"result": ...}` or `{"error": {"code": .., "message": ..}}`.
-    fn call(&self, payload: Value) -> Result<Value, String>;
-}
 
 /// True when the first line of a connection is an HTTP request line.
 pub(crate) fn is_http_request(first_line: &str) -> bool {
@@ -61,23 +53,28 @@ pub(crate) fn serve_http(
     bridge: Option<&dyn Bridge>,
     secret: &Arc<Mutex<Option<String>>>,
     commands: &Sender<crate::server::Command>,
+    blob_dir: &std::path::Path,
 ) {
-    let Some((method, target)) = parse_request_line(first_line) else {
+    let Some((method, target, version)) = parse_request_line(first_line) else {
         let _ = write_json(
             writer,
             "400 Bad Request",
             &rpc_error(&Value::Null, -32600, "invalid request line"),
+            false,
         );
         return;
     };
-
-    let headers = match read_headers(&mut reader) {
+    let mut method = method.to_string();
+    let mut target = target.to_string();
+    let mut version = version.to_string();
+    let mut headers = match read_headers(&mut reader) {
         Ok(headers) => headers,
         Err(error) => {
             let _ = write_json(
                 writer,
                 "400 Bad Request",
                 &rpc_error(&Value::Null, -32600, &format!("invalid headers: {error}")),
+                false,
             );
             return;
         }
@@ -90,18 +87,116 @@ pub(crate) fn serve_http(
         return;
     }
 
+    // Keep-alive is useful for AriaNg's polling and for the local plugins
+    // fetching blobs. An idle connection is closed after 60 s.
+    let _ = reader
+        .get_ref()
+        .set_read_timeout(Some(Duration::from_secs(60)));
+
+    loop {
+        let keep_alive = http_keep_alive(&version, &headers);
+        if !handle_http_request(
+            &mut reader,
+            writer,
+            &method,
+            &target,
+            &headers,
+            bridge,
+            secret,
+            blob_dir,
+            keep_alive,
+        ) {
+            break;
+        }
+        if !keep_alive {
+            break;
+        }
+
+        let mut line = String::new();
+        if reader.read_line(&mut line).unwrap_or(0) == 0 {
+            break;
+        }
+        let Some((next_method, next_target, next_version)) = parse_request_line(&line) else {
+            break;
+        };
+        method = next_method.to_string();
+        target = next_target.to_string();
+        version = next_version.to_string();
+        headers = match read_headers(&mut reader) {
+            Ok(headers) => headers,
+            Err(_) => break,
+        };
+        // Upgrade is only valid on a fresh connection.
+        if is_websocket(&headers) {
+            break;
+        }
+    }
+}
+
+fn http_keep_alive(version: &str, headers: &[(String, String)]) -> bool {
+    let connection = headers
+        .iter()
+        .find(|(name, _)| name == "connection")
+        .map(|(_, value)| value.to_ascii_lowercase())
+        .unwrap_or_default();
+    if connection
+        .split(',')
+        .any(|token| token.trim().eq_ignore_ascii_case("close"))
+    {
+        return false;
+    }
+    if version.eq_ignore_ascii_case("HTTP/1.0") {
+        return connection
+            .split(',')
+            .any(|token| token.trim().eq_ignore_ascii_case("keep-alive"));
+    }
+    true
+}
+
+/// Handle one request on a connection; returns whether the connection can be
+/// reused (the request body was consumed and the response was written).
+#[allow(clippy::too_many_arguments)]
+fn handle_http_request(
+    reader: &mut BufReader<Conn>,
+    writer: &mut Conn,
+    method: &str,
+    target: &str,
+    headers: &[(String, String)],
+    bridge: Option<&dyn Bridge>,
+    secret: &Arc<Mutex<Option<String>>>,
+    blob_dir: &std::path::Path,
+    keep_alive: bool,
+) -> bool {
+    // Persisted addTorrent/addMetalink bytes served to the local download
+    // plugins. The random token is the capability.
+    if method == "GET" && target.starts_with("/aria2-blobs/") {
+        serve_blob(writer, target, blob_dir, keep_alive);
+        return keep_alive;
+    }
+
     // CORS preflight. A browser front-end sends OPTIONS before JSON-RPC.
     if method == "OPTIONS" {
-        let _ = write_empty(writer, "204 No Content");
-        return;
+        return write_empty(writer, "204 No Content", keep_alive).is_ok() && keep_alive;
     }
     if method == "HEAD" {
-        let _ = write_empty(writer, "200 OK");
-        return;
+        return write_empty(writer, "200 OK", keep_alive).is_ok() && keep_alive;
+    }
+    if method == "POST"
+        && headers
+            .iter()
+            .any(|(name, value)| name == "expect" && value.eq_ignore_ascii_case("100-continue"))
+    {
+        if writer
+            .write_all(b"HTTP/1.1 100 Continue\r\n\r\n")
+            .and_then(|()| writer.flush())
+            .is_err()
+        {
+            return false;
+        }
     }
 
     let request = match method {
-        "POST" => match read_body(&mut reader, &headers) {
+        "POST" => match read_body(reader, headers) {
             Ok(body) => match serde_json::from_slice::<Value>(&body) {
                 Ok(value) => value,
                 Err(error) => {
@@ -109,17 +204,20 @@ pub(crate) fn serve_http(
                         writer,
                         "400 Bad Request",
                         &rpc_error(&Value::Null, -32700, &format!("parse error: {error}")),
+                        keep_alive,
                     );
-                    return;
+                    return keep_alive;
                 }
             },
             Err(error) => {
+                // The body was not consumed; the connection is desynchronised.
                 let _ = write_json(
                     writer,
                     "400 Bad Request",
                     &rpc_error(&Value::Null, -32600, &format!("cannot read body: {error}")),
+                    false,
                 );
-                return;
+                return false;
             }
         },
         "GET" => match request_from_query(target) {
@@ -129,8 +227,9 @@ pub(crate) fn serve_http(
                     writer,
                     "400 Bad Request",
                     &rpc_error(&Value::Null, -32602, "GET needs a method parameter"),
+                    keep_alive,
                 );
-                return;
+                return keep_alive;
             }
         },
         _ => {
@@ -138,13 +237,14 @@ pub(crate) fn serve_http(
                 writer,
                 "405 Method Not Allowed",
                 &rpc_error(&Value::Null, -32600, "only GET and POST are supported"),
+                false,
             );
-            return;
+            return false;
         }
     };
 
     let response = process_request(&request, bridge, secret);
-    let _ = write_json(writer, "200 OK", &response);
+    write_json(writer, "200 OK", &response, keep_alive).is_ok() && keep_alive
 }
 
 /// Validate one JSON-RPC request and turn it into a full JSON-RPC response.
@@ -187,6 +287,35 @@ fn process_request(
     }
 }
 
+fn serve_blob(writer: &mut Conn, target: &str, directory: &std::path::Path, keep_alive: bool) {
+    let name = target.trim_start_matches("/aria2-blobs/");
+    let safe =
+        !name.is_empty() && !name.contains('/') && !name.contains('\\') && !name.contains("..");
+    let bytes = if safe {
+        std::fs::read(directory.join(name)).ok()
+    } else {
+        None
+    };
+    let Some(bytes) = bytes else {
+        let _ = write_bytes(
+            writer,
+            "404 Not Found",
+            "text/plain",
+            b"not found",
+            keep_alive,
+        );
+        return;
+    };
+    let content_type = if name.ends_with(".torrent") {
+        "application/x-bittorrent"
+    } else if name.ends_with(".metalink") || name.ends_with(".meta4") {
+        "application/metalink4+xml"
+    } else {
+        "application/octet-stream"
+    };
+    let _ = write_bytes(writer, "200 OK", content_type, &bytes, keep_alive);
+}
+
 fn is_websocket(headers: &[(String, String)]) -> bool {
     let upgrade = headers
         .iter()
@@ -201,7 +330,6 @@ enum WsIn {
     Text(String),
     Ping(Vec<u8>),
     Close,
-    Ignore,
 }
 
 /// Upgrade one connection to WebSocket and serve aria2 JSON-RPC over it.
@@ -218,6 +346,7 @@ fn serve_websocket(
             writer,
             "400 Bad Request",
             &rpc_error(&Value::Null, -32600, "missing Sec-WebSocket-Key"),
+            false,
         );
         return;
     };
@@ -246,18 +375,72 @@ fn serve_websocket(
     let (inbound_tx, inbound_rx) = mpsc::channel();
     thread::spawn(move || {
         let mut reader = reader;
+        let mut fragments: Vec<u8> = Vec::new();
+        let mut fragment_opcode = 0u8;
         loop {
-            match read_frame(&mut reader) {
-                Ok(Some(frame)) => {
-                    let close = matches!(frame, WsIn::Close);
-                    if inbound_tx.send(frame).is_err() || close {
-                        break;
-                    }
-                }
+            let frame = match read_frame(&mut reader) {
+                Ok(Some(frame)) => frame,
                 Ok(None) | Err(_) => {
                     let _ = inbound_tx.send(WsIn::Close);
                     break;
                 }
+            };
+            // Control frames run side effects through the channel, so clippy's
+            // match-guard suggestion does not fit here.
+            #[allow(clippy::collapsible_match)]
+            match frame.opcode {
+                0x0 => {
+                    // Continuation of a fragmented text message (browsers
+                    // split large addTorrent payloads).
+                    if fragments.is_empty() || fragment_opcode != 0x1 {
+                        continue;
+                    }
+                    if fragments.len().saturating_add(frame.payload.len()) > MAX_WS_FRAME {
+                        let _ = inbound_tx.send(WsIn::Close);
+                        break;
+                    }
+                    fragments.extend_from_slice(&frame.payload);
+                    if frame.fin {
+                        let text = match String::from_utf8(std::mem::take(&mut fragments)) {
+                            Ok(text) => text,
+                            Err(_) => {
+                                let _ = inbound_tx.send(WsIn::Close);
+                                break;
+                            }
+                        };
+                        fragment_opcode = 0;
+                        if inbound_tx.send(WsIn::Text(text)).is_err() {
+                            break;
+                        }
+                    }
+                }
+                0x1 => {
+                    if frame.fin {
+                        let text = match String::from_utf8(frame.payload) {
+                            Ok(text) => text,
+                            Err(_) => {
+                                let _ = inbound_tx.send(WsIn::Close);
+                                break;
+                            }
+                        };
+                        if inbound_tx.send(WsIn::Text(text)).is_err() {
+                            break;
+                        }
+                    } else {
+                        fragment_opcode = 0x1;
+                        fragments = frame.payload;
+                    }
+                }
+                0x8 => {
+                    let _ = inbound_tx.send(WsIn::Close);
+                    break;
+                }
+                0x9 => {
+                    if inbound_tx.send(WsIn::Ping(frame.payload)).is_err() {
+                        break;
+                    }
+                }
+                _ => {}
             }
         }
     });
@@ -279,7 +462,7 @@ fn serve_websocket(
                 }
             }
             Ok(WsIn::Close) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
-            Ok(WsIn::Ignore) | Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
         }
         while let Ok(event) = events.try_recv() {
             if let Some(note) = notification(&event) {
@@ -306,7 +489,13 @@ fn ws_accept(key: &str) -> String {
     base64::engine::general_purpose::STANDARD.encode(hasher.finalize())
 }
 
-fn read_frame(reader: &mut BufReader<Conn>) -> std::io::Result<Option<WsIn>> {
+struct WsFrame {
+    fin: bool,
+    opcode: u8,
+    payload: Vec<u8>,
+}
+
+fn read_frame(reader: &mut BufReader<Conn>) -> std::io::Result<Option<WsFrame>> {
     let mut header = [0u8; 2];
     match reader.read_exact(&mut header) {
         Ok(()) => {}
@@ -343,26 +532,11 @@ fn read_frame(reader: &mut BufReader<Conn>) -> std::io::Result<Option<WsIn>> {
             *byte ^= mask[index % 4];
         }
     }
-    if !fin {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "fragmented websocket frames are not supported",
-        ));
-    }
-    match opcode {
-        0x1 => String::from_utf8(payload)
-            .map(|text| Some(WsIn::Text(text)))
-            .map_err(|_| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "websocket text is not UTF-8",
-                )
-            }),
-        0x8 => Ok(Some(WsIn::Close)),
-        0x9 => Ok(Some(WsIn::Ping(payload))),
-        0xA => Ok(Some(WsIn::Ignore)),
-        _ => Ok(Some(WsIn::Ignore)),
-    }
+    Ok(Some(WsFrame {
+        fin,
+        opcode,
+        payload,
+    }))
 }
 
 fn write_frame(writer: &mut Conn, opcode: u8, payload: &[u8]) -> std::io::Result<()> {
@@ -434,11 +608,12 @@ fn fnv1a(bytes: &[u8]) -> u64 {
     hash
 }
 
-fn parse_request_line(line: &str) -> Option<(&str, &str)> {
+fn parse_request_line(line: &str) -> Option<(&str, &str, &str)> {
     let mut parts = line.split_whitespace();
     let method = parts.next()?;
     let target = parts.next()?;
-    Some((method, target))
+    let version = parts.next()?;
+    Some((method, target, version))
 }
 
 fn read_headers(reader: &mut BufReader<Conn>) -> std::io::Result<Vec<(String, String)>> {
@@ -626,93 +801,47 @@ fn rpc_error(id: &Value, code: i64, message: &str) -> Value {
     })
 }
 
-fn write_json(writer: &mut Conn, status: &str, body: &Value) -> std::io::Result<()> {
+fn write_bytes(
+    writer: &mut Conn,
+    status: &str,
+    content_type: &str,
+    body: &[u8],
+    keep_alive: bool,
+) -> std::io::Result<()> {
+    write!(
+        writer,
+        "HTTP/1.1 {status}\r\n\
+         Content-Type: {content_type}\r\n\
+         Content-Length: {}\r\n\
+         Connection: {}\r\n\
+         \r\n",
+        body.len(),
+        if keep_alive { "keep-alive" } else { "close" }
+    )?;
+    writer.write_all(body)?;
+    writer.flush()
+}
+
+fn write_json(
+    writer: &mut Conn,
+    status: &str,
+    body: &Value,
+    keep_alive: bool,
+) -> std::io::Result<()> {
     let raw = serde_json::to_vec(body)?;
-    write_response(writer, status, Some(&raw))
+    write_response(writer, status, Some(&raw), keep_alive)
 }
 
-fn write_empty(writer: &mut Conn, status: &str) -> std::io::Result<()> {
-    write_response(writer, status, None)
+fn write_empty(writer: &mut Conn, status: &str, keep_alive: bool) -> std::io::Result<()> {
+    write_response(writer, status, None, keep_alive)
 }
 
-/// One spawned `kind: "service"` plugin. The daemon keeps it alive across
-/// requests; a crash is replaced on the next call so the port stays usable.
-pub(crate) struct PluginBridge {
-    manifest: PluginManifest,
-    executable: PathBuf,
-    init: Init,
-    socket: String,
-    process: Mutex<Option<PluginProcess>>,
-}
-
-impl PluginBridge {
-    /// Spawn the bridge and hand it the daemon's local endpoint.
-    pub fn spawn(
-        manifest: PluginManifest,
-        executable: PathBuf,
-        init: Init,
-        socket: String,
-    ) -> Result<Self, String> {
-        let process = Self::launch(&manifest, &executable, &init, &socket)?;
-        Ok(Self {
-            manifest,
-            executable,
-            init,
-            socket,
-            process: Mutex::new(Some(process)),
-        })
-    }
-
-    fn launch(
-        manifest: &PluginManifest,
-        executable: &std::path::Path,
-        init: &Init,
-        socket: &str,
-    ) -> Result<PluginProcess, String> {
-        let mut process = PluginProcess::spawn(manifest.clone(), executable, init.clone())
-            .map_err(|error| format!("cannot start aria2 plugin: {error}"))?;
-        process
-            .send(&HostCommand::ServiceInit {
-                socket: socket.to_string(),
-            })
-            .map_err(|error| format!("cannot configure aria2 plugin: {error}"))?;
-        Ok(process)
-    }
-
-    /// Stop the process (daemon shutdown or the plugin was disabled).
-    pub fn stop(&self) {
-        if let Ok(mut guard) = self.process.lock() {
-            if let Some(mut process) = guard.take() {
-                let _ = process.stop();
-            }
-        }
-    }
-}
-
-impl Bridge for PluginBridge {
-    fn call(&self, payload: Value) -> Result<Value, String> {
-        let mut guard = self
-            .process
-            .lock()
-            .map_err(|_| "aria2 plugin lock poisoned".to_string())?;
-        let dead = guard.as_mut().is_none_or(PluginProcess::has_exited);
-        if dead {
-            *guard = Some(Self::launch(
-                &self.manifest,
-                &self.executable,
-                &self.init,
-                &self.socket,
-            )?);
-        }
-        guard
-            .as_mut()
-            .expect("launched above")
-            .bridge_call(payload)
-            .map_err(|error| format!("aria2 plugin: {error}"))
-    }
-}
-
-fn write_response(writer: &mut Conn, status: &str, body: Option<&[u8]>) -> std::io::Result<()> {
+fn write_response(
+    writer: &mut Conn,
+    status: &str,
+    body: Option<&[u8]>,
+    keep_alive: bool,
+) -> std::io::Result<()> {
     let length = body.map_or(0, |body| body.len());
     write!(
         writer,
@@ -723,8 +852,9 @@ fn write_response(writer: &mut Conn, status: &str, body: Option<&[u8]>) -> std::
          Access-Control-Allow-Methods: POST, GET, OPTIONS\r\n\
          Access-Control-Allow-Headers: content-type, authorization\r\n\
          Access-Control-Max-Age: 86400\r\n\
-         Connection: close\r\n\
-         \r\n"
+         Connection: {}\r\n\
+         \r\n",
+        if keep_alive { "keep-alive" } else { "close" }
     )?;
     if let Some(body) = body {
         writer.write_all(body)?;

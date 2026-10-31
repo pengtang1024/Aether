@@ -49,7 +49,7 @@ Material 组件会一起切换。
 ### 设置中心
 
 设置页是独立的多分类中心：左侧 10 个分类，右侧是 M3 分组卡片。覆盖下载并发、连接数、
-动态分段、重试与超时、全局限速、磁盘预分配、校验、代理、DNS、请求头、BT/PT、DHT/PEX、
+动态分段、重试与超时、全局限速、磁盘预分配、任务级 SHA-256 校验、代理、DNS、请求头、BT/PT、DHT/PEX、
 做种、媒体嗅探、浏览器接管、插件、计划任务、通知、外观、RPC（含 aria2 JSON-RPC
 兼容）与维护等能力。
 
@@ -329,7 +329,7 @@ Esc 关闭；下载空状态提供“清除筛选条件”，一次恢复全部�
 
 - 任务列表、计数、速度/ETA、暂停/继续、取消+删除、新建下载、代理设置（跟随系统/直连/
   手动）都走真实 daemon；代理模式与地址回显 daemon 当前值（PAC 为只读展示）；已完成
-  文件落在下载目录，断点/续传/校验由插件完成
+  文件落在下载目录；断点/续传由插件完成，最终大小与 SHA-256 由 Host 再复核
 - 主页的今日/本周下载量、每日柱状图、存储分类（视频/压缩包/应用/文档）、磁盘使用、
   版本、插件数、协议数都来自 daemon 的 `stats`；峰值速度与运行时长在 UI 侧计算
 - 设置 → 插件列出 daemon 注册表里的真实插件（16 个第一方），开关直接下发
@@ -392,3 +392,10 @@ SixtyFPS GmbH 所有，保留原始许可头，采用三选一许可：GPL-3.0-o
 Slint Royalty-free 2.0 或 Slint Software 3.0。再分发时请遵守相应条款。
 缺少第三方许可文件的旧发布会立即下架；v0.1.0 的二进制因此已撤回，记录见
 [`docs/WITHDRAWN_RELEASES.md`](docs/WITHDRAWN_RELEASES.md)。
+
+完整第三方许可与逐 crate 版权原文见
+[`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md)，深度审计见
+[`docs/LICENSE_AUDIT.md`](docs/LICENSE_AUDIT.md)。下载内容、BT 做种、流媒体录制、
+云盘条款、商标与出口管制的使用边界见
+[`docs/LEGAL_NOTICES.md`](docs/LEGAL_NOTICES.md)；隐私与本地数据流见
+[`PRIVACY.md`](PRIVACY.md)。

@@ -49,10 +49,11 @@ deb: release plugins
 		install -Dm644 "assets/logo-icon-$$size.png" \
 			"$(STAGE)/usr/share/icons/hicolor/$${size}x$${size}/apps/aether.png"; \
 	done
-	install -Dm644 LICENSE "$(STAGE)/usr/share/doc/aether/copyright"
+	install -Dm644 packaging/debian/copyright "$(STAGE)/usr/share/doc/aether/copyright"
 	install -Dm644 THIRD_PARTY_NOTICES.md "$(STAGE)/usr/share/doc/aether/THIRD_PARTY_NOTICES.md"
-	install -Dm644 LICENSES/Slint-Royalty-free-2.0.md \
-		"$(STAGE)/usr/share/doc/aether/Slint-Royalty-free-2.0.md"
+	install -Dm644 THIRD_PARTY_LICENSES.md "$(STAGE)/usr/share/doc/aether/THIRD_PARTY_LICENSES.md"
+	install -d "$(STAGE)/usr/share/doc/aether/licenses"
+	install -Dm644 LICENSES/* "$(STAGE)/usr/share/doc/aether/licenses/"
 	install -d "$(STAGE)/usr/lib/aether/plugins"
 	cp -a build/plugins/. "$(STAGE)/usr/lib/aether/plugins/"
 	mkdir -p "$(STAGE)/DEBIAN" "$(DIST)"

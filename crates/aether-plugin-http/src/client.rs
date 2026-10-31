@@ -299,7 +299,9 @@ pub fn probe_with(client: &Client, input: &str, extra: &HeaderMap) -> ProbeInfo 
 
     if let Ok(response) = apply_headers(client.head(url.clone()), extra).send() {
         if response.status().is_success() {
-            return inspect(response, url.as_str(), false);
+            let mut info = inspect(response, url.as_str(), false);
+            verify_ranges(client, &url, extra, &mut info, false);
+            return info;
         }
     }
 
@@ -311,7 +313,11 @@ pub fn probe_with(client: &Client, input: &str, extra: &HeaderMap) -> ProbeInfo 
         extra,
     );
     match request.send() {
-        Ok(response) if response.status().is_success() => inspect(response, url.as_str(), true),
+        Ok(response) if response.status().is_success() => {
+            let mut info = inspect(response, url.as_str(), true);
+            verify_ranges(client, &url, extra, &mut info, true);
+            info
+        }
         Ok(response) => ProbeInfo {
             supported: true,
             protocol: Some(url.scheme().to_string()),
@@ -359,6 +365,25 @@ fn inspect(response: Response, requested_url: &str, ranged_request: bool) -> Pro
         filename: filename_from_response(&response, &final_url),
         accept_ranges,
         reason: (!status.is_success()).then(|| format!("HTTP {status}")),
+    }
+}
+
+/// `Accept-Ranges: bytes` is a promise some servers do not keep. Verify with
+/// a real one-byte Range request before enabling segmented downloads.
+fn verify_ranges(
+    client: &Client,
+    url: &reqwest::Url,
+    extra: &HeaderMap,
+    info: &mut ProbeInfo,
+    already_ranged: bool,
+) {
+    if !info.accept_ranges || already_ranged {
+        return;
+    }
+    let request = apply_headers(client.get(url.clone()).header(RANGE, "bytes=0-0"), extra);
+    match request.send() {
+        Ok(response) if response.status() == StatusCode::PARTIAL_CONTENT => {}
+        _ => info.accept_ranges = false,
     }
 }
 

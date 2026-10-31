@@ -2,7 +2,7 @@
   "id": "ftp",
   "name": "FTP Downloader",
   "version": "0.1.0",
-  "api": 1,
+  "api": 2,
   "min_host": "0.2.0",
   "protocols": ["ftp", "ftps"],
   "capabilities": ["network", "filesystem:task"],
