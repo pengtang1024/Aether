@@ -833,3 +833,74 @@ fn refuses_a_mirror_with_a_different_etag() {
     );
     fs::remove_dir_all(&root).ok();
 }
+
+#[test]
+fn falls_through_multiple_mirrors() {
+    let data = test_data();
+    let primary = start_truncating_server(data.clone(), 16 * 1024);
+    let first_mirror = start_truncating_server(data.clone(), 32 * 1024);
+    let second_mirror = start_server(data.clone());
+    let root = temp_dir("multi-failover");
+    let staging = root.join("staging");
+    fs::create_dir_all(&staging).unwrap();
+
+    let mut plugin = PluginProcess::spawn(manifest(), &executable(), init(&root)).unwrap();
+    start_task_one_connection(
+        &mut plugin,
+        format!("http://{}/file.bin", primary.addr),
+        staging.clone(),
+        sha256_hex(&data),
+        serde_json::json!({
+            "mirrors": [
+                format!("http://{}/file.bin", first_mirror.addr),
+                format!("http://{}/file.bin", second_mirror.addr),
+            ]
+        }),
+    );
+    wait_for_completed(&mut plugin);
+    plugin.shutdown().unwrap();
+
+    assert_eq!(fs::read(staging.join("file.bin")).unwrap(), data);
+    assert!(
+        !first_mirror.ranges.lock().unwrap().is_empty(),
+        "the first mirror must be attempted before the second"
+    );
+    let second_ranges = second_mirror.ranges.lock().unwrap().clone();
+    assert!(
+        second_ranges
+            .iter()
+            .filter_map(|range| range_start(range))
+            .any(|start| start > 0),
+        "the last mirror must resume, not restart: {second_ranges:?}"
+    );
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn weak_etags_disable_mid_download_failover() {
+    let data = test_data();
+    let primary = start_truncating_server(data.clone(), 16 * 1024);
+    let mirror = start_server_with_etag(data.clone(), "W/\"weak-etag\"");
+    let root = temp_dir("weak-etag");
+    let staging = root.join("staging");
+    fs::create_dir_all(&staging).unwrap();
+
+    let mut plugin = PluginProcess::spawn(manifest(), &executable(), init(&root)).unwrap();
+    start_task_one_connection(
+        &mut plugin,
+        format!("http://{}/file.bin", primary.addr),
+        staging,
+        sha256_hex(&data),
+        serde_json::json!({
+            "mirrors": [format!("http://{}/file.bin", mirror.addr)]
+        }),
+    );
+    let _ = wait_for_failed(&mut plugin);
+    plugin.shutdown().unwrap();
+    let ranges = mirror.ranges.lock().unwrap().clone();
+    assert!(
+        ranges.iter().all(|range| range == "bytes=0-0"),
+        "a weak ETag must not authorize mid-download failover: {ranges:?}"
+    );
+    fs::remove_dir_all(&root).ok();
+}

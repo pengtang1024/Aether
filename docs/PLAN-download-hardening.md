@@ -317,7 +317,8 @@ fn create_staging_root(state, task_id, final_dir) -> Result<PathBuf, DaemonError
   已完成分片不会重下。
 - 416/磁盘错误/校验失败/用户取消不触发 failover；所有镜像都失败才返回首个真实错误。
 - 测试：主源发送 16 KiB 后断流、镜像完整 → 最终文件字节一致，镜像收到的 Range
-  起点 > 0；镜像 ETag 不同 → 只允许 probe 的 `bytes=0-0`，不会收到下载 Range。
+  起点 > 0；多镜像链（primary → 断流 mirror → 完整 mirror）依次 fallthrough；
+  镜像 ETag 不同/弱 ETag → 只允许 probe 的 `bytes=0-0`，不会收到下载 Range。
 - 新增日志（Warn）记录切换原因和目标镜像；`plugin_state` 仍记录初始 ETag/final_url。
 
 ## 7. 兼容与发布
