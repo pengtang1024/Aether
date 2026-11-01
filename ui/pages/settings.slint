@@ -2062,9 +2062,19 @@ export component SettingsPage inherits Rectangle {
                 background: Aether.outline-variant.with-alpha(0.5);
             }
 
-            if root.search-query != "" && !root.search-picked: SearchResults {
-                hits: SettingsFilter.results;
-                picked(tab) => { root.pick-section(tab); }
+            // Same scroll container and right inset as the section cards:
+            // the results card must line up with them (and long result lists
+            // must scroll instead of overflowing the page).
+            if root.search-query != "" && !root.search-picked: ScrollView {
+                VerticalLayout {
+                    padding-right: 8px;
+                    padding-bottom: Aether.page-padding;
+
+                    SearchResults {
+                        hits: SettingsFilter.results;
+                        picked(tab) => { root.pick-section(tab); }
+                    }
+                }
             }
 
             if root.search-query == "" || root.search-picked: ScrollView {

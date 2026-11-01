@@ -553,15 +553,17 @@ export component HomePage inherits Rectangle {
                         width: 168px;
                         height: 100%;
                         spacing: 0;
-                        alignment: center;
+                        // Top-aligned like the metric labels: a centered
+                        // one-line control sat ~10px below them.
+                        alignment: start;
 
                         Text {
                             text: @tr("限速");
                             color: Aether.on-surface-muted;
-                            font-size: Aether.text-caption;
-                            height: 24px;
+                            font-size: Aether.text-micro;
+                            height: 14px;
                             vertical-alignment: center;
-                            cross-axis-self-alignment: center;
+                            cross-axis-self-alignment: start;
                         }
 
                         for idx in [0, 1, 2, 3] : SpeedLimitPill {
