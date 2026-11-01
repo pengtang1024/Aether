@@ -9,6 +9,7 @@ pub mod server;
 pub mod service;
 pub mod settings;
 pub mod transport;
+mod volume;
 
 pub use client::Client;
 pub use client_types::{PluginInfo, Stats};

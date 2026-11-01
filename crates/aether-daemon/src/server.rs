@@ -32,6 +32,7 @@ use crate::settings::{
     parse_hhmm, Limits, Settings, CONNECTIONS_DEFAULT, KEYS, RPC_LISTEN_DEFAULT,
 };
 use crate::transport::{Conn, Listener};
+use crate::volume::same_filesystem;
 
 pub struct DaemonConfig {
     pub download_dir: PathBuf,
@@ -3260,35 +3261,6 @@ fn resolve_system_pac(
     }
 }
 
-/// Whether two directories live on the same filesystem. Unknown metadata
-/// keeps the centralized staging root (the safe default).
-fn same_filesystem(left: &Path, right: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        match (fs::metadata(left), fs::metadata(right)) {
-            (Ok(left), Ok(right)) => left.dev() == right.dev(),
-            _ => true,
-        }
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        match (fs::metadata(left), fs::metadata(right)) {
-            (Ok(left), Ok(right)) => {
-                match (left.volume_serial_number(), right.volume_serial_number()) {
-                    (Some(left), Some(right)) => left == right,
-                    // Unknown volume metadata keeps the centralized staging
-                    // root: copying at finalize is safer than writing into a
-                    // directory whose mount we could not identify.
-                    _ => true,
-                }
-            }
-            _ => true,
-        }
-    }
-}
-
 /// Centralized staging lives under the download root; a target on another
 /// filesystem gets its own hidden staging directory so finalization is a
 /// rename instead of a cross-device copy.
@@ -3543,22 +3515,6 @@ mod tests {
     use super::{parse_checksum, schedule_active};
     use serde_json::json;
     use std::fs;
-
-    #[test]
-    fn same_filesystem_is_reflexive() {
-        let dir = std::env::temp_dir();
-        assert!(super::same_filesystem(&dir, &dir));
-    }
-
-    #[test]
-    fn same_filesystem_missing_paths_keep_centralized_staging() {
-        let dir = std::env::temp_dir();
-        let missing = dir.join("aether-missing-volume-target");
-        assert!(
-            super::same_filesystem(&dir, &missing),
-            "unknown metadata must keep the centralized staging root"
-        );
-    }
 
     #[test]
     fn staging_falls_back_when_the_preferred_path_is_blocked() {
