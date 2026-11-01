@@ -109,6 +109,17 @@ versioning; 0.x releases may still change structure.
   attribution; the Debian description no longer claims the plugins are
   sandboxed (they are process-isolated; OS sandboxes are not implemented).
 
+### Build and packaging
+
+- Cross-volume staging asked `std` for Windows volume metadata, which is still
+  an unstable API (`windows_by_handle`); the Windows build therefore failed.
+  The daemon now resolves volume serial numbers through kernel32 directly
+  (no new dependency), and both volume-identity tests run on Windows CI.
+- The macOS universal DMG failed because libssh2 links OpenSSL and the runner
+  has none for both arches. The SFTP plugin vendors OpenSSL on macOS only, so
+  the DMG builds from source without a Homebrew install; Linux and Windows
+  keep their previous link paths.
+
 ## [0.3.0] - 2026-10-31
 
 ### Added

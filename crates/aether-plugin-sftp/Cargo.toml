@@ -15,6 +15,14 @@ path = "src/main.rs"
 aether-plugin-sdk = { path = "../aether-plugin-sdk" }
 percent-encoding = "2"
 serde_json = "1"
-ssh2 = "0.9"
 thiserror = "2"
 url = "2"
+
+# libssh2 links OpenSSL on unix. macOS runners have no OpenSSL and the
+# universal DMG cross-compiles for two arches, so the macOS build vendors the
+# OpenSSL source instead of depending on a single-arch Homebrew install.
+[target.'cfg(target_os = "macos")'.dependencies]
+ssh2 = { version = "0.9", features = ["vendored-openssl"] }
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+ssh2 = "0.9"
