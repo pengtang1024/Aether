@@ -1659,21 +1659,26 @@ fn main() -> Result<(), slint::PlatformError> {
                 let Some(ui) = ui_handle.upgrade() else {
                     return;
                 };
-                let hits = settings_search::search(query.as_str());
-                let rows: Vec<SettingsHit> = hits
+                let results = settings_search::search(query.as_str());
+                let rows: Vec<SettingsHit> = results
+                    .hits
                     .iter()
                     .map(|hit| SettingsHit {
                         tab: hit.tab,
                         id: hit.id.into(),
-                        title: hit.title.clone().into(),
-                        subtitle: hit.subtitle.clone().into(),
-                        section: hit.section.clone().into(),
+                        title_before: hit.title_before.clone().into(),
+                        title_hit: hit.title_hit.clone().into(),
+                        title_after: hit.title_after.clone().into(),
+                        subtitle_before: hit.subtitle_before.clone().into(),
+                        subtitle_hit: hit.subtitle_hit.clone().into(),
+                        subtitle_after: hit.subtitle_after.clone().into(),
                         heading: hit.heading.clone().into(),
                     })
                     .collect();
                 let filter = ui.global::<SettingsFilter>();
                 filter.set_active(!query.is_empty());
-                filter.set_hits(settings_search::hit_ids(&hits).into());
+                filter.set_hits(results.cards.into());
+                filter.set_row_hits(results.rows.into());
                 filter.set_results(ModelRc::new(VecModel::from(rows)));
             });
         }

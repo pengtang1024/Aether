@@ -61,6 +61,18 @@ versioning; 0.x releases may still change structure.
   at zero updates. Plugin uninstall actions are muted instead of accent-loud.
 - The category rail fits the 900x560 minimum window: 30px rows, a scroll
   fallback and a pinned version line.
+- Search is row-level: the index now covers every setting row (`ROWS` in
+  `src/settings_search.rs`). A card whose own title/subtitle matches still
+  opens whole; otherwise only the matching rows appear, so "token" opens
+  Advanced with just the "Access token" row. The result list shows the row
+  title with its card as context, and the page filters cards and rows.
+- The matched term is highlighted in the result title/subtitle by splitting
+  them into before/match/after parts (Slint text has no inline spans).
+- Escape clears the search from the keyboard: the category rail is wrapped
+  in a `FocusScope`, which receives the key the line edit rejects.
+- Invisible cards and rows are collapsed explicitly: Slint keeps
+  `visible: false` items in the layout, which left a blank gap above the
+  filtered card and between filtered rows.
 
 ## [0.4.0] - 2026-11-01
 

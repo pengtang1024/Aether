@@ -981,3 +981,9 @@ msgstr "インストール済みプラグインと絞り込み"
 
 msgid "ffmpeg"
 msgstr "ffmpeg"
+
+msgid "User-Agent"
+msgstr "User-Agent"
+
+msgid "DHT"
+msgstr "DHT"

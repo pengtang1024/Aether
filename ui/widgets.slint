@@ -301,6 +301,8 @@ export component SectionCard inherits Rectangle {
     visible: root.filterable
         ? SettingsFilter.shows(root.id)
         : !SettingsFilter.active;
+    // Slint keeps invisible items in the layout, so collapse them explicitly.
+    height: self.visible ? self.preferred-height : 0px;
 
     border-radius: Aether.card-radius;
     background: @linear-gradient(155deg, Aether.card-top, Aether.card-bottom);
@@ -413,11 +415,18 @@ export component SectionCard inherits Rectangle {
 // ---------------------------------------------------------------------------
 export component SettingRow inherits Rectangle {
     in property <image> icon-source;
+    // Search identity (see `src/settings_search.rs`); the row hides when a
+    // filter is active and it is not one of the matching rows.
+    in property <string> id: "";
     in property <string> title: "";
     in property <string> description: "";
     // A short status marker next to the title ("restart to apply", ...).
     in property <string> badge: "";
     in property <bool> divider: true;
+
+    visible: SettingsFilter.shows-row(root.id);
+    // Slint keeps invisible items in the layout, so collapse them explicitly.
+    height: self.visible ? self.preferred-height : 0px;
 
     // One row: the control sits on the title line, the description runs the
     // full width underneath. Keeping the control out of the description's

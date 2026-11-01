@@ -10,9 +10,14 @@
 export struct SettingsHit {
     tab: int,
     id: string,
-    title: string,
-    subtitle: string,
-    section: string,
+    // Titles are split around the matched term so the page can highlight it
+    // (Slint text has no inline styles).
+    title-before: string,
+    title-hit: string,
+    title-after: string,
+    subtitle-before: string,
+    subtitle-hit: string,
+    subtitle-after: string,
     // "Network · 2" on the first result of a section, empty afterwards.
     heading: string,
 }
@@ -21,6 +26,8 @@ export global SettingsFilter {
     in-out property <bool> active: false;
     // "|id|id|"; empty means no card matches.
     in-out property <string> hits: "";
+    // "|id|id|" rows inside the matching cards.
+    in-out property <string> row-hits: "";
     // Result rows for the search view, filled by Rust.
     in-out property <[SettingsHit]> results: [];
 
@@ -28,5 +35,11 @@ export global SettingsFilter {
         return !root.active
             || id == ""
             || root.hits.replace-all("|" + id + "|", "") != root.hits;
+    }
+
+    public pure function shows-row(id: string) -> bool {
+        return !root.active
+            || id == ""
+            || root.row-hits.replace-all("|" + id + "|", "") != root.row-hits;
     }
 }

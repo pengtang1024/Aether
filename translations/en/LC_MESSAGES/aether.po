@@ -981,3 +981,9 @@ msgstr "Installed plugins and filters"
 
 msgid "ffmpeg"
 msgstr "ffmpeg"
+
+msgid "User-Agent"
+msgstr "User-Agent"
+
+msgid "DHT"
+msgstr "DHT"
