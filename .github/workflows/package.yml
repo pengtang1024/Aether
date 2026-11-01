@@ -113,7 +113,9 @@ jobs:
             AppDir "dist/aether-${VERSION}-linux-${APPIMAGE_ARCH}.AppImage"
 
       - name: Check license notices in Linux packages
-        run: python3 scripts/check-license-bundles.py dist
+        run: |
+          python3 scripts/check-license-bundles.py --check-recipes --check-generated
+          python3 scripts/check-license-bundles.py dist
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

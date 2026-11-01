@@ -88,10 +88,10 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Generated licence bundles are current
-        run: |
-          python3 scripts/generate-third-party-inventory.py --check
-          python3 scripts/generate-third-party-licenses.py --check
-          python3 scripts/check-license-bundles.py --check-recipes
+        # Windows skips `--check-generated`: `cargo tree --target` resolves
+        # host dependencies differently there, so the platform columns are
+        # only reproducible on Linux/macOS.
+        run: python3 scripts/check-license-bundles.py --check-recipes --check-generated
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
           # Global args go before the subcommand. Without --workspace,

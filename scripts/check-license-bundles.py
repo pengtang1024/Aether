@@ -10,6 +10,13 @@ Usage:
     python3 scripts/check-license-bundles.py dist
     python3 scripts/check-license-bundles.py dist/aether_0.1.0_amd64.deb
     python3 scripts/check-license-bundles.py --check-recipes
+    python3 scripts/check-license-bundles.py --check-generated
+
+The generated inventory/licence files are compared on Linux only: on Windows,
+`cargo tree --target <other-platform>` also reports host dependencies, so the
+platform column cannot be reproduced there. Linux CI and the Linux packaging
+job run `--check-generated`; every platform still runs `--check-recipes` and
+the artifact checks.
 """
 
 from __future__ import annotations
@@ -49,6 +56,25 @@ def fail(message: str) -> None:
     print(f"FAIL: {message}", file=sys.stderr)
 
 
+def check_generated() -> int:
+    """Fail when the generated inventory/licence files drifted."""
+    errors = 0
+    for script in (
+        "scripts/generate-third-party-inventory.py",
+        "scripts/generate-third-party-licenses.py",
+    ):
+        result = subprocess.run(
+            [sys.executable, script, "--check"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            fail(f"{script} --check failed: {result.stdout}{result.stderr}")
+            errors += 1
+    return 0 if errors == 0 else 1
+
+
 def check_recipes() -> int:
     errors = 0
     for name in ("LICENSE", NOTICE, TEXTS):
@@ -82,23 +108,8 @@ def check_recipes() -> int:
             if needle not in text:
                 fail(f"{relative_path} does not reference {needle}")
                 errors += 1
-    if errors:
-        return 1
-    for script in (
-        "scripts/generate-third-party-inventory.py",
-        "scripts/generate-third-party-licenses.py",
-    ):
-        result = subprocess.run(
-            [sys.executable, script, "--check"],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            fail(f"{script} --check failed: {result.stdout}{result.stderr}")
-            errors += 1
     if errors == 0:
-        print("OK: license files, recipes and generated bundles are current")
+        print("OK: license files and packaging recipes are current")
     return 1 if errors else 0
 
 
@@ -255,14 +266,26 @@ def main() -> int:
         action="store_true",
         help="check the source files and packaging recipes only",
     )
+    parser.add_argument(
+        "--check-generated",
+        action="store_true",
+        help=(
+            "compare the generated inventory/licence files (Linux CI only: "
+            "cargo tree resolves host dependencies differently on Windows)"
+        ),
+    )
     args = parser.parse_args()
 
-    if not args.paths and not args.check_recipes:
-        parser.error("pass at least one artifact path or --check-recipes")
+    if not args.paths and not args.check_recipes and not args.check_generated:
+        parser.error(
+            "pass at least one artifact path, --check-recipes or --check-generated"
+        )
 
     status = 0
     if args.check_recipes:
         status |= check_recipes()
+    if args.check_generated:
+        status |= check_generated()
     for artifact in expand(args.paths):
         status |= check_artifact(artifact)
     return 1 if status else 0

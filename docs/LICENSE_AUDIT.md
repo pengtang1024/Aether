@@ -13,7 +13,7 @@ cargo tree --workspace --target <target> --edges normal # 运行时依赖
 python3 scripts/generate-third-party-inventory.py      # 生成 591 行清单
 cargo deny --workspace check licenses bans sources     # 全工作区许可/来源
 cargo deny --workspace check advisories                # 告警（见 §7）
-python3 scripts/check-license-bundles.py --check-recipes
+python3 scripts/check-license-bundles.py --check-recipes --check-generated
 ```
 
 - 运行时依赖按目标取并集：**591 个**（Linux 530 / Windows 468 / macOS 500）。
@@ -163,8 +163,10 @@ third-party 文本。现已复制 `THIRD_PARTY_NOTICES.md` 与整个 `LICENSES/`
 [`THIRD_PARTY_LICENSES.md`](../THIRD_PARTY_LICENSES.md)：591 个运行时包、
 382 份去重文本，包含每个 crate 的 LICENSE/COPYING/NOTICE 原文与版权行；
 没有内嵌许可文件的 crate 会明确标注 SPDX 表达式并指向 `LICENSES/` 标准全文。
-生成器支持 `--check`，`check-license-bundles.py` 会阻止产物漂移；应用、插件更新包、
-浏览器扩展均携带对应声明。
+生成器支持 `--check`，`check-license-bundles.py --check-generated`
+会阻止生成文件漂移（`cargo tree --target` 在 Windows 上会混入宿主依赖，
+因此该对比只在 Linux CI 跑；Windows 仍校验文件与打包 recipe）；应用、
+插件更新包、浏览器扩展均携带对应声明。
 
 ### ✅ M2. Debian `copyright`（已闭环）
 
@@ -217,7 +219,7 @@ AppStream `project_license` / macOS `NSHumanReadableCopyright` 描述的是应�
 ## 9. 发布前检查清单
 
 - [x] `cargo deny --workspace check`（advisories/bans/licenses/sources）
-- [x] `python3 scripts/check-license-bundles.py --check-recipes`
+- [x] `python3 scripts/check-license-bundles.py --check-recipes --check-generated`
 - [x] 生成逐 crate `THIRD_PARTY_LICENSES.md` 并纳入门禁（591 包 / 382 文本）
 - [x] Debian DEP-5 `copyright`
 - [x] 每个 Release 正文含 “Made with Slint”（脚本门禁）

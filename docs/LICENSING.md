@@ -147,7 +147,9 @@ Slint 源文件；对外仍应保留 `THIRD_PARTY_NOTICES.md` 与署名。
 - 撤回后不得移动或复用该 tag；修复必须通过新版本发布。
 - 不得把已撤回的版本号重新用于新构建。
 - 每个新发布在 publish 前必须通过
-  `python3 scripts/check-license-bundles.py --check-recipes`，并对实际产物运行
+  `python3 scripts/check-license-bundles.py --check-recipes --check-generated`
+  （生成文件对比只在 Linux CI 跑：Windows 的 `cargo tree --target`
+  会混入宿主依赖，平台列无法复现），并对实际产物运行
   `python3 scripts/check-license-bundles.py dist`（`.deb`、AppImage、ZIP、DMG；
   Windows 安装器由 Inno Setup recipe 检查覆盖）。
 

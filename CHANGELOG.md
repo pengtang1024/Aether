@@ -119,6 +119,12 @@ versioning; 0.x releases may still change structure.
   has none for both arches. The SFTP plugin vendors OpenSSL on macOS only, so
   the DMG builds from source without a Homebrew install; Linux and Windows
   keep their previous link paths.
+- The Windows installer jobs compared the generated licence files and failed:
+  `cargo tree --target` also reports host dependencies on Windows, so the
+  platform column cannot be reproduced there. Generation drift is now checked
+  by `--check-generated` on Linux (CI and the Linux packages), while Windows
+  keeps the file and packaging-recipe checks. The generators also render
+  POSIX paths and LF newlines so a Windows run no longer differs.
 
 ## [0.3.0] - 2026-10-31
 

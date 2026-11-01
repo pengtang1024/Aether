@@ -21,7 +21,7 @@ check: release
 	appstreamcli validate --no-net packaging/aether.metainfo.xml
 
 check-licenses:
-	python3 scripts/check-license-bundles.py --check-recipes
+	python3 scripts/check-license-bundles.py --check-recipes --check-generated
 	@if compgen -G "$(DIST)/aether_*.deb" >/dev/null; then \
 		python3 scripts/check-license-bundles.py "$(DIST)"/aether_*.deb; \
 	fi
