@@ -3,7 +3,7 @@
 All notable changes to Aether are documented here. Versions follow semantic
 versioning; 0.x releases may still change structure.
 
-## [Unreleased]
+## [0.5.0] - 2026-11-02
 
 ### Added
 
@@ -24,12 +24,15 @@ versioning; 0.x releases may still change structure.
 - The Linux tray re-registers its StatusNotifierItem when the host process is
   replaced (AppIndicator/GNOME extension reload, panel restart), so the icon
   comes back instead of leaving a hidden window with no way in.
-- Tray menu entries now react to `clicked`, the event stock Ubuntu's
-  AppIndicator and KDE actually send. Only the optional `activate` event was
-  handled, so 显示主窗口 / 退出 did nothing when clicked. `GetGroupProperties`
-  (how that host fetches labels) and `AboutToShow` are implemented too, so the
-  menu renders real labels instead of blank rows, and a language switch is
-  broadcast with `ItemsPropertiesUpdated`.
+- The tray icon is clickable again on stock Ubuntu. Three wire-format bugs
+  kept the AppIndicator host from ever building the menu: `GetLayout` returned
+  `a(ia{sv}av)` instead of the singular `(ia{sv}av)`, child nodes were built
+  from bare `Value`s and therefore serialized as `(vvv)` (every field a
+  variant), and menu clicks were only handled for the optional `activate`
+  event while Ubuntu sends `clicked`. `GetGroupProperties` (how the host
+  fetches labels) and `AboutToShow` were missing as well. All fixed, so
+  显示主窗口 / 退出 render and act, and a language switch is broadcast with
+  `ItemsPropertiesUpdated`.
 - Tray menu labels and the tooltip follow the UI language (including ja/zh-TW),
   and the dbusmenu `GetProperty`/`GetGroupProperties` replies carry real
   types (`enabled` as a boolean) instead of an empty string for everything.
