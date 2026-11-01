@@ -602,6 +602,7 @@ fn refresh_rows(ui: &AppWindow, state: &Rc<RefCell<State>>) {
     ui.set_chart_line(line.into());
     ui.set_chart_area(area.into());
     ui.set_chart_latest(latest);
+    ui.set_chart_idle(chart_peak(history) <= 0.0);
 
     // ---- dashboard counters (daemon `stats`) --------------------------------
     if let Some(stats) = &snapshot.stats {

@@ -214,6 +214,7 @@ export component AppWindow inherits Window {
     in-out property <string> chart-line: "";
     in-out property <string> chart-area: "";
     in-out property <float> chart-latest: 0;
+    in-out property <bool> chart-idle: true;
     in-out property <int> speed-limit-mode: 0;   // 0=不限, 1=低, 2=中, 3=高
     callback speed-limit-picked(int);
 
@@ -466,6 +467,7 @@ export component AppWindow inherits Window {
                         chart-line: root.chart-line;
                         chart-area: root.chart-area;
                         chart-latest: root.chart-latest;
+                        chart-idle: root.chart-idle;
                         today-bytes: root.today-bytes;
                         today-upload: root.today-upload;
                         peak-speed: root.peak-speed;

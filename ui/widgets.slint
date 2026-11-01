@@ -693,6 +693,8 @@ export component SpeedChart inherits Rectangle {
     in property <float> peak: 1;
     /// Latest sample normalized to the chart peak, 0..1.
     in property <float> latest: 0;
+    /// No traffic in the window: keep only a faint baseline.
+    in property <bool> idle: false;
     in property <string> caption: @tr("最近 60 秒");
 
     private property <length> dot-y: root.height * (0.94 - clamp(root.latest, 0, 1) * 0.88);
@@ -727,6 +729,7 @@ export component SpeedChart inherits Rectangle {
         fit: ImageFit.fill;
         commands: root.area-path;
         fill: @linear-gradient(180deg, Aether.primary.with-alpha(0.30), Aether.primary.with-alpha(0.01));
+        visible: !root.idle;
     }
 
     // soft under-stroke halo
@@ -745,6 +748,7 @@ export component SpeedChart inherits Rectangle {
         stroke-width: 7px;
         stroke-line-cap: round;
         stroke-line-join: round;
+        visible: !root.idle;
     }
 
     Path {
@@ -758,8 +762,8 @@ export component SpeedChart inherits Rectangle {
         viewbox-height: 1;
         fit: ImageFit.fill;
         commands: root.line-path;
-        stroke: Aether.primary-bright;
-        stroke-width: 2px;
+        stroke: root.idle ? Aether.outline-variant : Aether.primary-bright;
+        stroke-width: root.idle ? 1px : 2px;
         stroke-line-cap: round;
         stroke-line-join: round;
     }

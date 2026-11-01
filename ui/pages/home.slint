@@ -181,6 +181,16 @@ component DayBar inherits Rectangle {
             width: 100%;
             background: transparent;
 
+            // Baseline: without it a zero day leaves the label floating and
+            // the chart reads as an empty box.
+            Rectangle {
+                width: 100%;
+                height: 3px;
+                y: parent.height - self.height;
+                border-radius: 2px;
+                background: Aether.outline-faint;
+            }
+
             Rectangle {
                 width: 100%;
                 height: parent.height * root.fraction;
@@ -393,6 +403,9 @@ export component HomePage inherits Rectangle {
     in property <string> chart-line: "";
     in property <string> chart-area: "";
     in property <float> chart-latest: 0;
+    // No traffic in the sampled window: draw a calm baseline instead of a
+    // bright flat line that reads like a stray underline.
+    in property <bool> chart-idle: true;
 
     // Dashboard counters, filled from the daemon's `stats`.
     in property <string> today-bytes: "—";
@@ -512,6 +525,7 @@ export component HomePage inherits Rectangle {
                         line-path: root.chart-line;
                         area-path: root.chart-area;
                         latest: root.chart-latest;
+                        idle: root.chart-idle;
                         caption: "";
                     }
                 }

@@ -987,3 +987,12 @@ msgstr "User-Agent"
 
 msgid "DHT"
 msgstr "DHT"
+
+msgid "还没有下载任务"
+msgstr "No downloads yet"
+
+msgid "粘贴链接或点击左侧 + 添加第一个任务"
+msgstr "Paste a link, or click + on the left to add your first task"
+
+msgid "可选备注"
+msgstr "Optional note"

@@ -350,6 +350,7 @@ export component NewDownloadDialog inherits FocusScope {
                 LineEdit {
                     width: 100%;
                     text: root.note;
+                    placeholder-text: @tr("可选备注");
                     edited => { root.note = self.text; }
                 }
             }
