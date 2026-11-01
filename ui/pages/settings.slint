@@ -106,7 +106,7 @@ component SettingsNav inherits Rectangle {
     accessible-checked: root.active;
     accessible-action-default => { root.clicked(); }
 
-    height: Aether.control-sm;
+    height: Aether.settings-nav-row;
     border-radius: Aether.radius-sm;
     background: root.active ? Aether.primary-soft
         : touch.has-hover ? Aether.on-surface.with-alpha(0.04)
@@ -754,7 +754,7 @@ component StatusChip inherits Rectangle {
 component NavGroupLabel inherits Rectangle {
     in property <string> text: "";
 
-    height: 22px;
+    height: 20px;
     background: transparent;
 
     Text {
@@ -907,6 +907,7 @@ component InstalledPlugin inherits Rectangle {
 
         TextButton {
             text: @tr("卸载");
+            text-color: Aether.on-surface-variant;
             cross-axis-self-alignment: center;
             clicked => { root.removed(root.plugin.id); }
         }
@@ -1590,27 +1591,6 @@ component SearchHitRow inherits Rectangle {
             }
         }
 
-        // Section chip: where the result lives, not what it is.
-        Rectangle {
-            height: 18px;
-            border-radius: Aether.radius-full;
-            background: Aether.surface-container-highest;
-            border-width: 1px;
-            border-color: Aether.outline-faint;
-            cross-axis-self-alignment: center;
-
-            HorizontalLayout {
-                padding-left: 7px;
-                padding-right: 7px;
-                Text {
-                    text: root.hit.section;
-                    color: Aether.on-surface-muted;
-                    font-size: Aether.text-micro;
-                    vertical-alignment: center;
-                }
-            }
-        }
-
         Image {
             source: AetherIcons.chevron-right;
             width: 14px;
@@ -1670,9 +1650,29 @@ component SearchResults inherits Rectangle {
                 padding: Aether.card-padding;
                 spacing: 0;
 
-                for hit in root.hits: SearchHitRow {
-                    hit: hit;
-                    picked => { root.picked(hit.tab); }
+                for hit in root.hits: VerticalLayout {
+                    spacing: 0;
+
+                    // "Network · 2" before the first hit of each section.
+                    if hit.heading != "": Rectangle {
+                        height: 26px;
+                        background: transparent;
+                        Text {
+                            text: hit.heading;
+                            width: 100%;
+                            horizontal-alignment: left;
+                            color: Aether.on-surface-muted;
+                            font-size: Aether.text-micro;
+                            font-weight: Aether.weight-medium;
+                            letter-spacing: 0.4px;
+                            vertical-alignment: bottom;
+                        }
+                    }
+
+                    SearchHitRow {
+                        hit: hit;
+                        picked => { root.picked(hit.tab); }
+                    }
                 }
             }
         }
@@ -1814,27 +1814,49 @@ export component SettingsPage inherits Rectangle {
                         root.search-picked = false;
                         root.search-changed(text);
                     }
+                    // Enter opens the first hit; the clear button (or editing)
+                    // returns to the full page.
+                    accepted => {
+                        if (SettingsFilter.results.length > 0) {
+                            root.pick-section(SettingsFilter.results[0].tab);
+                        }
+                    }
                 }
 
-                Rectangle { height: 8px; background: transparent; }
+                Rectangle { height: 6px; background: transparent; }
 
-                NavGroupLabel { text: @tr("常用"); }
-                SettingsNav { icon-source: AetherIcons.tune; text: @tr("常规"); active: root.tab == 0; clicked => { root.tab = 0; root.clear-search(); } }
-                SettingsNav { icon-source: AetherIcons.download; text: @tr("下载"); active: root.tab == 1; clicked => { root.tab = 1; root.clear-search(); } }
-                SettingsNav { icon-source: AetherIcons.signal; text: @tr("网络"); active: root.tab == 2; clicked => { root.tab = 2; root.clear-search(); } }
-                SettingsNav { icon-source: AetherIcons.seed; text: "BT / PT"; active: root.tab == 3; clicked => { root.tab = 3; root.clear-search(); } }
+                // The list scrolls only on the smallest allowed window
+                // (900x560); the version stays pinned at the bottom.
+                ScrollView {
+                    vertical-stretch: 1;
+                    // Without these the scroll view reports its content
+                    // height and pushes the pinned version out of the card.
+                    min-height: 0px;
+                    preferred-height: 0px;
 
-                NavGroupLabel { text: @tr("应用"); }
-                SettingsNav { icon-source: AetherIcons.play; text: @tr("媒体与浏览器"); active: root.tab == 4; clicked => { root.tab = 4; root.clear-search(); } }
-                SettingsNav { icon-source: AetherIcons.layers; text: @tr("插件"); active: root.tab == 5; clicked => { root.tab = 5; root.clear-search(); } }
-                SettingsNav { icon-source: AetherIcons.clock; text: @tr("计划与通知"); active: root.tab == 6; clicked => { root.tab = 6; root.clear-search(); } }
+                    VerticalLayout {
+                        width: 100%;
+                        spacing: 1px;
 
-                NavGroupLabel { text: @tr("系统"); }
-                SettingsNav { icon-source: AetherIcons.moon; text: @tr("外观"); active: root.tab == 7; clicked => { root.tab = 7; root.clear-search(); } }
-                SettingsNav { icon-source: AetherIcons.shield; text: @tr("高级"); active: root.tab == 8; clicked => { root.tab = 8; root.clear-search(); } }
-                SettingsNav { icon-source: AetherIcons.info; text: @tr("关于与支持"); active: root.tab == 9; clicked => { root.tab = 9; root.clear-search(); } }
+                        NavGroupLabel { text: @tr("常用"); }
+                        SettingsNav { icon-source: AetherIcons.tune; text: @tr("常规"); active: root.tab == 0; clicked => { root.tab = 0; root.clear-search(); } }
+                        SettingsNav { icon-source: AetherIcons.download; text: @tr("下载"); active: root.tab == 1; clicked => { root.tab = 1; root.clear-search(); } }
+                        SettingsNav { icon-source: AetherIcons.signal; text: @tr("网络"); active: root.tab == 2; clicked => { root.tab = 2; root.clear-search(); } }
+                        SettingsNav { icon-source: AetherIcons.seed; text: "BT / PT"; active: root.tab == 3; clicked => { root.tab = 3; root.clear-search(); } }
 
-                Rectangle { vertical-stretch: 1; background: transparent; }
+                        NavGroupLabel { text: @tr("应用"); }
+                        SettingsNav { icon-source: AetherIcons.play; text: @tr("媒体与浏览器"); active: root.tab == 4; clicked => { root.tab = 4; root.clear-search(); } }
+                        SettingsNav { icon-source: AetherIcons.layers; text: @tr("插件"); active: root.tab == 5; clicked => { root.tab = 5; root.clear-search(); } }
+                        SettingsNav { icon-source: AetherIcons.clock; text: @tr("计划与通知"); active: root.tab == 6; clicked => { root.tab = 6; root.clear-search(); } }
+
+                        NavGroupLabel { text: @tr("系统"); }
+                        SettingsNav { icon-source: AetherIcons.moon; text: @tr("外观"); active: root.tab == 7; clicked => { root.tab = 7; root.clear-search(); } }
+                        SettingsNav { icon-source: AetherIcons.shield; text: @tr("高级"); active: root.tab == 8; clicked => { root.tab = 8; root.clear-search(); } }
+                        SettingsNav { icon-source: AetherIcons.info; text: @tr("关于与支持"); active: root.tab == 9; clicked => { root.tab = 9; root.clear-search(); } }
+                    }
+                }
+
+                Rectangle { height: 4px; background: transparent; }
 
                 Text {
                     text: "Aether " + root.app-version;

@@ -24,11 +24,15 @@ versioning; 0.x releases may still change structure.
 - The Linux tray re-registers its StatusNotifierItem when the host process is
   replaced (AppIndicator/GNOME extension reload, panel restart), so the icon
   comes back instead of leaving a hidden window with no way in.
+- Tray menu entries now react to `clicked`, the event stock Ubuntu's
+  AppIndicator and KDE actually send. Only the optional `activate` event was
+  handled, so 显示主窗口 / 退出 did nothing when clicked. `GetGroupProperties`
+  (how that host fetches labels) and `AboutToShow` are implemented too, so the
+  menu renders real labels instead of blank rows, and a language switch is
+  broadcast with `ItemsPropertiesUpdated`.
 - Tray menu labels and the tooltip follow the UI language (including ja/zh-TW),
   and the dbusmenu `GetProperty`/`GetGroupProperties` replies carry real
   types (`enabled` as a boolean) instead of an empty string for everything.
-
-## [Unreleased]
 
 ### Settings
 
@@ -50,6 +54,13 @@ versioning; 0.x releases may still change structure.
   truncated captions, and "unsupported" rows became muted footnotes.
 - Dropdown labels are translated while their values stay canonical, so an
   English interface no longer shows Chinese option labels.
+- Search results are grouped by section with per-section counts, and Enter
+  opens the first hit.
+- Disabled text buttons are visibly dimmed: the vendored Material
+  `TextButton`/`IconButton` ignored `enabled`, so "Update all" looked active
+  at zero updates. Plugin uninstall actions are muted instead of accent-loud.
+- The category rail fits the 900x560 minimum window: 30px rows, a scroll
+  fallback and a pinned version line.
 
 ## [0.4.0] - 2026-11-01
 

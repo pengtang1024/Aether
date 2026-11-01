@@ -143,6 +143,8 @@ export component TextButton {
     in property <bool> enabled <=> base.enabled;
     in property <image> icon <=> base.icon;
     in property <bool> colorize-icon <=> base.colorize-icon;
+    // Aether: let callers mute a text button (destructive/quiet actions).
+    in property <brush> text-color: MaterialPalette.accent-background;
     out property <bool> has-focus: base.has-focus;
     out property <bool> pressed: self.enabled && base.pressed;
 
@@ -163,8 +165,9 @@ export component TextButton {
         layout-padding-right: 12px;
         height: 100%;
         border-radius: 20px;
-        text-color: MaterialPalette.accent-background;
-        text-opacity: 1.0;
+        text-color: root.text-color;
+        // A disabled text button used to look identical to an enabled one.
+        text-opacity: root.enabled ? 1.0 : 0.38;
     }
 }
 
@@ -195,6 +198,6 @@ export component IconButton {
         border-radius: 20px;
         text-color: MaterialPalette.control-foreground-variant;
         colorize-icon: true;
-        text-opacity: 1.0;
+        text-opacity: root.enabled ? 1.0 : 0.38;
     }
 }

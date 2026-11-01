@@ -204,6 +204,8 @@ pub struct Hit {
     pub title: String,
     pub subtitle: String,
     pub section: String,
+    /// "Network · 2" on the first hit of a section, empty for the rest.
+    pub heading: String,
 }
 
 /// Category name for a tab index, used by the result rows.
@@ -233,7 +235,7 @@ pub fn search(query: &str) -> Vec<Hit> {
     if tokens.is_empty() {
         return Vec::new();
     }
-    CARDS
+    let mut hits: Vec<Hit> = CARDS
         .iter()
         .filter(|card| {
             let haystack = format!(
@@ -249,8 +251,24 @@ pub fn search(query: &str) -> Vec<Hit> {
             title: i18n::tr(card.title.0, card.title.1),
             subtitle: i18n::tr(card.subtitle.0, card.subtitle.1),
             section: section_name(card.tab),
+            heading: String::new(),
         })
-        .collect()
+        .collect::<Vec<_>>();
+
+    // Group headings: "Section · N" above the first hit of each section.
+    let mut counts: std::collections::HashMap<i32, usize> = std::collections::HashMap::new();
+    for hit in &hits {
+        *counts.entry(hit.tab).or_default() += 1;
+    }
+    let mut last_tab = -1;
+    for hit in &mut hits {
+        if hit.tab != last_tab {
+            let count = counts.get(&hit.tab).copied().unwrap_or(0);
+            hit.heading = format!("{} · {}", hit.section, count);
+            last_tab = hit.tab;
+        }
+    }
+    hits
 }
 
 /// `|id|id|` membership string consumed by `SettingsFilter.shows`.

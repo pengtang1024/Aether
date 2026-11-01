@@ -1668,6 +1668,7 @@ fn main() -> Result<(), slint::PlatformError> {
                         title: hit.title.clone().into(),
                         subtitle: hit.subtitle.clone().into(),
                         section: hit.section.clone().into(),
+                        heading: hit.heading.clone().into(),
                     })
                     .collect();
                 let filter = ui.global::<SettingsFilter>();
