@@ -97,6 +97,25 @@ def license_files(package_root: Path) -> list[Path]:
     return sorted(found, key=lambda path: str(path.relative_to(package_root)))
 
 
+def drift(current: str, rendered: str) -> str:
+    """Unified diff for a drift failure, capped so CI logs stay readable."""
+    import difflib
+
+    lines = list(
+        difflib.unified_diff(
+            current.splitlines(),
+            rendered.splitlines(),
+            fromfile="on disk",
+            tofile="regenerated",
+            lineterm="",
+            n=3,
+        )
+    )
+    if len(lines) > 120:
+        lines = lines[:120] + [f"... ({len(lines) - 120} more diff lines)"]
+    return "\n".join(lines)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true")
@@ -134,7 +153,8 @@ def main() -> int:
             lines.append("License/notice files:")
             lines.append("")
             for path in files:
-                relative = path.relative_to(root)
+                # Render POSIX separators so Windows produces the same file.
+                relative = path.relative_to(root).as_posix()
                 try:
                     text = path.read_text(encoding="utf-8", errors="replace").strip()
                 except OSError:
@@ -178,11 +198,12 @@ def main() -> int:
         current = OUT.read_text(encoding="utf-8") if OUT.is_file() else ""
         if current != rendered:
             print(f"FAIL: {OUT} is out of date; rerun the generator", file=sys.stderr)
+            print(drift(current, rendered), file=sys.stderr)
             return 1
         print(f"OK: {OUT} is up to date")
         return 0
 
-    OUT.write_text(rendered, encoding="utf-8")
+    OUT.write_text(rendered, encoding="utf-8", newline="\n")
     print(f"wrote {OUT} ({counted} packages, {len(texts)} texts, {OUT.stat().st_size // 1024} KiB)")
     return 0
 

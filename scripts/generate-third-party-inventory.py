@@ -74,6 +74,25 @@ def graph(target: str) -> set[tuple[str, str]]:
     return found
 
 
+def drift(current: str, rendered: str) -> str:
+    """Unified diff for a drift failure, capped so CI logs stay readable."""
+    import difflib
+
+    lines = list(
+        difflib.unified_diff(
+            current.splitlines(),
+            rendered.splitlines(),
+            fromfile="on disk",
+            tofile="regenerated",
+            lineterm="",
+            n=3,
+        )
+    )
+    if len(lines) > 120:
+        lines = lines[:120] + [f"... ({len(lines) - 120} more diff lines)"]
+    return "\n".join(lines)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true")
@@ -142,10 +161,11 @@ def main() -> int:
         current = OUT.read_text(encoding="utf-8") if OUT.is_file() else ""
         if current != rendered:
             print(f"FAIL: {OUT} is out of date; rerun the generator", file=sys.stderr)
+            print(drift(current, rendered), file=sys.stderr)
             return 1
         print(f"OK: {OUT} is up to date")
         return 0
-    OUT.write_text(rendered, encoding="utf-8")
+    OUT.write_text(rendered, encoding="utf-8", newline="\n")
     print(f"wrote {OUT} ({len(rows)} packages)")
     return 0
 
