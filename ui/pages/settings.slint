@@ -785,14 +785,19 @@ component NavGroupLabel inherits Rectangle {
     height: 20px;
     background: transparent;
 
-    Text {
-        text: root.text;
-        width: 100%;
-        color: Aether.on-surface-muted;
-        font-size: Aether.text-micro;
-        font-weight: Aether.weight-medium;
-        letter-spacing: 0.4px;
-        vertical-alignment: bottom;
+    HorizontalLayout {
+        // Same inset as a nav item's label: item padding + icon + gap.
+        padding-left: 8px + Aether.icon-md + 8px;
+
+        Text {
+            text: root.text;
+            horizontal-stretch: 1;
+            color: Aether.on-surface-muted;
+            font-size: Aether.text-micro;
+            font-weight: Aether.weight-medium;
+            letter-spacing: 0.4px;
+            vertical-alignment: bottom;
+        }
     }
 }
 

@@ -436,74 +436,86 @@ export component SettingRow inherits Rectangle {
     HorizontalLayout {
         padding-top: 10px;
         padding-bottom: 10px;
-        spacing: Aether.space-sm;
-
-        Rectangle {
-            width: Aether.card-icon;
-            height: Aether.card-icon;
-            background: transparent;
-            cross-axis-self-alignment: start;
-
-            Image {
-                source: root.icon-source;
-                width: Aether.icon-md;
-                height: Aether.icon-md;
-                colorize: Aether.on-surface-muted;
-                x: (parent.width - self.width) / 2;
-                y: 2px;
-            }
-        }
 
         VerticalLayout {
             horizontal-stretch: 1;
             spacing: 2px;
 
+            // The leading icon rides the title line, so it stays centred on
+            // the title even when a taller control (e.g. a combo box) grows
+            // the line.
             HorizontalLayout {
-                spacing: 6px;
+                spacing: Aether.space-sm;
 
-                Text {
-                    text: root.title;
-                    color: Aether.on-surface;
-                    font-size: Aether.text-body;
-                    font-weight: Aether.weight-medium;
-                    vertical-alignment: center;
-                    overflow: elide;
-                }
-
-                if root.badge != "": Rectangle {
-                    height: 18px;
-                    border-radius: Aether.radius-full;
-                    background: Aether.surface-container-highest;
-                    border-width: 1px;
-                    border-color: Aether.outline-faint;
+                Rectangle {
+                    width: Aether.card-icon;
+                    height: Aether.card-icon;
+                    background: transparent;
                     cross-axis-self-alignment: center;
 
-                    HorizontalLayout {
-                        padding-left: 7px;
-                        padding-right: 7px;
-                        Text {
-                            text: root.badge;
-                            color: Aether.on-surface-muted;
-                            font-size: Aether.text-micro;
-                            vertical-alignment: center;
-                        }
+                    Image {
+                        source: root.icon-source;
+                        width: Aether.icon-md;
+                        height: Aether.icon-md;
+                        colorize: Aether.on-surface-muted;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
                     }
                 }
 
-                Rectangle {
+                HorizontalLayout {
                     horizontal-stretch: 1;
-                    background: transparent;
-                }
+                    spacing: 6px;
 
-                @children
+                    Text {
+                        text: root.title;
+                        color: Aether.on-surface;
+                        font-size: Aether.text-body;
+                        font-weight: Aether.weight-medium;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+
+                    if root.badge != "": Rectangle {
+                        height: 18px;
+                        border-radius: Aether.radius-full;
+                        background: Aether.surface-container-highest;
+                        border-width: 1px;
+                        border-color: Aether.outline-faint;
+                        cross-axis-self-alignment: center;
+
+                        HorizontalLayout {
+                            padding-left: 7px;
+                            padding-right: 7px;
+                            Text {
+                                text: root.badge;
+                                color: Aether.on-surface-muted;
+                                font-size: Aether.text-micro;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        background: transparent;
+                    }
+
+                    @children
+                }
             }
 
-            Text {
-                text: root.description;
-                color: Aether.on-surface-muted;
-                font-size: Aether.text-caption;
-                wrap: word-wrap;
-                visible: root.description != "";
+            HorizontalLayout {
+                padding-left: Aether.card-icon + Aether.space-sm;
+
+                Text {
+                    text: root.description;
+                    color: Aether.on-surface-muted;
+                    font-size: Aether.text-caption;
+                    wrap: word-wrap;
+                    horizontal-stretch: 1;
+                    visible: root.description != "";
+                }
             }
         }
     }
