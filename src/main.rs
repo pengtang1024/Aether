@@ -14,6 +14,7 @@ mod i18n;
 mod instance;
 mod launch;
 mod model;
+mod settings_search;
 mod tray;
 
 slint::include_modules!();
@@ -1464,7 +1465,15 @@ fn main() -> Result<(), slint::PlatformError> {
     // Screenshot helper: open a specific surface on startup so the mockup can
     // be captured in every state without driving the mouse.
     match std::env::var("AETHER_VIEW").as_deref() {
-        Ok("settings") => ui.set_page(2),
+        Ok("settings") => {
+            ui.set_page(2);
+            // Which category to open, for the documentation screenshots.
+            if let Ok(tab) = std::env::var("AETHER_SETTINGS_TAB") {
+                if let Ok(tab) = tab.parse::<i32>() {
+                    ui.set_settings_tab(tab);
+                }
+            }
+        }
         Ok("downloads") => ui.set_page(1),
         Ok("dialog") => ui.set_dialog_open(true),
         Ok("drawer") => {
@@ -1641,6 +1650,33 @@ fn main() -> Result<(), slint::PlatformError> {
     {
         let ui_handle = ui.as_weak();
         let state = state.clone();
+        // ---- settings search -------------------------------------------
+        // Rust owns the card vocabulary (Slint cannot test substrings); the
+        // page only renders the hits and filters its cards by id.
+        {
+            let ui_handle = ui.as_weak();
+            ui.on_settings_search_changed(move |query| {
+                let Some(ui) = ui_handle.upgrade() else {
+                    return;
+                };
+                let hits = settings_search::search(query.as_str());
+                let rows: Vec<SettingsHit> = hits
+                    .iter()
+                    .map(|hit| SettingsHit {
+                        tab: hit.tab,
+                        id: hit.id.into(),
+                        title: hit.title.clone().into(),
+                        subtitle: hit.subtitle.clone().into(),
+                        section: hit.section.clone().into(),
+                    })
+                    .collect();
+                let filter = ui.global::<SettingsFilter>();
+                filter.set_active(!query.is_empty());
+                filter.set_hits(settings_search::hit_ids(&hits).into());
+                filter.set_results(ModelRc::new(VecModel::from(rows)));
+            });
+        }
+
         ui.on_settings_changed(move |key, value| {
             if key.as_str() == "theme" {
                 let mode = match value.as_str() {

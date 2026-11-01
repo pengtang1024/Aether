@@ -3,6 +3,54 @@
 All notable changes to Aether are documented here. Versions follow semantic
 versioning; 0.x releases may still change structure.
 
+## [Unreleased]
+
+### Added
+
+- A second launch now summons the running window through the tray endpoint
+  (`org.aether.UI` on the Linux session bus, a session-local named event on
+  Windows) and only falls back to the "already running" notification when
+  no tray endpoint exists.
+
+### Fixed
+
+- With a working system tray, closing the main window now hides it and keeps
+  the app running. A normal (non-`--silent`) launch used to exit the process
+  on close: Slint ends `run_event_loop()` as soon as the last window is
+  hidden, so the loop now waits for the tray menu's 退出 / Quit.
+- A tray handshake that times out now says so and cancels the icon the tray
+  thread may still be adding, instead of silently running without close-to-tray
+  while an unreachable icon appears later.
+- The Linux tray re-registers its StatusNotifierItem when the host process is
+  replaced (AppIndicator/GNOME extension reload, panel restart), so the icon
+  comes back instead of leaving a hidden window with no way in.
+- Tray menu labels and the tooltip follow the UI language (including ja/zh-TW),
+  and the dbusmenu `GetProperty`/`GetGroupProperties` replies carry real
+  types (`enabled` as a boolean) instead of an empty string for everything.
+
+## [Unreleased]
+
+### Settings
+
+- The settings page is searchable: a box in the category rail matches card
+  titles, descriptions and a hand-written vocabulary (Chinese and English
+  terms, protocol names) through `src/settings_search.rs`, and lists the
+  results with their section. Picking one opens that section with only the
+  matching cards, marked "Match"; clearing the box restores the full page.
+- The category rail groups the ten sections (Common / Applications / System)
+  and pins the version at the bottom; the section header no longer scrolls
+  away with the content.
+- Plugin rows no longer overlap: a 56px row carried four text lines. Rows are
+  68px with name + version, description and permissions on separate lines,
+  hover and rules, status chips, a disabled "Update all" at zero updates and
+  an empty state. The header count now says "enabled" instead of "running"
+  (it counts enabled plugins).
+- Settings rows put the control on the title line, so long descriptions get
+  the full width; read-only paths are full-width selectable fields instead of
+  truncated captions, and "unsupported" rows became muted footnotes.
+- Dropdown labels are translated while their values stay canonical, so an
+  English interface no longer shows Chinese option labels.
+
 ## [0.4.0] - 2026-11-01
 
 ### Download reliability

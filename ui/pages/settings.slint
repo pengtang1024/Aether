@@ -8,6 +8,7 @@ import { Aether } from "theme.slint";
 import { AetherIcons } from "icons.slint";
 import { PluginGlyph, SectionCard, SettingRow } from "widgets.slint";
 import { PluginRow } from "model.slint";
+import { SettingsFilter, SettingsHit } from "../settings-filter.slint";
 import { PluginCatalog } from "plugins.slint";
 
 component ValueSlider inherits Rectangle {
@@ -190,6 +191,8 @@ component PanelHeader inherits Rectangle {
                 font-size: Aether.text-caption;
             }
         }
+
+        @children
     }
 }
 
@@ -213,11 +216,11 @@ component GeneralPanel inherits Rectangle {
         width: 100%;
         spacing: 16px;
 
-        PanelHeader { icon-source: AetherIcons.tune; title: @tr("常规"); subtitle: @tr("启动与存储"); tone: Aether.primary-bright; }
 
         SectionCard {
             icon-source: AetherIcons.info;
             title: @tr("启动");
+            id: "general-start";
             subtitle: @tr("启动位置与窗口行为");
 
             SettingRow {
@@ -225,11 +228,13 @@ component GeneralPanel inherits Rectangle {
                 title: @tr("启动页面");
                 description: @tr("每次打开 Aether 时显示的页面");
                 ComboBox {
-                    model: ["主页", "下载列表", "上次页面"];
+                    // Display labels are translated; the value stays the
+                    // canonical Chinese string the daemon-side mapping reads.
+                    model: [@tr("主页"), @tr("下载列表"), @tr("上次页面")];
                     current-index <=> root.start-page-index;
                     min-width: Aether.field-md;
                     max-width: Aether.field-md;
-                    selected => { root.changed("start-page", self.current-value); }
+                    selected => { root.changed("start-page", self.current-index == 1 ? "下载列表" : self.current-index == 2 ? "上次页面" : "主页"); }
                 }
             }
 
@@ -254,19 +259,21 @@ component GeneralPanel inherits Rectangle {
         SectionCard {
             icon-source: AetherIcons.folder;
             title: @tr("存储");
+            id: "general-storage";
             subtitle: @tr("下载目录");
 
             SettingRow {
                 icon-source: AetherIcons.folder;
                 title: @tr("默认下载目录");
+                badge: @tr("只读");
                 description: @tr("daemon 启动参数决定，新任务默认保存到这里");
                 divider: false;
-                Text {
+                LineEdit {
                     text: root.download-dir == "" ? @tr("未连接") : root.download-dir;
-                    color: Aether.on-surface-variant;
-                    font-size: Aether.text-caption;
-                    font-family: "JetBrains Mono";
-                    vertical-alignment: center;
+                    read-only: true;
+                    show-clear-button: false;
+                    min-width: Aether.field-lg;
+                    max-width: Aether.field-lg;
                 }
             }
         }
@@ -274,6 +281,7 @@ component GeneralPanel inherits Rectangle {
         SectionCard {
             icon-source: AetherIcons.note;
             title: @tr("剪贴板");
+            id: "general-clipboard";
             subtitle: @tr("复制链接后提示一键下载");
 
             SettingRow {
@@ -310,11 +318,11 @@ component DownloadPanel inherits Rectangle {
         width: 100%;
         spacing: 16px;
 
-        PanelHeader { icon-source: AetherIcons.download; title: @tr("下载"); subtitle: @tr("并发、分段、限速与磁盘策略"); tone: Aether.live; }
 
         SectionCard {
             icon-source: AetherIcons.split;
             title: @tr("并发与分段");
+            id: "download-concurrency";
             subtitle: @tr("决定下载速度和服务器压力");
 
             SettingRow {
@@ -347,11 +355,11 @@ component DownloadPanel inherits Rectangle {
                 description: @tr("网络抖动或超时后自动重试");
                 divider: false;
                 ComboBox {
-                    model: ["不重试", "3", "5", "10"];
+                    model: [@tr("不重试"), "3", "5", "10"];
                     current-index <=> root.retry-index;
                     min-width: Aether.field-md;
                     max-width: Aether.field-md;
-                    selected => { root.changed("retry-count", self.current-value); }
+                    selected => { root.changed("retry-count", self.current-index == 0 ? "不重试" : self.current-value); }
                 }
             }
         }
@@ -359,6 +367,7 @@ component DownloadPanel inherits Rectangle {
         SectionCard {
             icon-source: AetherIcons.gauge;
             title: @tr("带宽");
+            id: "download-bandwidth";
             subtitle: @tr("全局限速与智能调度");
 
             SettingRow {
@@ -382,6 +391,7 @@ component DownloadPanel inherits Rectangle {
         SectionCard {
             icon-source: AetherIcons.drive;
             title: @tr("任务");
+            id: "download-after";
             subtitle: @tr("完成动作");
 
             SettingRow {
@@ -390,11 +400,11 @@ component DownloadPanel inherits Rectangle {
                 description: @tr("任务下载完成后的默认行为");
                 divider: false;
                 ComboBox {
-                    model: ["不操作", "打开所在文件夹", "打开文件"];
+                    model: [@tr("不操作"), @tr("打开所在文件夹"), @tr("打开文件")];
                     current-index <=> root.after-done-index;
                     min-width: Aether.field-md;
                     max-width: Aether.field-md;
-                    selected => { root.changed("after-done", self.current-value); }
+                    selected => { root.changed("after-done", self.current-index == 1 ? "打开所在文件夹" : self.current-index == 2 ? "打开文件" : "不操作"); }
                 }
             }
         }
@@ -418,11 +428,11 @@ component NetworkPanel inherits Rectangle {
         width: 100%;
         spacing: 16px;
 
-        PanelHeader { icon-source: AetherIcons.signal; title: @tr("网络"); subtitle: @tr("代理、DNS、协议与请求头"); tone: Aether.info; }
 
         SectionCard {
             icon-source: AetherIcons.link;
             title: @tr("代理");
+            id: "network-proxy";
             subtitle: @tr("让下载经过系统或自定义网络");
 
             SettingRow {
@@ -430,11 +440,11 @@ component NetworkPanel inherits Rectangle {
                 title: @tr("代理模式");
                 description: @tr("跟随系统或为 Aether 单独配置");
                 ComboBox {
-                    model: ["跟随系统", "直连", "手动", "PAC"];
+                    model: [@tr("跟随系统"), @tr("直连"), @tr("手动"), "PAC"];
                     current-index <=> root.proxy-mode-index;
                     min-width: Aether.field-md;
                     max-width: Aether.field-md;
-                    selected => { root.changed("proxy-mode", self.current-value); }
+                    selected => { root.changed("proxy-mode", self.current-index == 1 ? "直连" : self.current-index == 2 ? "手动" : self.current-index == 3 ? "PAC" : "跟随系统"); }
                 }
             }
             SettingRow {
@@ -469,11 +479,11 @@ component NetworkPanel inherits Rectangle {
                 description: @tr("仅 HTTP(S) 下载生效；BT / FTP 不受影响");
                 divider: false;
                 ComboBox {
-                    model: ["IPv4 + IPv6", "仅 IPv4", "仅 IPv6"];
+                    model: [@tr("IPv4 + IPv6"), @tr("仅 IPv4"), @tr("仅 IPv6")];
                     current-index <=> root.ip-mode-index;
                     min-width: Aether.field-md;
                     max-width: Aether.field-md;
-                    selected => { root.changed("ip-mode", self.current-value); }
+                    selected => { root.changed("ip-mode", self.current-index == 1 ? "仅 IPv4" : self.current-index == 2 ? "仅 IPv6" : "IPv4 + IPv6"); }
                 }
             }
         }
@@ -481,6 +491,7 @@ component NetworkPanel inherits Rectangle {
         SectionCard {
             icon-source: AetherIcons.shield;
             title: @tr("协议与请求");
+            id: "network-protocol";
             subtitle: @tr("兼容性与请求行为");
 
             SettingRow {
@@ -533,11 +544,11 @@ component BtPanel inherits Rectangle {
         width: 100%;
         spacing: 16px;
 
-        PanelHeader { icon-source: AetherIcons.seed; title: "BT / PT"; subtitle: @tr("端口、节点发现与做种"); tone: Aether.primary-bright; }
 
         SectionCard {
             icon-source: AetherIcons.link;
             title: @tr("连接");
+            id: "bt-connection";
             subtitle: @tr("端口与节点发现");
 
             SettingRow {
@@ -564,6 +575,7 @@ component BtPanel inherits Rectangle {
         SectionCard {
             icon-source: AetherIcons.upload;
             title: @tr("做种");
+            id: "bt-seed";
             subtitle: @tr("上传带宽，0 为不限速");
 
             ValueSlider {
@@ -581,6 +593,7 @@ component BtPanel inherits Rectangle {
         SectionCard {
             icon-source: AetherIcons.shield;
             title: @tr("过滤与 Tracker");
+            id: "bt-filter";
             subtitle: @tr("屏蔽规则与私有 Tracker");
 
             SettingRow {
@@ -626,11 +639,11 @@ component MediaPanel inherits Rectangle {
         width: 100%;
         spacing: 16px;
 
-        PanelHeader { icon-source: AetherIcons.play; title: @tr("媒体与浏览器"); subtitle: @tr("当前能力与边界"); tone: Aether.warning; }
 
         SectionCard {
             icon-source: AetherIcons.info;
             title: @tr("媒体下载");
+            id: "media-capability";
             subtitle: @tr("已实现的能力");
 
             SettingRow {
@@ -651,6 +664,7 @@ component MediaPanel inherits Rectangle {
         SectionCard {
             icon-source: AetherIcons.tune;
             title: "ffmpeg";
+            id: "media-ffmpeg";
             subtitle: @tr("rtmp 直播录制与媒体转封装共用");
 
             SettingRow {
@@ -712,15 +726,102 @@ component PluginFilter inherits Rectangle {
     }
 }
 
+// Small status pill used by the plugin list and the search strip.
+component StatusChip inherits Rectangle {
+    in property <string> text: "";
+    in property <color> tone: Aether.on-surface-muted;
+
+    height: 18px;
+    border-radius: Aether.radius-full;
+    background: root.tone.with-alpha(0.10);
+    border-width: 1px;
+    border-color: root.tone.with-alpha(0.22);
+
+    HorizontalLayout {
+        padding-left: 7px;
+        padding-right: 7px;
+        Text {
+            text: root.text;
+            color: root.tone;
+            font-size: Aether.text-micro;
+            font-weight: Aether.weight-medium;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// Group caption in the category rail.
+component NavGroupLabel inherits Rectangle {
+    in property <string> text: "";
+
+    height: 22px;
+    background: transparent;
+
+    Text {
+        text: root.text;
+        width: 100%;
+        color: Aether.on-surface-muted;
+        font-size: Aether.text-micro;
+        font-weight: Aether.weight-medium;
+        letter-spacing: 0.4px;
+        vertical-alignment: bottom;
+    }
+}
+
+// Calm placeholder for an empty filter result.
+component EmptyHint inherits Rectangle {
+    in property <string> title: "";
+    in property <string> hint: "";
+
+    height: 96px;
+    background: transparent;
+
+    VerticalLayout {
+        alignment: center;
+        spacing: 3px;
+        Text {
+            text: root.title;
+            color: Aether.on-surface-variant;
+            font-size: Aether.text-body;
+            font-weight: Aether.weight-medium;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: root.hint;
+            color: Aether.on-surface-muted;
+            font-size: Aether.text-caption;
+            horizontal-alignment: center;
+        }
+    }
+}
+
 component InstalledPlugin inherits Rectangle {
     in property <PluginRow> plugin;
+    // First row in the unfiltered list: no rule above it.
+    in property <bool> first: false;
     callback toggled(int, bool);
     callback removed(int);
     callback rolled-back(int);
 
     height: Aether.plugin-row;
+    background: touch.has-hover ? Aether.on-surface.with-alpha(0.03) : transparent;
+
+    // Hover only: declared first so the controls stay on top and clickable.
+    touch := TouchArea {
+        width: 100%;
+        height: 100%;
+    }
+
+    if !root.first: Rectangle {
+        y: 0;
+        width: 100%;
+        height: 1px;
+        background: Aether.outline-variant.with-alpha(0.4);
+    }
 
     HorizontalLayout {
+        padding-left: 2px;
+        padding-right: 2px;
         spacing: Aether.space-sm;
 
         Rectangle {
@@ -739,14 +840,37 @@ component InstalledPlugin inherits Rectangle {
 
         VerticalLayout {
             horizontal-stretch: 1;
-            spacing: 1px;
+            spacing: 2px;
             alignment: center;
 
-            Text {
-                text: root.plugin.name;
-                color: Aether.on-surface;
-                font-size: Aether.text-body;
-                font-weight: Aether.weight-medium;
+            HorizontalLayout {
+                spacing: 6px;
+
+                Text {
+                    text: root.plugin.name;
+                    color: Aether.on-surface;
+                    font-size: Aether.text-body;
+                    font-weight: Aether.weight-medium;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+
+                Text {
+                    text: "v" + root.plugin.version;
+                    color: Aether.on-surface-muted;
+                    font-size: Aether.text-micro;
+                    vertical-alignment: center;
+                }
+
+                if root.plugin.service && root.plugin.running: StatusChip {
+                    text: @tr("运行中");
+                    tone: Aether.success;
+                }
+
+                if root.plugin.service && root.plugin.enabled && !root.plugin.running: StatusChip {
+                    text: @tr("未启动");
+                    tone: Aether.warning;
+                }
             }
 
             Text {
@@ -756,13 +880,6 @@ component InstalledPlugin inherits Rectangle {
                 color: root.plugin.error != "" ? Aether.error : Aether.on-surface-muted;
                 font-size: Aether.text-caption;
                 overflow: elide;
-            }
-
-            Text {
-                text: "v" + root.plugin.version + "  ·  " + root.plugin.category
-                    + "  ·  " + (root.plugin.kind == 0 ? @tr("内置") : @tr("社区"));
-                color: Aether.on-surface-muted;
-                font-size: Aether.text-micro;
             }
 
             // Declared capabilities, not marketing copy: the manifest is the
@@ -777,48 +894,9 @@ component InstalledPlugin inherits Rectangle {
             }
         }
 
-        if root.plugin.service && root.plugin.running: Rectangle {
-            height: 20px;
-            border-radius: 10px;
-            background: Aether.success.with-alpha(0.10);
-            border-width: 1px;
-            border-color: Aether.success.with-alpha(0.20);
-            cross-axis-self-alignment: center;
-
-            HorizontalLayout {
-                padding-left: 8px;
-                padding-right: 8px;
-                Text {
-                    text: @tr("运行中");
-                    color: Aether.success;
-                    font-size: Aether.text-micro;
-                    font-weight: Aether.weight-medium;
-                    vertical-alignment: center;
-                    cross-axis-self-alignment: center;
-                }
-            }
-        }
-
-        if root.plugin.service && root.plugin.enabled && !root.plugin.running: Rectangle {
-            height: 20px;
-            border-radius: 10px;
-            background: Aether.warning.with-alpha(0.10);
-            border-width: 1px;
-            border-color: Aether.warning.with-alpha(0.20);
-            cross-axis-self-alignment: center;
-
-            HorizontalLayout {
-                padding-left: 8px;
-                padding-right: 8px;
-                Text {
-                    text: @tr("未启动");
-                    color: Aether.warning;
-                    font-size: Aether.text-micro;
-                    font-weight: Aether.weight-medium;
-                    vertical-alignment: center;
-                    cross-axis-self-alignment: center;
-                }
-            }
+        if root.plugin.update: StatusChip {
+            text: @tr("可更新");
+            tone: Aether.warning;
         }
 
         if root.plugin.can-rollback: TextButton {
@@ -831,29 +909,6 @@ component InstalledPlugin inherits Rectangle {
             text: @tr("卸载");
             cross-axis-self-alignment: center;
             clicked => { root.removed(root.plugin.id); }
-        }
-
-        if root.plugin.update: Rectangle {
-            height: 20px;
-            border-radius: 10px;
-            background: Aether.warning.with-alpha(0.10);
-            border-width: 1px;
-            border-color: Aether.warning.with-alpha(0.20);
-            cross-axis-self-alignment: center;
-
-            HorizontalLayout {
-                padding-left: 8px;
-                padding-right: 8px;
-
-                Text {
-                    text: @tr("可更新");
-                    color: Aether.warning;
-                    font-size: Aether.text-micro;
-                    font-weight: Aether.weight-medium;
-                    vertical-alignment: center;
-                    cross-axis-self-alignment: center;
-                }
-            }
         }
 
         Switch {
@@ -882,20 +937,22 @@ component PluginPanel inherits Rectangle {
     callback plugin-rollback(int);
     callback plugin-action(string);
 
+    // How many rows the current filter keeps; the empty state keys off it.
+    property <int> visible-count:
+        root.plugin-filter == 0 ? PluginCatalog.total
+        : root.plugin-filter == 1 ? PluginCatalog.builtin
+        : root.plugin-filter == 2 ? PluginCatalog.active
+        : PluginCatalog.updates;
+
     VerticalLayout {
         width: 100%;
         spacing: 16px;
 
-        PanelHeader {
-            icon-source: AetherIcons.layers;
-            title: @tr("插件");
-            subtitle: PluginCatalog.total + @tr(" 个已安装 · ") + PluginCatalog.active + @tr(" 个运行中 · ") + PluginCatalog.updates + @tr(" 个可更新");
-            tone: Aether.info;
-        }
 
         SectionCard {
             icon-source: AetherIcons.list;
             title: @tr("插件库");
+            id: "plugin-catalog";
             subtitle: PluginCatalog.builtin + @tr(" 个内置 · ") + PluginCatalog.community + @tr(" 个社区 · 独立进程运行");
 
             HorizontalLayout {
@@ -912,12 +969,19 @@ component PluginPanel inherits Rectangle {
 
                 TextButton {
                     text: @tr("更新全部");
+                    enabled: PluginCatalog.updates > 0;
                     clicked => { root.plugin-action("update-all"); }
                 }
             }
 
+            if root.visible-count == 0: EmptyHint {
+                title: @tr("没有符合条件的插件");
+                hint: @tr("换一个筛选条件，或在插件目录中加入新的插件");
+            }
+
             for plugin in PluginCatalog.all: InstalledPlugin {
                 plugin: plugin;
+                first: plugin.id == 0;
                 visible: root.plugin-filter == 0
                     || (root.plugin-filter == 1 && plugin.kind == 0)
                     || (root.plugin-filter == 2 && plugin.enabled)
@@ -931,6 +995,7 @@ component PluginPanel inherits Rectangle {
         SectionCard {
             icon-source: AetherIcons.layers;
             title: @tr("插件引擎");
+            id: "plugin-engine";
             subtitle: @tr("插件目录、来源与更新");
 
             SettingRow {
@@ -969,28 +1034,29 @@ component PluginPanel inherits Rectangle {
                     }
                 }
             }
-            SettingRow {
-                icon-source: AetherIcons.shield;
-                title: @tr("加载插件目录之外的文件");
-                description: @tr("不做签名校验的直加载没有提供；请用上面的「安装插件」（会复制进插件目录并验签）");
-                divider: false;
-                Text {
-                    text: @tr("不支持");
-                    color: Aether.on-surface-muted;
-                    font-size: Aether.text-caption;
-                    vertical-alignment: center;
-                }
+            Rectangle {
+                height: 1px;
+                background: Aether.outline-variant.with-alpha(0.45);
+            }
+
+            Rectangle { height: 2px; background: transparent; }
+
+            Text {
+                text: @tr("出于安全考虑，不支持加载插件目录之外、未验签的文件；请用上面的「安装插件」，它会验签后复制进插件目录。");
+                color: Aether.on-surface-muted;
+                font-size: Aether.text-micro;
+                wrap: word-wrap;
             }
             SettingRow {
                 icon-source: AetherIcons.folder;
                 title: @tr("插件目录");
                 description: @tr("本地插件的安装位置");
-                Text {
+                LineEdit {
                     text: root.plugins-dir == "" ? @tr("未连接") : root.plugins-dir;
-                    color: Aether.on-surface-variant;
-                    font-size: Aether.text-caption;
-                    font-family: "JetBrains Mono";
-                    vertical-alignment: center;
+                    read-only: true;
+                    show-clear-button: false;
+                    min-width: Aether.field-lg;
+                    max-width: Aether.field-lg;
                 }
             }
             SettingRow {
@@ -1017,20 +1083,9 @@ component PluginPanel inherits Rectangle {
         SectionCard {
             icon-source: AetherIcons.note;
             title: @tr("开发");
+            id: "plugin-dev";
             subtitle: @tr("调试与重新加载");
 
-            SettingRow {
-                icon-source: AetherIcons.tune;
-                title: @tr("开发者模式");
-                description: @tr("插件日志查看与调试入口（任务详情里已有每任务日志）");
-                divider: false;
-                Text {
-                    text: @tr("未实现");
-                    color: Aether.on-surface-muted;
-                    font-size: Aether.text-caption;
-                    vertical-alignment: center;
-                }
-            }
             SettingRow {
                 icon-source: AetherIcons.refresh;
                 title: @tr("重新加载插件");
@@ -1040,6 +1095,15 @@ component PluginPanel inherits Rectangle {
                     text: @tr("重新加载");
                     clicked => { root.plugin-action("reload"); }
                 }
+            }
+
+            Rectangle { height: 2px; background: transparent; }
+
+            Text {
+                text: @tr("开发者模式尚未实现：每任务日志已经出现在任务详情里。");
+                color: Aether.on-surface-muted;
+                font-size: Aether.text-micro;
+                wrap: word-wrap;
             }
         }
     }
@@ -1059,11 +1123,11 @@ component SchedulePanel inherits Rectangle {
         width: 100%;
         spacing: 16px;
 
-        PanelHeader { icon-source: AetherIcons.clock; title: @tr("计划与通知"); subtitle: @tr("定时任务与桌面提醒"); tone: Aether.live; }
 
         SectionCard {
             icon-source: AetherIcons.clock;
             title: @tr("计划任务");
+            id: "schedule-plan";
             subtitle: @tr("时段外自动暂停队列，到点自动恢复");
 
             SettingRow {
@@ -1104,6 +1168,7 @@ component SchedulePanel inherits Rectangle {
         SectionCard {
             icon-source: AetherIcons.info;
             title: @tr("通知");
+            id: "schedule-notify";
             subtitle: @tr("任务结束时的系统通知");
 
             SettingRow {
@@ -1137,11 +1202,11 @@ component AppearancePanel inherits Rectangle {
         width: 100%;
         spacing: 16px;
 
-        PanelHeader { icon-source: AetherIcons.moon; title: @tr("外观"); subtitle: @tr("主题、主色与动效"); tone: Aether.primary-bright; }
 
         SectionCard {
             icon-source: AetherIcons.moon;
             title: @tr("主题");
+            id: "appearance-theme";
             subtitle: @tr("Aurora ink 视觉语言");
 
             SettingRow {
@@ -1161,11 +1226,11 @@ component AppearancePanel inherits Rectangle {
                 title: @tr("主题");
                 description: @tr("默认跟随系统，也可固定浅色或深色");
                 ComboBox {
-                    model: ["跟随系统", "浅色", "深色"];
+                    model: [@tr("跟随系统"), @tr("浅色"), @tr("深色")];
                     current-index <=> root.theme-mode;
                     min-width: Aether.field-md;
                     max-width: Aether.field-md;
-                    selected => { root.changed("theme", self.current-value); }
+                    selected => { root.changed("theme", self.current-index == 1 ? "浅色" : self.current-index == 2 ? "深色" : "跟随系统"); }
                 }
             }
             SettingRow {
@@ -1174,11 +1239,11 @@ component AppearancePanel inherits Rectangle {
                 description: @tr("品牌强调色，按钮、进度与高亮同步换色");
                 divider: false;
                 ComboBox {
-                    model: ["Aurora 紫", "靛蓝", "青碧", "苔绿", "琥珀", "蔷薇"];
+                    model: [@tr("Aurora 紫"), @tr("靛蓝"), @tr("青碧"), @tr("苔绿"), @tr("琥珀"), @tr("蔷薇")];
                     current-index <=> root.accent-index;
                     min-width: Aether.field-md;
                     max-width: Aether.field-md;
-                    selected => { root.changed("accent", self.current-value); }
+                    selected => { root.changed("accent", self.current-index == 1 ? "靛蓝" : self.current-index == 2 ? "青碧" : self.current-index == 3 ? "苔绿" : self.current-index == 4 ? "琥珀" : self.current-index == 5 ? "蔷薇" : "Aurora 紫"); }
                 }
             }
         }
@@ -1186,6 +1251,7 @@ component AppearancePanel inherits Rectangle {
         SectionCard {
             icon-source: AetherIcons.layers;
             title: @tr("界面");
+            id: "appearance-ui";
             subtitle: @tr("背景与动效");
 
             SettingRow {
@@ -1224,11 +1290,11 @@ component AdvancedPanel inherits Rectangle {
         width: 100%;
         spacing: 16px;
 
-        PanelHeader { icon-source: AetherIcons.shield; title: @tr("高级"); subtitle: @tr("路径与维护"); tone: Aether.error; }
 
         SectionCard {
             icon-source: AetherIcons.note;
             title: @tr("路径");
+            id: "advanced-paths";
             subtitle: @tr("daemon 的真实数据位置");
 
             SettingRow {
@@ -1236,12 +1302,12 @@ component AdvancedPanel inherits Rectangle {
                 title: @tr("数据库路径");
                 description: @tr("任务、历史与插件元数据");
                 divider: false;
-                Text {
+                LineEdit {
                     text: root.data-dir == "" ? @tr("未连接") : root.data-dir;
-                    color: Aether.on-surface-variant;
-                    font-size: Aether.text-caption;
-                    font-family: "JetBrains Mono";
-                    vertical-alignment: center;
+                    read-only: true;
+                    show-clear-button: false;
+                    min-width: Aether.field-lg;
+                    max-width: Aether.field-lg;
                 }
             }
             SettingRow {
@@ -1249,12 +1315,12 @@ component AdvancedPanel inherits Rectangle {
                 title: @tr("插件目录");
                 description: @tr("第一方插件的安装位置");
                 divider: false;
-                Text {
+                LineEdit {
                     text: root.plugins-dir == "" ? @tr("未连接") : root.plugins-dir;
-                    color: Aether.on-surface-variant;
-                    font-size: Aether.text-caption;
-                    font-family: "JetBrains Mono";
-                    vertical-alignment: center;
+                    read-only: true;
+                    show-clear-button: false;
+                    min-width: Aether.field-lg;
+                    max-width: Aether.field-lg;
                 }
             }
         }
@@ -1262,12 +1328,14 @@ component AdvancedPanel inherits Rectangle {
         SectionCard {
             icon-source: AetherIcons.signal;
             title: @tr("远程控制（RPC）");
+            id: "advanced-rpc";
             subtitle: @tr("CLI 与其他设备连接 daemon");
 
             SettingRow {
                 icon-source: AetherIcons.signal;
                 title: @tr("监听地址");
-                description: @tr("默认 127.0.0.1:6800；留空关闭；非回环地址必须设置令牌；修改后重启 daemon 生效");
+                badge: @tr("重启后生效");
+                description: @tr("默认 127.0.0.1:6800；留空关闭；非回环地址必须设置令牌");
                 LineEdit {
                     text <=> root.rpc-listen-value;
                     placeholder-text: root.rpc-listen == "" ? @tr("未开启") : root.rpc-listen;
@@ -1307,6 +1375,7 @@ component AdvancedPanel inherits Rectangle {
         SectionCard {
             icon-source: AetherIcons.alert;
             title: @tr("维护");
+            id: "advanced-reset";
             subtitle: @tr("恢复默认外观与偏好");
 
             SettingRow {
@@ -1333,10 +1402,11 @@ component AboutPanel inherits Rectangle {
         width: 100%;
         spacing: 16px;
 
-        PanelHeader { icon-source: AetherIcons.info; title: @tr("关于与支持"); subtitle: @tr("版本、更新、文档与社群"); tone: Aether.primary-bright; }
 
         Rectangle {
             height: Aether.about-hero;
+            // Decorative: hidden while a search filter is narrowing the page.
+            visible: !SettingsFilter.active;
             border-radius: Aether.card-radius;
             background: @linear-gradient(145deg, Aether.hero-top, Aether.hero-bottom);
             border-width: 1px;
@@ -1383,6 +1453,7 @@ component AboutPanel inherits Rectangle {
         SectionCard {
             icon-source: AetherIcons.refresh;
             title: @tr("更新");
+            id: "about-update";
             subtitle: @tr("版本通道与自动更新");
 
             SettingRow {
@@ -1421,6 +1492,7 @@ component AboutPanel inherits Rectangle {
         SectionCard {
             icon-source: AetherIcons.info;
             title: @tr("支持");
+            id: "about-support";
             subtitle: @tr("文档、社区、反馈与许可");
 
             SettingRow {
@@ -1448,6 +1520,167 @@ component AboutPanel inherits Rectangle {
                 divider: false;
                 TextButton { text: @tr("查看"); clicked => { root.support-action("license"); } }
             }
+        }
+    }
+}
+
+// Section glyph for search hits: same iconography as the category rail.
+component SectionGlyph inherits Rectangle {
+    in property <int> tab: 0;
+
+    width: Aether.card-icon;
+    height: Aether.card-icon;
+    border-radius: Aether.radius-sm;
+    background: Aether.primary.with-alpha(0.10);
+
+    Image {
+        source: root.tab == 0 ? AetherIcons.tune
+            : root.tab == 1 ? AetherIcons.download
+            : root.tab == 2 ? AetherIcons.signal
+            : root.tab == 3 ? AetherIcons.seed
+            : root.tab == 4 ? AetherIcons.play
+            : root.tab == 5 ? AetherIcons.layers
+            : root.tab == 6 ? AetherIcons.clock
+            : root.tab == 7 ? AetherIcons.moon
+            : root.tab == 8 ? AetherIcons.shield
+            : AetherIcons.info;
+        width: 14px;
+        height: 14px;
+        colorize: Aether.primary-bright;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+    }
+}
+
+component SearchHitRow inherits Rectangle {
+    in property <SettingsHit> hit;
+    callback picked;
+
+    height: 54px;
+    background: touch.has-hover ? Aether.on-surface.with-alpha(0.04) : transparent;
+
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        spacing: 10px;
+
+        SectionGlyph {
+            tab: root.hit.tab;
+            cross-axis-self-alignment: center;
+        }
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 1px;
+            alignment: center;
+
+            Text {
+                text: root.hit.title;
+                color: Aether.on-surface;
+                font-size: Aether.text-body;
+                font-weight: Aether.weight-medium;
+                overflow: elide;
+            }
+
+            Text {
+                text: root.hit.subtitle;
+                color: Aether.on-surface-muted;
+                font-size: Aether.text-caption;
+                overflow: elide;
+            }
+        }
+
+        // Section chip: where the result lives, not what it is.
+        Rectangle {
+            height: 18px;
+            border-radius: Aether.radius-full;
+            background: Aether.surface-container-highest;
+            border-width: 1px;
+            border-color: Aether.outline-faint;
+            cross-axis-self-alignment: center;
+
+            HorizontalLayout {
+                padding-left: 7px;
+                padding-right: 7px;
+                Text {
+                    text: root.hit.section;
+                    color: Aether.on-surface-muted;
+                    font-size: Aether.text-micro;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        Image {
+            source: AetherIcons.chevron-right;
+            width: 14px;
+            height: 14px;
+            colorize: Aether.on-surface-muted;
+            cross-axis-self-alignment: center;
+        }
+    }
+
+    Rectangle {
+        y: parent.height - self.height;
+        width: 100%;
+        height: 1px;
+        background: Aether.outline-variant.with-alpha(0.35);
+    }
+
+    touch := TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => { root.picked(); }
+    }
+}
+
+component SearchResults inherits Rectangle {
+    in property <[SettingsHit]> hits;
+    callback picked(int);
+
+    background: transparent;
+
+    VerticalLayout {
+        spacing: 10px;
+
+        if root.hits.length == 0: Rectangle {
+            height: 132px;
+            border-radius: Aether.card-radius;
+            background: Aether.surface-container-low;
+            border-width: 1px;
+            border-color: Aether.outline-faint;
+
+            EmptyHint {
+                width: 100%;
+                title: @tr("没有匹配的设置");
+                hint: @tr("试试「代理」「限速」「插件」这类关键词");
+            }
+        }
+
+        if root.hits.length > 0: Rectangle {
+            border-radius: Aether.card-radius;
+            background: @linear-gradient(155deg, Aether.card-top, Aether.card-bottom);
+            border-width: 1px;
+            border-color: Aether.outline-faint;
+            drop-shadow-color: Aether.shadow-card;
+            drop-shadow-blur: 18px;
+            drop-shadow-offset-y: 5px;
+
+            VerticalLayout {
+                padding: Aether.card-padding;
+                spacing: 0;
+
+                for hit in root.hits: SearchHitRow {
+                    hit: hit;
+                    picked => { root.picked(hit.tab); }
+                }
+            }
+        }
+
+        Text {
+            text: @tr("输入关键词筛出相关设置；点击结果跳到对应分区并保持筛选。");
+            color: Aether.on-surface-muted;
+            font-size: Aether.text-micro;
         }
     }
 }
@@ -1521,11 +1754,38 @@ export component SettingsPage inherits Rectangle {
     callback plugin-rollback(int);
     callback plugin-action(string);
 
+    // Search: Rust owns the keyword index (`src/settings_search.rs`) and
+    // returns the matching cards in `SettingsFilter`; Slint only renders
+    // and filters.
+    in-out property <string> search-query: "";
+    in-out property <bool> search-picked: false;
+    callback search-changed(string);
+
+    // The search state lives in a global so every card can read it; clear it
+    // when the page is re-created so leaving Settings never leaves a stale
+    // filter behind.
+    init => {
+        SettingsFilter.active = false;
+        SettingsFilter.hits = "";
+        SettingsFilter.results = [];
+    }
+
+    function clear-search() {
+        root.search-query = "";
+        root.search-picked = false;
+        root.search-changed("");
+    }
+
+    function pick-section(tab: int) {
+        root.tab = tab;
+        root.search-picked = true;
+    }
+
     HorizontalLayout {
         padding: Aether.page-padding;
         spacing: Aether.section-gap;
 
-        // ---- local category navigation ------------------------------
+        // ---- category rail ------------------------------------------------
         Rectangle {
             width: Aether.settings-nav-width;
             border-radius: Aether.card-radius;
@@ -1544,24 +1804,35 @@ export component SettingsPage inherits Rectangle {
                     font-weight: Aether.weight-semibold;
                 }
 
-                Text {
-                    text: @tr("偏好、网络与扩展");
-                    color: Aether.on-surface-muted;
-                    font-size: Aether.text-micro;
+                Rectangle { height: 6px; background: transparent; }
+
+                LineEdit {
+                    text <=> root.search-query;
+                    placeholder-text: @tr("搜索设置");
+                    horizontal-stretch: 1;
+                    edited(text) => {
+                        root.search-picked = false;
+                        root.search-changed(text);
+                    }
                 }
 
-                Rectangle { height: Aether.space-sm; background: transparent; }
+                Rectangle { height: 8px; background: transparent; }
 
-                SettingsNav { icon-source: AetherIcons.tune; text: @tr("常规"); active: root.tab == 0; clicked => { root.tab = 0; } }
-                SettingsNav { icon-source: AetherIcons.download; text: @tr("下载"); active: root.tab == 1; clicked => { root.tab = 1; } }
-                SettingsNav { icon-source: AetherIcons.signal; text: @tr("网络"); active: root.tab == 2; clicked => { root.tab = 2; } }
-                SettingsNav { icon-source: AetherIcons.seed; text: "BT / PT"; active: root.tab == 3; clicked => { root.tab = 3; } }
-                SettingsNav { icon-source: AetherIcons.play; text: @tr("媒体与浏览器"); active: root.tab == 4; clicked => { root.tab = 4; } }
-                SettingsNav { icon-source: AetherIcons.layers; text: @tr("插件"); active: root.tab == 5; clicked => { root.tab = 5; } }
-                SettingsNav { icon-source: AetherIcons.clock; text: @tr("计划与通知"); active: root.tab == 6; clicked => { root.tab = 6; } }
-                SettingsNav { icon-source: AetherIcons.moon; text: @tr("外观"); active: root.tab == 7; clicked => { root.tab = 7; } }
-                SettingsNav { icon-source: AetherIcons.shield; text: @tr("高级"); active: root.tab == 8; clicked => { root.tab = 8; } }
-                SettingsNav { icon-source: AetherIcons.info; text: @tr("关于与支持"); active: root.tab == 9; clicked => { root.tab = 9; } }
+                NavGroupLabel { text: @tr("常用"); }
+                SettingsNav { icon-source: AetherIcons.tune; text: @tr("常规"); active: root.tab == 0; clicked => { root.tab = 0; root.clear-search(); } }
+                SettingsNav { icon-source: AetherIcons.download; text: @tr("下载"); active: root.tab == 1; clicked => { root.tab = 1; root.clear-search(); } }
+                SettingsNav { icon-source: AetherIcons.signal; text: @tr("网络"); active: root.tab == 2; clicked => { root.tab = 2; root.clear-search(); } }
+                SettingsNav { icon-source: AetherIcons.seed; text: "BT / PT"; active: root.tab == 3; clicked => { root.tab = 3; root.clear-search(); } }
+
+                NavGroupLabel { text: @tr("应用"); }
+                SettingsNav { icon-source: AetherIcons.play; text: @tr("媒体与浏览器"); active: root.tab == 4; clicked => { root.tab = 4; root.clear-search(); } }
+                SettingsNav { icon-source: AetherIcons.layers; text: @tr("插件"); active: root.tab == 5; clicked => { root.tab = 5; root.clear-search(); } }
+                SettingsNav { icon-source: AetherIcons.clock; text: @tr("计划与通知"); active: root.tab == 6; clicked => { root.tab = 6; root.clear-search(); } }
+
+                NavGroupLabel { text: @tr("系统"); }
+                SettingsNav { icon-source: AetherIcons.moon; text: @tr("外观"); active: root.tab == 7; clicked => { root.tab = 7; root.clear-search(); } }
+                SettingsNav { icon-source: AetherIcons.shield; text: @tr("高级"); active: root.tab == 8; clicked => { root.tab = 8; root.clear-search(); } }
+                SettingsNav { icon-source: AetherIcons.info; text: @tr("关于与支持"); active: root.tab == 9; clicked => { root.tab = 9; root.clear-search(); } }
 
                 Rectangle { vertical-stretch: 1; background: transparent; }
 
@@ -1574,97 +1845,181 @@ export component SettingsPage inherits Rectangle {
             }
         }
 
-        // ---- panel ---------------------------------------------------
-        ScrollView {
-            VerticalLayout {
-                padding-bottom: Aether.page-padding;
-                spacing: Aether.section-gap;
+        // ---- sticky header + scrollable body ------------------------------
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 8px;
 
-                if root.tab == 0: GeneralPanel {
-                    download-dir: root.download-dir;
-                    start-page-index <=> root.start-page;
-                    clipboard-on <=> root.clipboard-on;
-                    clipboard-available <=> root.clipboard-available;
-                    autostart-on <=> root.autostart-on;
-                    changed(k, v) => { root.settings-changed(k, v); }
+            PanelHeader {
+                icon-source: root.search-query != "" && !root.search-picked
+                    ? AetherIcons.search
+                    : root.tab == 0 ? AetherIcons.tune
+                    : root.tab == 1 ? AetherIcons.download
+                    : root.tab == 2 ? AetherIcons.signal
+                    : root.tab == 3 ? AetherIcons.seed
+                    : root.tab == 4 ? AetherIcons.play
+                    : root.tab == 5 ? AetherIcons.layers
+                    : root.tab == 6 ? AetherIcons.clock
+                    : root.tab == 7 ? AetherIcons.moon
+                    : root.tab == 8 ? AetherIcons.shield
+                    : AetherIcons.info;
+
+                title: root.search-query != "" && !root.search-picked
+                    ? @tr("搜索结果")
+                    : root.tab == 0 ? @tr("常规")
+                    : root.tab == 1 ? @tr("下载")
+                    : root.tab == 2 ? @tr("网络")
+                    : root.tab == 3 ? "BT / PT"
+                    : root.tab == 4 ? @tr("媒体与浏览器")
+                    : root.tab == 5 ? @tr("插件")
+                    : root.tab == 6 ? @tr("计划与通知")
+                    : root.tab == 7 ? @tr("外观")
+                    : root.tab == 8 ? @tr("高级")
+                    : @tr("关于与支持");
+
+                subtitle: root.search-query != "" && !root.search-picked
+                    ? SettingsFilter.results.length + @tr(" 个匹配 · 标题、说明或术语")
+                    : root.tab == 0 ? @tr("启动与存储")
+                    : root.tab == 1 ? @tr("并发、分段、限速与磁盘策略")
+                    : root.tab == 2 ? @tr("代理、DNS、协议与请求头")
+                    : root.tab == 3 ? @tr("端口、节点发现与做种")
+                    : root.tab == 4 ? @tr("当前能力与边界")
+                    : root.tab == 5 ? PluginCatalog.total + @tr(" 个已安装 · ") + PluginCatalog.active + @tr(" 个已启用 · ") + PluginCatalog.updates + @tr(" 个可更新")
+                    : root.tab == 6 ? @tr("定时任务与桌面提醒")
+                    : root.tab == 7 ? @tr("主题、主色与动效")
+                    : root.tab == 8 ? @tr("路径与维护")
+                    : @tr("版本、更新、文档与社群");
+
+                tone: root.tab == 1 ? Aether.live
+                    : root.tab == 2 ? Aether.info
+                    : root.tab == 4 ? Aether.warning
+                    : root.tab == 5 ? Aether.info
+                    : root.tab == 6 ? Aether.live
+                    : root.tab == 8 ? Aether.error
+                    : Aether.primary-bright;
+
+                // Filter chip while a picked section is narrowed down.
+                if root.search-query != "" && root.search-picked: HorizontalLayout {
+                    spacing: 6px;
+                    alignment: center;
+
+                    StatusChip { text: @tr("筛选"); tone: Aether.primary-bright; }
+                    Text {
+                        text: root.search-query;
+                        color: Aether.on-surface-variant;
+                        font-size: Aether.text-caption;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+                    TextButton {
+                        text: @tr("清除");
+                        clicked => { root.clear-search(); }
+                    }
                 }
-                if root.tab == 1: DownloadPanel {
-                    after-done-index <=> root.after-done;
-                    max-tasks-index <=> root.settings-max-tasks;
-                    max-connections-index <=> root.settings-max-connections;
-                    retry-index <=> root.settings-retry;
-                    global-limit-on <=> root.settings-global-limit;
-                    download-limit-kb <=> root.settings-download-limit-kb;
-                    changed(k, v) => { root.settings-changed(k, v); }
-                }
-                if root.tab == 2: NetworkPanel {
-                    app-version: root.app-version;
-                    dns-value <=> root.network-dns;
-                    user-agent-value <=> root.network-user-agent;
-                    ip-mode-index <=> root.network-ip-mode;
-                    proxy-mode-index <=> root.network-proxy-mode;
-                    proxy-url-value <=> root.network-proxy-url;
-                    headers-value <=> root.network-headers;
-                    ftp-passive-on <=> root.network-ftp-passive;
-                    changed(k, v) => { root.settings-changed(k, v); }
-                }
-                if root.tab == 3: BtPanel {
-                    bt-port-value <=> root.bt-port;
-                    bt-dht-on <=> root.bt-dht;
-                    bt-upload-kbps <=> root.bt-upload-kbps;
-                    bt-blocklist-value <=> root.bt-blocklist;
-                    bt-trackers-value <=> root.bt-trackers;
-                    changed(k, v) => { root.settings-changed(k, v); }
-                }
-                if root.tab == 4: MediaPanel {
-                    ffmpeg-value <=> root.media-ffmpeg;
-                    changed(k, v) => { root.settings-changed(k, v); }
-                }
-                if root.tab == 5: PluginPanel {
-                    plugins-dir: root.plugins-dir;
-                    auto-update-on <=> root.plugin-auto-update;
-                    plugin-pins <=> root.plugin-pins;
-                    external-process-on <=> root.plugin-external-process;
-                    changed(k, v) => { root.settings-changed(k, v); }
-                    plugin-toggled(id, enabled) => { root.plugin-toggled(id, enabled); }
-                    plugin-remove(id) => { root.plugin-remove(id); }
-                    plugin-rollback(id) => { root.plugin-rollback(id); }
-                    plugin-action(action) => { root.plugin-action(action); }
-                }
-                if root.tab == 6: SchedulePanel {
-                    notify-done-on <=> root.notify-done;
-                    notify-fail-on <=> root.notify-fail;
-                    schedule-on <=> root.schedule-on;
-                    schedule-start <=> root.schedule-start;
-                    schedule-end <=> root.schedule-end;
-                    changed(k, v) => { root.settings-changed(k, v); }
-                }
-                if root.tab == 7: AppearancePanel {
-                    language-index <=> root.language-index;
-                    theme-mode <=> root.theme-mode;
-                    accent-index <=> root.accent-index;
-                    motion-on <=> root.motion-on;
-                    flow-on <=> root.flow-on;
-                    changed(k, v) => { root.settings-changed(k, v); }
-                }
-                if root.tab == 8: AdvancedPanel {
-                    plugins-dir: root.plugins-dir;
-                    data-dir: root.data-dir;
-                    rpc-listen: root.rpc-listen;
-                    rpc-status: root.rpc-status;
-                    rpc-listen-value <=> root.rpc-listen-value;
-                    rpc-secret-value <=> root.rpc-secret-value;
-                    changed(k, v) => { root.settings-changed(k, v); }
-                    rpc-apply(l, s) => { root.rpc-apply(l, s); }
-                    rpc-clear-secret => { root.rpc-clear-secret(); }
-                    rpc-random-secret => { root.rpc-random-secret(); }
-                }
-                if root.tab == 9: AboutPanel {
-                    app-version: root.app-version;
-                    update-status: root.update-status;
-                    auto-update-on <=> root.app-auto-update;
-                    changed(k, v) => { root.settings-changed(k, v); }
-                    support-action(k) => { root.support-action(k); }
+            }
+
+            Rectangle {
+                height: 1px;
+                background: Aether.outline-variant.with-alpha(0.5);
+            }
+
+            if root.search-query != "" && !root.search-picked: SearchResults {
+                hits: SettingsFilter.results;
+                picked(tab) => { root.pick-section(tab); }
+            }
+
+            if root.search-query == "" || root.search-picked: ScrollView {
+                VerticalLayout {
+                    padding-right: 8px;
+                    padding-bottom: Aether.page-padding;
+                    spacing: Aether.section-gap;
+
+                    if root.tab == 0: GeneralPanel {
+                        download-dir: root.download-dir;
+                        start-page-index <=> root.start-page;
+                        clipboard-on <=> root.clipboard-on;
+                        clipboard-available <=> root.clipboard-available;
+                        autostart-on <=> root.autostart-on;
+                        changed(k, v) => { root.settings-changed(k, v); }
+                    }
+                    if root.tab == 1: DownloadPanel {
+                        after-done-index <=> root.after-done;
+                        max-tasks-index <=> root.settings-max-tasks;
+                        max-connections-index <=> root.settings-max-connections;
+                        retry-index <=> root.settings-retry;
+                        global-limit-on <=> root.settings-global-limit;
+                        download-limit-kb <=> root.settings-download-limit-kb;
+                        changed(k, v) => { root.settings-changed(k, v); }
+                    }
+                    if root.tab == 2: NetworkPanel {
+                        app-version: root.app-version;
+                        dns-value <=> root.network-dns;
+                        user-agent-value <=> root.network-user-agent;
+                        ip-mode-index <=> root.network-ip-mode;
+                        proxy-mode-index <=> root.network-proxy-mode;
+                        proxy-url-value <=> root.network-proxy-url;
+                        headers-value <=> root.network-headers;
+                        ftp-passive-on <=> root.network-ftp-passive;
+                        changed(k, v) => { root.settings-changed(k, v); }
+                    }
+                    if root.tab == 3: BtPanel {
+                        bt-port-value <=> root.bt-port;
+                        bt-dht-on <=> root.bt-dht;
+                        bt-upload-kbps <=> root.bt-upload-kbps;
+                        bt-blocklist-value <=> root.bt-blocklist;
+                        bt-trackers-value <=> root.bt-trackers;
+                        changed(k, v) => { root.settings-changed(k, v); }
+                    }
+                    if root.tab == 4: MediaPanel {
+                        ffmpeg-value <=> root.media-ffmpeg;
+                        changed(k, v) => { root.settings-changed(k, v); }
+                    }
+                    if root.tab == 5: PluginPanel {
+                        plugins-dir: root.plugins-dir;
+                        auto-update-on <=> root.plugin-auto-update;
+                        plugin-pins <=> root.plugin-pins;
+                        external-process-on <=> root.plugin-external-process;
+                        changed(k, v) => { root.settings-changed(k, v); }
+                        plugin-toggled(id, enabled) => { root.plugin-toggled(id, enabled); }
+                        plugin-remove(id) => { root.plugin-remove(id); }
+                        plugin-rollback(id) => { root.plugin-rollback(id); }
+                        plugin-action(action) => { root.plugin-action(action); }
+                    }
+                    if root.tab == 6: SchedulePanel {
+                        notify-done-on <=> root.notify-done;
+                        notify-fail-on <=> root.notify-fail;
+                        schedule-on <=> root.schedule-on;
+                        schedule-start <=> root.schedule-start;
+                        schedule-end <=> root.schedule-end;
+                        changed(k, v) => { root.settings-changed(k, v); }
+                    }
+                    if root.tab == 7: AppearancePanel {
+                        language-index <=> root.language-index;
+                        theme-mode <=> root.theme-mode;
+                        accent-index <=> root.accent-index;
+                        motion-on <=> root.motion-on;
+                        flow-on <=> root.flow-on;
+                        changed(k, v) => { root.settings-changed(k, v); }
+                    }
+                    if root.tab == 8: AdvancedPanel {
+                        plugins-dir: root.plugins-dir;
+                        data-dir: root.data-dir;
+                        rpc-listen: root.rpc-listen;
+                        rpc-status: root.rpc-status;
+                        rpc-listen-value <=> root.rpc-listen-value;
+                        rpc-secret-value <=> root.rpc-secret-value;
+                        changed(k, v) => { root.settings-changed(k, v); }
+                        rpc-apply(l, s) => { root.rpc-apply(l, s); }
+                        rpc-clear-secret => { root.rpc-clear-secret(); }
+                        rpc-random-secret => { root.rpc-random-secret(); }
+                    }
+                    if root.tab == 9: AboutPanel {
+                        app-version: root.app-version;
+                        update-status: root.update-status;
+                        auto-update-on <=> root.app-auto-update;
+                        changed(k, v) => { root.settings-changed(k, v); }
+                        support-action(k) => { root.support-action(k); }
+                    }
                 }
             }
         }

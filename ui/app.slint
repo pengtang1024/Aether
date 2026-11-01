@@ -15,8 +15,9 @@ import { SettingsPage } from "pages/settings.slint";
 import { NewDownloadDialog } from "pages/new-download.slint";
 import { TaskDrawer } from "pages/task-drawer.slint";
 import { PluginCatalog } from "plugins.slint";
+import { SettingsFilter, SettingsHit } from "settings-filter.slint";
 
-export { PluginCatalog }
+export { PluginCatalog, SettingsFilter, SettingsHit }
 
 export component AppWindow inherits Window {
     // ---- data ------------------------------------------------------------
@@ -235,6 +236,7 @@ export component AppWindow inherits Window {
     callback filter-changed(int, string);
     callback new-download(string, string, int, float, string);
     callback settings-changed(string, string);
+    callback settings-search-changed(string);
     callback reset-filters();
     callback support-action(string);
     callback rpc-apply(string, string);
@@ -570,6 +572,7 @@ export component AppWindow inherits Window {
                         settings-retry <=> root.settings-retry;
                         settings-global-limit <=> root.settings-global-limit;
                         settings-download-limit-kb <=> root.settings-download-limit-kb;
+                        search-changed(q) => { root.settings-search-changed(q); }
                         settings-changed(k, v) => { root.settings-changed(k, v); }
                         support-action(action) => { root.support-action(action); }
                         rpc-apply(l, s) => { root.rpc-apply(l, s); }

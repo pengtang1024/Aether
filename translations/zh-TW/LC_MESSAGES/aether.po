@@ -861,3 +861,123 @@ msgstr "未啟動"
 
 msgid "错误："
 msgstr "錯誤："
+
+msgid " 个已启用 · "
+msgstr " 個已啟用 · "
+
+msgid "搜索设置"
+msgstr "搜尋設定"
+
+msgid "搜索结果"
+msgstr "搜尋結果"
+
+msgid " 个匹配 · 标题、说明或术语"
+msgstr " 個符合 · 標題、說明或術語"
+
+msgid "筛选"
+msgstr "篩選"
+
+msgid "清除"
+msgstr "清除"
+
+msgid "常用"
+msgstr "常用"
+
+msgid "系统"
+msgstr "系統"
+
+msgid "匹配"
+msgstr "符合"
+
+msgid "没有匹配的设置"
+msgstr "沒有符合的設定"
+
+msgid "试试「代理」「限速」「插件」这类关键词"
+msgstr "試試「proxy」「限速」「外掛」這類關鍵詞"
+
+msgid "输入关键词筛出相关设置；点击结果跳到对应分区并保持筛选。"
+msgstr "輸入關鍵詞篩選設定；點擊結果跳到對應分區並保持篩選。"
+
+msgid "没有符合条件的插件"
+msgstr "沒有符合條件的擴充套件"
+
+msgid "换一个筛选条件，或在插件目录中加入新的插件"
+msgstr "換一個篩選條件，或在擴充套件目錄中加入新的擴充套件"
+
+msgid "出于安全考虑，不支持加载插件目录之外、未验签的文件；请用上面的「安装插件」，它会验签后复制进插件目录。"
+msgstr "出於安全考量，不支援載入擴充套件目錄之外、未驗簽的檔案；請用上面的「安裝擴充套件」，它會驗簽後複製進擴充套件目錄。"
+
+msgid "开发者模式尚未实现：每任务日志已经出现在任务详情里。"
+msgstr "開發者模式尚未實作：每任務日誌已經出現在任務詳情裡。"
+
+msgid "重启后生效"
+msgstr "重新啟動後生效"
+
+msgid "只读"
+msgstr "唯讀"
+
+msgid "上次页面"
+msgstr "上次頁面"
+
+msgid "不重试"
+msgstr "不重試"
+
+msgid "不操作"
+msgstr "不操作"
+
+msgid "打开所在文件夹"
+msgstr "開啟所在資料夾"
+
+msgid "打开文件"
+msgstr "開啟檔案"
+
+msgid "跟随系统"
+msgstr "跟隨系統"
+
+msgid "直连"
+msgstr "直連"
+
+msgid "手动"
+msgstr "手動"
+
+msgid "IPv4 + IPv6"
+msgstr "IPv4 + IPv6"
+
+msgid "仅 IPv4"
+msgstr "僅 IPv4"
+
+msgid "仅 IPv6"
+msgstr "僅 IPv6"
+
+msgid "浅色"
+msgstr "淺色"
+
+msgid "深色"
+msgstr "深色"
+
+msgid "Aurora 紫"
+msgstr "Aurora 紫"
+
+msgid "靛蓝"
+msgstr "靛藍"
+
+msgid "青碧"
+msgstr "青碧"
+
+msgid "苔绿"
+msgstr "苔綠"
+
+msgid "琥珀"
+msgstr "琥珀"
+
+msgid "蔷薇"
+msgstr "薔薇"
+
+msgid "rtmp 直播录制与媒体转封装"
+msgstr "RTMP 直播錄製與媒體轉封裝"
+
+msgid "已安装的插件与筛选"
+msgstr "已安裝的外掛與篩選"
+
+msgid "ffmpeg"
+msgstr "ffmpeg"

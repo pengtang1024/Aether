@@ -861,3 +861,123 @@ msgstr "未起動"
 
 msgid "错误："
 msgstr "エラー："
+
+msgid " 个已启用 · "
+msgstr " 有効 · "
+
+msgid "搜索设置"
+msgstr "設定を検索"
+
+msgid "搜索结果"
+msgstr "検索結果"
+
+msgid " 个匹配 · 标题、说明或术语"
+msgstr " 件一致 · タイトル・説明・用語"
+
+msgid "筛选"
+msgstr "絞り込み"
+
+msgid "清除"
+msgstr "クリア"
+
+msgid "常用"
+msgstr "よく使う"
+
+msgid "系统"
+msgstr "システム"
+
+msgid "匹配"
+msgstr "一致"
+
+msgid "没有匹配的设置"
+msgstr "一致する設定がありません"
+
+msgid "试试「代理」「限速」「插件」这类关键词"
+msgstr "「proxy」「速度」「プラグイン」などを試してください"
+
+msgid "输入关键词筛出相关设置；点击结果跳到对应分区并保持筛选。"
+msgstr "キーワードで設定を絞り込み、結果を選ぶとそのセクションへ移動します（絞り込みは維持）。"
+
+msgid "没有符合条件的插件"
+msgstr "条件に合うプラグインがありません"
+
+msgid "换一个筛选条件，或在插件目录中加入新的插件"
+msgstr "別の条件を試すか、プラグインディレクトリに追加してください"
+
+msgid "出于安全考虑，不支持加载插件目录之外、未验签的文件；请用上面的「安装插件」，它会验签后复制进插件目录。"
+msgstr "安全のため、プラグインディレクトリ外の未署名ファイルは読み込みません。上の「プラグインをインストール」を使ってください（署名を検証してコピーします）。"
+
+msgid "开发者模式尚未实现：每任务日志已经出现在任务详情里。"
+msgstr "開発者モードは未実装です。タスクごとのログはタスク詳細にあります。"
+
+msgid "重启后生效"
+msgstr "再起動で反映"
+
+msgid "只读"
+msgstr "読み取り専用"
+
+msgid "上次页面"
+msgstr "前回のページ"
+
+msgid "不重试"
+msgstr "再試行しない"
+
+msgid "不操作"
+msgstr "何もしない"
+
+msgid "打开所在文件夹"
+msgstr "フォルダーを開く"
+
+msgid "打开文件"
+msgstr "ファイルを開く"
+
+msgid "跟随系统"
+msgstr "システムに従う"
+
+msgid "直连"
+msgstr "直接接続"
+
+msgid "手动"
+msgstr "手動"
+
+msgid "IPv4 + IPv6"
+msgstr "IPv4 + IPv6"
+
+msgid "仅 IPv4"
+msgstr "IPv4 のみ"
+
+msgid "仅 IPv6"
+msgstr "IPv6 のみ"
+
+msgid "浅色"
+msgstr "ライト"
+
+msgid "深色"
+msgstr "ダーク"
+
+msgid "Aurora 紫"
+msgstr "Aurora パープル"
+
+msgid "靛蓝"
+msgstr "インディゴ"
+
+msgid "青碧"
+msgstr "ティール"
+
+msgid "苔绿"
+msgstr "モスグリーン"
+
+msgid "琥珀"
+msgstr "アンバー"
+
+msgid "蔷薇"
+msgstr "ローズ"
+
+msgid "rtmp 直播录制与媒体转封装"
+msgstr "RTMP ライブ録画とメディア再パッケージ"
+
+msgid "已安装的插件与筛选"
+msgstr "インストール済みプラグインと絞り込み"
+
+msgid "ffmpeg"
+msgstr "ffmpeg"

@@ -1,0 +1,30 @@
+// Settings search state shared by the page and its cards.
+//
+// The card ids and keywords live in Rust (`src/settings_search.rs`): that is
+// where the query is matched, because Slint strings have no substring test.
+// Rust returns the matching ids joined as "|id|id|" and the page flips
+// `active` on; a card then answers "do I match?" with a replace-all probe.
+//
+// Cards with `filterable: false` (the About hero) hide while a filter runs.
+
+export struct SettingsHit {
+    tab: int,
+    id: string,
+    title: string,
+    subtitle: string,
+    section: string,
+}
+
+export global SettingsFilter {
+    in-out property <bool> active: false;
+    // "|id|id|"; empty means no card matches.
+    in-out property <string> hits: "";
+    // Result rows for the search view, filled by Rust.
+    in-out property <[SettingsHit]> results: [];
+
+    public pure function shows(id: string) -> bool {
+        return !root.active
+            || id == ""
+            || root.hits.replace-all("|" + id + "|", "") != root.hits;
+    }
+}

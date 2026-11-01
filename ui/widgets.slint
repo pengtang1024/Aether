@@ -6,6 +6,7 @@
 import { StateLayer } from "std-widgets.slint";
 import { Aether, FileTone, PluginTone } from "theme.slint";
 import { AetherIcons } from "icons.slint";
+import { SettingsFilter } from "settings-filter.slint";
 
 // ---------------------------------------------------------------------------
 // File glyph: category icon only. The filename lives in a hover card, never in
@@ -292,6 +293,14 @@ export component SectionCard inherits Rectangle {
     in property <string> title: "";
     in property <string> subtitle: "";
     in property <color> tone: Aether.primary-bright;
+    // Search identity: Rust maps this id to keywords and reports whether the
+    // current query hits this card. Empty ids are never filtered.
+    in property <string> id: "";
+    in property <bool> filterable: true;
+
+    visible: root.filterable
+        ? SettingsFilter.shows(root.id)
+        : !SettingsFilter.active;
 
     border-radius: Aether.card-radius;
     background: @linear-gradient(155deg, Aether.card-top, Aether.card-bottom);
@@ -358,6 +367,27 @@ export component SectionCard inherits Rectangle {
                         visible: root.subtitle != "";
                     }
                 }
+
+                // A quiet marker so a filtered section still reads as
+                // "these are the cards that matched your search".
+                if SettingsFilter.active && root.filterable: Rectangle {
+                    height: 18px;
+                    border-radius: Aether.radius-full;
+                    background: Aether.primary.with-alpha(0.12);
+                    cross-axis-self-alignment: center;
+
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        padding-right: 8px;
+                        Text {
+                            text: @tr("匹配");
+                            color: Aether.primary-bright;
+                            font-size: Aether.text-micro;
+                            font-weight: Aether.weight-medium;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
             }
         }
 
@@ -385,54 +415,87 @@ export component SettingRow inherits Rectangle {
     in property <image> icon-source;
     in property <string> title: "";
     in property <string> description: "";
+    // A short status marker next to the title ("restart to apply", ...).
+    in property <string> badge: "";
     in property <bool> divider: true;
 
-    VerticalLayout {
-        padding-top: Aether.space-sm;
-        padding-bottom: Aether.space-sm;
+    // One row: the control sits on the title line, the description runs the
+    // full width underneath. Keeping the control out of the description's
+    // line means a long wrapped description can never run under it (Slint
+    // reports the unwrapped text width as its preferred size, which pushed
+    // the trailing control out of the row in the earlier layout).
+    HorizontalLayout {
+        padding-top: 10px;
+        padding-bottom: 10px;
         spacing: Aether.space-sm;
 
-        HorizontalLayout {
-            spacing: Aether.space-sm;
+        Rectangle {
+            width: Aether.card-icon;
+            height: Aether.card-icon;
+            background: transparent;
+            cross-axis-self-alignment: start;
 
-            Rectangle {
-                width: Aether.card-icon;
-                height: Aether.card-icon;
-                background: transparent;
-                cross-axis-self-alignment: center;
-
-                Image {
-                    source: root.icon-source;
-                    width: Aether.icon-md;
-                    height: Aether.icon-md;
-                    colorize: Aether.on-surface-muted;
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                }
+            Image {
+                source: root.icon-source;
+                width: Aether.icon-md;
+                height: Aether.icon-md;
+                colorize: Aether.on-surface-muted;
+                x: (parent.width - self.width) / 2;
+                y: 2px;
             }
+        }
 
-            VerticalLayout {
-                horizontal-stretch: 1;
-                spacing: 2px;
-                alignment: center;
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 2px;
+
+            HorizontalLayout {
+                spacing: 6px;
 
                 Text {
                     text: root.title;
                     color: Aether.on-surface;
                     font-size: Aether.text-body;
                     font-weight: Aether.weight-medium;
+                    vertical-alignment: center;
+                    overflow: elide;
                 }
 
-                Text {
-                    text: root.description;
-                    color: Aether.on-surface-muted;
-                    font-size: Aether.text-caption;
-                    wrap: word-wrap;
-                    visible: root.description != "";
+                if root.badge != "": Rectangle {
+                    height: 18px;
+                    border-radius: Aether.radius-full;
+                    background: Aether.surface-container-highest;
+                    border-width: 1px;
+                    border-color: Aether.outline-faint;
+                    cross-axis-self-alignment: center;
+
+                    HorizontalLayout {
+                        padding-left: 7px;
+                        padding-right: 7px;
+                        Text {
+                            text: root.badge;
+                            color: Aether.on-surface-muted;
+                            font-size: Aether.text-micro;
+                            vertical-alignment: center;
+                        }
+                    }
                 }
+
+                Rectangle {
+                    horizontal-stretch: 1;
+                    background: transparent;
+                }
+
+                @children
             }
 
-            @children
+            Text {
+                text: root.description;
+                color: Aether.on-surface-muted;
+                font-size: Aether.text-caption;
+                wrap: word-wrap;
+                visible: root.description != "";
+            }
         }
     }
 
