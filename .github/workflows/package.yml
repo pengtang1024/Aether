@@ -211,7 +211,7 @@ jobs:
   macos:
     name: macOS universal DMG
     needs: version
-    runs-on: macos-14
+    runs-on: macos-15
     env:
       MACOSX_DEPLOYMENT_TARGET: "11.0"
     steps:
@@ -221,7 +221,7 @@ jobs:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          key: macos-14
+          key: macos-15
 
       - name: Build universal app bundle
         env:
