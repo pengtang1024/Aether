@@ -1,0 +1,32 @@
+// The system tray lives outside the window: one entry to surface the window
+// and one to quit. Labels are properties so Rust can follow the interface
+// language (the same strings live in src/i18n). `resident` mirrors host
+// availability: without a tray host the icon stays unregistered and the
+// window's close button keeps its default (quit).
+export component Tray inherits SystemTrayIcon {
+    in-out property <string> show-label: "显示主窗口";
+    in-out property <string> quit-label: "退出";
+    in-out property <string> tray-tooltip: "Aether 下载管理器";
+    in-out property <bool> resident: false;
+
+    icon: @image-url("../assets/logo-icon-64.png");
+    tooltip: root.tray-tooltip;
+    // macOS renders `title` as text next to the icon; the menu bar has no
+    // room for the app name, so only the tooltip carries it.
+    title: "";
+    visible: root.resident;
+
+    callback show-requested;
+    callback quit-requested;
+
+    Menu {
+        MenuItem {
+            title: root.show-label;
+            activated => { root.show-requested(); }
+        }
+        MenuItem {
+            title: root.quit-label;
+            activated => { root.quit-requested(); }
+        }
+    }
+}

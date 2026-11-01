@@ -65,11 +65,13 @@ slint = { version = "1.18", default-features = false, features = [
     # `WinitWindowAccessor`: the tray's "show" must also un-minimize and ask
     # the compositor for focus; `Window::show()` alone cannot do either.
     "unstable-winit-030",
+    # Cross-platform system tray (Linux ksni / Windows Shell_NotifyIcon /
+    # macOS NSStatusItem). One implementation instead of three.
+    "system-tray",
 ] }
 
-# The StatusNotifierItem tray speaks D-Bus — unix only. Windows gets a
-# raw-FFI Shell_NotifyIcon tray instead (src/tray_windows.rs, no deps),
-# so Windows builds never compile zbus.
+# The second-launch endpoint speaks D-Bus — unix only. The tray itself is
+# Slint's cross-platform SystemTrayIcon, so Windows builds never compile zbus.
 [target.'cfg(unix)'.dependencies]
 zbus = "5"
 

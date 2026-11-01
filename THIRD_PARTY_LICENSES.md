@@ -6,7 +6,7 @@
 > are included once. `LICENSES/` holds the standard license-family texts;
 > `docs/THIRD_PARTY_INVENTORY.md` lists versions and SPDX expressions.
 
-Packages covered: **591** · unique texts: **382**
+Packages covered: **595** · unique texts: **385**
 
 ## ab_glyph 0.2.32
 
@@ -1024,6 +1024,17 @@ License/notice files:
 
 - License: `MIT OR Apache-2.0`
 - Targets: linux, windows, macos
+- Repository: <https://github.com/crossbeam-rs/crossbeam>
+
+License/notice files:
+
+- `LICENSE-APACHE` — same text as entry #7
+- `LICENSE-MIT` — same text as entry #69
+
+## crossbeam-queue 0.3.14
+
+- License: `MIT OR Apache-2.0`
+- Targets: linux
 - Repository: <https://github.com/crossbeam-rs/crossbeam>
 
 License/notice files:
@@ -2577,6 +2588,14 @@ License/notice files:
 - `LICENSE-APACHE` — same text as entry #7
 - `LICENSE-MIT` — text #171
 
+## ksni 0.3.7
+
+- License: `Unlicense`
+- Targets: linux
+- Repository: <https://github.com/iovxw/ksni>
+
+No license file is shipped inside this crate. The SPDX expression above applies; the standard text is in `LICENSES/` and the version is pinned by `Cargo.lock`.
+
 ## kurbo 0.13.1
 
 - License: `Apache-2.0 OR MIT`
@@ -3460,6 +3479,17 @@ License/notice files:
 
 - `LICENSE-APACHE` — same text as entry #7
 - `LICENSE-MIT` — same text as entry #230
+
+## pastey 0.2.3
+
+- License: `MIT OR Apache-2.0`
+- Targets: linux
+- Repository: <https://github.com/as1100k/pastey>
+
+License/notice files:
+
+- `LICENSE-APACHE` — same text as entry #11
+- `LICENSE-MIT` — same text as entry #4
 
 ## percent-encoding 2.3.2
 
@@ -4921,6 +4951,18 @@ License/notice files:
 - `LICENSE-APACHE` — same text as entry #7
 - `LICENSE-MIT` — text #315
 
+## task-local 0.1.1
+
+- License: `MIT OR Apache-2.0`
+- Targets: linux
+- Repository: <https://github.com/BugenZhao/task-local>
+
+License/notice files:
+
+- `LICENSE` — text #316
+- `LICENSE-APACHE` — text #317
+- `LICENSE-MIT` — text #318
+
 ## tauri-winrt-notification 0.8.1
 
 - License: `MIT OR Apache-2.0`
@@ -4929,9 +4971,9 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE.spdx` — text #316
+- `LICENSE.spdx` — text #319
 - `LICENSE_APACHE-2.0` — same text as entry #1
-- `LICENSE_MIT` — text #317
+- `LICENSE_MIT` — text #320
 
 ## text-size 1.1.1
 
@@ -4996,7 +5038,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE` — text #318
+- `LICENSE` — text #321
 
 ## tiny-skia 0.12.0
 
@@ -5006,7 +5048,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE` — same text as entry #318
+- `LICENSE` — same text as entry #321
 
 ## tiny-skia-path 0.11.4
 
@@ -5016,7 +5058,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE` — same text as entry #318
+- `LICENSE` — same text as entry #321
 
 ## tiny-skia-path 0.12.0
 
@@ -5026,7 +5068,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE` — same text as entry #318
+- `LICENSE` — same text as entry #321
 
 ## tiny-xlib 0.2.5
 
@@ -5037,8 +5079,8 @@ License/notice files:
 License/notice files:
 
 - `LICENSE-APACHE.md` — same text as entry #1
-- `LICENSE-MIT.md` — text #319
-- `LICENSE-ZLIB.md` — text #320
+- `LICENSE-MIT.md` — text #322
+- `LICENSE-ZLIB.md` — text #323
 
 ## tinystr 0.8.5
 
@@ -5070,7 +5112,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE` — text #321
+- `LICENSE` — text #324
 
 ## tokio-macros 2.7.2
 
@@ -5080,7 +5122,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE` — text #322
+- `LICENSE` — text #325
 
 ## tokio-rustls 0.26.6
 
@@ -5090,8 +5132,8 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE-APACHE` — text #323
-- `LICENSE-MIT` — text #324
+- `LICENSE-APACHE` — text #326
+- `LICENSE-MIT` — text #327
 
 ## tokio-socks 0.5.3
 
@@ -5101,7 +5143,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE` — text #325
+- `LICENSE` — text #328
 
 ## tokio-stream 0.1.19
 
@@ -5111,7 +5153,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE` — same text as entry #321
+- `LICENSE` — same text as entry #324
 
 ## tokio-util 0.7.20
 
@@ -5121,7 +5163,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE` — same text as entry #321
+- `LICENSE` — same text as entry #324
 
 ## toml_datetime 1.1.2+spec-1.1.0
 
@@ -5175,7 +5217,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE` — text #326
+- `LICENSE` — text #329
 
 ## tower-http 0.6.11
 
@@ -5185,7 +5227,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE` — text #327
+- `LICENSE` — text #330
 
 ## tower-layer 0.3.3
 
@@ -5195,7 +5237,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE` — same text as entry #326
+- `LICENSE` — same text as entry #329
 
 ## tower-service 0.3.3
 
@@ -5205,7 +5247,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE` — same text as entry #326
+- `LICENSE` — same text as entry #329
 
 ## tracing 0.1.44
 
@@ -5215,7 +5257,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE` — text #328
+- `LICENSE` — text #331
 
 ## tracing-attributes 0.1.31
 
@@ -5225,7 +5267,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE` — same text as entry #328
+- `LICENSE` — same text as entry #331
 
 ## tracing-core 0.1.36
 
@@ -5235,8 +5277,8 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE` — same text as entry #328
-- `src/spin/LICENSE` — text #329
+- `LICENSE` — same text as entry #331
+- `src/spin/LICENSE` — text #332
 
 ## tree_magic_mini 3.2.2
 
@@ -5246,7 +5288,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE` — text #330
+- `LICENSE` — text #333
 
 ## try-lock 0.2.5
 
@@ -5256,7 +5298,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE` — text #331
+- `LICENSE` — text #334
 
 ## ttf-parser 0.25.1
 
@@ -5278,7 +5320,7 @@ License/notice files:
 License/notice files:
 
 - `LICENSE-APACHE` — same text as entry #11
-- `LICENSE-MIT` — text #332
+- `LICENSE-MIT` — text #335
 
 ## typenum 1.20.1
 
@@ -5288,9 +5330,9 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE` — text #333
-- `LICENSE-APACHE` — text #334
-- `LICENSE-MIT` — text #335
+- `LICENSE` — text #336
+- `LICENSE-APACHE` — text #337
+- `LICENSE-MIT` — text #338
 
 ## typewit 1.15.2
 
@@ -5300,7 +5342,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE-ZLIB.md` — text #336
+- `LICENSE-ZLIB.md` — text #339
 
 ## unicase 2.10.0
 
@@ -5321,7 +5363,7 @@ License/notice files:
 
 License/notice files:
 
-- `COPYRIGHT` — text #337
+- `COPYRIGHT` — text #340
 - `LICENSE-APACHE` — same text as entry #7
 - `LICENSE-MIT` — same text as entry #124
 
@@ -5335,7 +5377,7 @@ License/notice files:
 
 - `LICENSE-APACHE` — same text as entry #11
 - `LICENSE-MIT` — same text as entry #4
-- `LICENSE-UNICODE` — text #338
+- `LICENSE-UNICODE` — text #341
 
 ## unicode-linebreak 0.1.5
 
@@ -5355,8 +5397,8 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE-APACHE` — text #339
-- `LICENSE-MIT` — text #340
+- `LICENSE-APACHE` — text #342
+- `LICENSE-MIT` — text #343
 
 ## unicode-segmentation 1.13.3
 
@@ -5366,7 +5408,7 @@ License/notice files:
 
 License/notice files:
 
-- `COPYRIGHT` — text #341
+- `COPYRIGHT` — text #344
 - `LICENSE-APACHE` — same text as entry #7
 - `LICENSE-MIT` — same text as entry #124
 
@@ -5389,7 +5431,7 @@ License/notice files:
 
 License/notice files:
 
-- `COPYRIGHT` — same text as entry #341
+- `COPYRIGHT` — same text as entry #344
 - `LICENSE-APACHE` — same text as entry #7
 - `LICENSE-MIT` — same text as entry #124
 
@@ -5401,7 +5443,7 @@ License/notice files:
 
 License/notice files:
 
-- `COPYRIGHT` — same text as entry #341
+- `COPYRIGHT` — same text as entry #344
 - `LICENSE-APACHE` — same text as entry #7
 - `LICENSE-MIT` — same text as entry #124
 
@@ -5413,7 +5455,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE.txt` — text #342
+- `LICENSE.txt` — text #345
 
 ## untrusted 0.9.0
 
@@ -5423,7 +5465,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE.txt` — same text as entry #342
+- `LICENSE.txt` — same text as entry #345
 
 ## url 2.5.8
 
@@ -5444,7 +5486,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE` — text #343
+- `LICENSE` — text #346
 
 ## usvg 0.48.1
 
@@ -5465,7 +5507,7 @@ License/notice files:
 
 License/notice files:
 
-- `COPYRIGHT` — text #344
+- `COPYRIGHT` — text #347
 - `LICENSE-APACHE` — same text as entry #19
 - `LICENSE-MIT` — same text as entry #55
 
@@ -5478,7 +5520,7 @@ License/notice files:
 License/notice files:
 
 - `LICENSE-APACHE` — same text as entry #7
-- `LICENSE-MIT` — text #345
+- `LICENSE-MIT` — text #348
 
 ## vtable 0.5.0
 
@@ -5521,7 +5563,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE` — text #346
+- `LICENSE` — text #349
 
 ## wayland-backend 0.3.17
 
@@ -5531,7 +5573,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE.txt` — text #347
+- `LICENSE.txt` — text #350
 
 ## wayland-client 0.31.15
 
@@ -5541,7 +5583,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE.txt` — same text as entry #347
+- `LICENSE.txt` — same text as entry #350
 
 ## wayland-csd-frame 0.3.0
 
@@ -5561,7 +5603,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE.txt` — same text as entry #347
+- `LICENSE.txt` — same text as entry #350
 
 ## wayland-protocols 0.32.13
 
@@ -5571,8 +5613,8 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE.txt` — same text as entry #347
-- `protocols/COPYING` — text #348
+- `LICENSE.txt` — same text as entry #350
+- `protocols/COPYING` — text #351
 
 ## wayland-protocols-plasma 0.3.12
 
@@ -5582,13 +5624,13 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE.txt` — same text as entry #347
-- `plasma-wayland-protocols/COPYING.LIB` — text #349
-- `plasma-wayland-protocols/LICENSES/BSD-3-Clause.txt` — text #350
+- `LICENSE.txt` — same text as entry #350
+- `plasma-wayland-protocols/COPYING.LIB` — text #352
+- `plasma-wayland-protocols/LICENSES/BSD-3-Clause.txt` — text #353
 - `plasma-wayland-protocols/LICENSES/CC0-1.0.txt` — same text as entry #164
-- `plasma-wayland-protocols/LICENSES/LGPL-2.1-or-later.txt` — text #351
-- `plasma-wayland-protocols/LICENSES/MIT-CMU.txt` — text #352
-- `plasma-wayland-protocols/LICENSES/MIT.txt` — text #353
+- `plasma-wayland-protocols/LICENSES/LGPL-2.1-or-later.txt` — text #354
+- `plasma-wayland-protocols/LICENSES/MIT-CMU.txt` — text #355
+- `plasma-wayland-protocols/LICENSES/MIT.txt` — text #356
 
 ## wayland-protocols-wlr 0.3.12
 
@@ -5598,7 +5640,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE.txt` — same text as entry #347
+- `LICENSE.txt` — same text as entry #350
 
 ## wayland-scanner 0.31.11
 
@@ -5608,7 +5650,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE.txt` — same text as entry #347
+- `LICENSE.txt` — same text as entry #350
 
 ## wayland-sys 0.31.11
 
@@ -5618,7 +5660,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE.txt` — same text as entry #347
+- `LICENSE.txt` — same text as entry #350
 
 ## web-time 1.1.0
 
@@ -5628,8 +5670,8 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE-APACHE` — text #354
-- `LICENSE-MIT` — text #355
+- `LICENSE-APACHE` — text #357
+- `LICENSE-MIT` — text #358
 
 ## webbrowser 1.2.5
 
@@ -5639,8 +5681,8 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE-APACHE` — text #356
-- `LICENSE-MIT` — text #357
+- `LICENSE-APACHE` — text #359
+- `LICENSE-MIT` — text #360
 
 ## webpki-roots 1.0.11
 
@@ -5650,7 +5692,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE` — text #358
+- `LICENSE` — text #361
 
 ## weezl 0.1.12
 
@@ -5661,7 +5703,7 @@ License/notice files:
 License/notice files:
 
 - `LICENSE-APACHE` — same text as entry #7
-- `LICENSE-MIT` — text #359
+- `LICENSE-MIT` — text #362
 
 ## widestring 1.2.1
 
@@ -5683,7 +5725,7 @@ License/notice files:
 License/notice files:
 
 - `LICENSE-APACHE` — same text as entry #14
-- `LICENSE-MIT` — text #360
+- `LICENSE-MIT` — text #363
 
 ## winapi-util 0.1.11
 
@@ -5712,8 +5754,8 @@ No license file is shipped inside this crate. The SPDX expression above applies;
 
 License/notice files:
 
-- `license-apache-2.0` — text #361
-- `license-mit` — text #362
+- `license-apache-2.0` — text #364
+- `license-mit` — text #365
 
 ## windows-collections 0.3.2
 
@@ -5723,8 +5765,8 @@ License/notice files:
 
 License/notice files:
 
-- `license-apache-2.0` — same text as entry #361
-- `license-mit` — same text as entry #362
+- `license-apache-2.0` — same text as entry #364
+- `license-mit` — same text as entry #365
 
 ## windows-core 0.62.2
 
@@ -5734,8 +5776,8 @@ License/notice files:
 
 License/notice files:
 
-- `license-apache-2.0` — same text as entry #361
-- `license-mit` — same text as entry #362
+- `license-apache-2.0` — same text as entry #364
+- `license-mit` — same text as entry #365
 
 ## windows-future 0.3.2
 
@@ -5745,8 +5787,8 @@ License/notice files:
 
 License/notice files:
 
-- `license-apache-2.0` — same text as entry #361
-- `license-mit` — same text as entry #362
+- `license-apache-2.0` — same text as entry #364
+- `license-mit` — same text as entry #365
 
 ## windows-implement 0.60.2
 
@@ -5756,8 +5798,8 @@ License/notice files:
 
 License/notice files:
 
-- `license-apache-2.0` — same text as entry #361
-- `license-mit` — same text as entry #362
+- `license-apache-2.0` — same text as entry #364
+- `license-mit` — same text as entry #365
 
 ## windows-interface 0.59.3
 
@@ -5767,8 +5809,8 @@ License/notice files:
 
 License/notice files:
 
-- `license-apache-2.0` — same text as entry #361
-- `license-mit` — same text as entry #362
+- `license-apache-2.0` — same text as entry #364
+- `license-mit` — same text as entry #365
 
 ## windows-link 0.2.1
 
@@ -5778,8 +5820,8 @@ License/notice files:
 
 License/notice files:
 
-- `license-apache-2.0` — same text as entry #361
-- `license-mit` — same text as entry #362
+- `license-apache-2.0` — same text as entry #364
+- `license-mit` — same text as entry #365
 
 ## windows-numerics 0.3.1
 
@@ -5789,8 +5831,8 @@ License/notice files:
 
 License/notice files:
 
-- `license-apache-2.0` — same text as entry #361
-- `license-mit` — same text as entry #362
+- `license-apache-2.0` — same text as entry #364
+- `license-mit` — same text as entry #365
 
 ## windows-registry 0.6.1
 
@@ -5800,8 +5842,8 @@ License/notice files:
 
 License/notice files:
 
-- `license-apache-2.0` — same text as entry #361
-- `license-mit` — same text as entry #362
+- `license-apache-2.0` — same text as entry #364
+- `license-mit` — same text as entry #365
 
 ## windows-result 0.4.1
 
@@ -5811,8 +5853,8 @@ License/notice files:
 
 License/notice files:
 
-- `license-apache-2.0` — same text as entry #361
-- `license-mit` — same text as entry #362
+- `license-apache-2.0` — same text as entry #364
+- `license-mit` — same text as entry #365
 
 ## windows-strings 0.5.1
 
@@ -5822,8 +5864,8 @@ License/notice files:
 
 License/notice files:
 
-- `license-apache-2.0` — same text as entry #361
-- `license-mit` — same text as entry #362
+- `license-apache-2.0` — same text as entry #364
+- `license-mit` — same text as entry #365
 
 ## windows-sys 0.52.0
 
@@ -5833,8 +5875,8 @@ License/notice files:
 
 License/notice files:
 
-- `license-apache-2.0` — same text as entry #361
-- `license-mit` — same text as entry #362
+- `license-apache-2.0` — same text as entry #364
+- `license-mit` — same text as entry #365
 
 ## windows-sys 0.61.2
 
@@ -5844,8 +5886,8 @@ License/notice files:
 
 License/notice files:
 
-- `license-apache-2.0` — same text as entry #361
-- `license-mit` — same text as entry #362
+- `license-apache-2.0` — same text as entry #364
+- `license-mit` — same text as entry #365
 
 ## windows-targets 0.52.6
 
@@ -5855,8 +5897,8 @@ License/notice files:
 
 License/notice files:
 
-- `license-apache-2.0` — same text as entry #361
-- `license-mit` — same text as entry #362
+- `license-apache-2.0` — same text as entry #364
+- `license-mit` — same text as entry #365
 
 ## windows-threading 0.2.1
 
@@ -5866,8 +5908,8 @@ License/notice files:
 
 License/notice files:
 
-- `license-apache-2.0` — same text as entry #361
-- `license-mit` — same text as entry #362
+- `license-apache-2.0` — same text as entry #364
+- `license-mit` — same text as entry #365
 
 ## windows-version 0.1.7
 
@@ -5877,8 +5919,8 @@ License/notice files:
 
 License/notice files:
 
-- `license-apache-2.0` — same text as entry #361
-- `license-mit` — same text as entry #362
+- `license-apache-2.0` — same text as entry #364
+- `license-mit` — same text as entry #365
 
 ## windows_x86_64_gnu 0.52.6
 
@@ -5888,8 +5930,8 @@ License/notice files:
 
 License/notice files:
 
-- `license-apache-2.0` — same text as entry #361
-- `license-mit` — same text as entry #362
+- `license-apache-2.0` — same text as entry #364
+- `license-mit` — same text as entry #365
 
 ## winit 0.30.13
 
@@ -5909,7 +5951,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE-MIT` — text #363
+- `LICENSE-MIT` — text #366
 
 ## wl-clipboard-rs 0.9.4
 
@@ -5920,7 +5962,7 @@ License/notice files:
 License/notice files:
 
 - `LICENSE-APACHE` — same text as entry #7
-- `LICENSE-MIT` — text #364
+- `LICENSE-MIT` — text #367
 
 ## writeable 0.6.4
 
@@ -5961,7 +6003,7 @@ License/notice files:
 License/notice files:
 
 - `LICENSE-APACHE` — same text as entry #19
-- `LICENSE-MIT` — text #365
+- `LICENSE-MIT` — text #368
 
 ## x11rb-protocol 0.13.2
 
@@ -5972,7 +6014,7 @@ License/notice files:
 License/notice files:
 
 - `LICENSE-APACHE` — same text as entry #19
-- `LICENSE-MIT` — same text as entry #365
+- `LICENSE-MIT` — same text as entry #368
 
 ## xattr 1.6.1
 
@@ -5983,7 +6025,7 @@ License/notice files:
 License/notice files:
 
 - `LICENSE-APACHE` — same text as entry #7
-- `LICENSE-MIT` — text #366
+- `LICENSE-MIT` — text #369
 
 ## xcursor 0.3.11
 
@@ -5993,7 +6035,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE` — text #367
+- `LICENSE` — text #370
 
 ## xkbcommon-dl 0.4.2
 
@@ -6003,7 +6045,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE` — text #368
+- `LICENSE` — text #371
 
 ## xkeysym 0.2.1
 
@@ -6013,9 +6055,9 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE-APACHE` — text #369
-- `LICENSE-MIT` — text #370
-- `LICENSE-ZLIB` — text #371
+- `LICENSE-APACHE` — text #372
+- `LICENSE-MIT` — text #373
+- `LICENSE-ZLIB` — text #374
 
 ## xmlwriter 0.1.0
 
@@ -6025,7 +6067,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE` — text #372
+- `LICENSE` — text #375
 
 ## yazi 0.2.1
 
@@ -6036,7 +6078,7 @@ License/notice files:
 License/notice files:
 
 - `LICENSE-APACHE` — same text as entry #7
-- `LICENSE-MIT` — text #373
+- `LICENSE-MIT` — text #376
 
 ## yeslogic-fontconfig-sys 6.0.1
 
@@ -6046,7 +6088,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE` — text #374
+- `LICENSE` — text #377
 
 ## yoke 0.8.4
 
@@ -6076,7 +6118,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE` — text #375
+- `LICENSE` — text #378
 
 ## zbus-lockstep 0.5.2
 
@@ -6106,7 +6148,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE` — same text as entry #375
+- `LICENSE` — same text as entry #378
 
 ## zbus_names 4.3.5
 
@@ -6116,7 +6158,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE` — same text as entry #375
+- `LICENSE` — same text as entry #378
 
 ## zbus_xml 5.2.1
 
@@ -6126,7 +6168,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE` — same text as entry #375
+- `LICENSE` — same text as entry #378
 
 ## zcheapstr 1.1.0
 
@@ -6136,7 +6178,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE` — text #376
+- `LICENSE` — text #379
 
 ## zeno 0.3.3
 
@@ -6157,9 +6199,9 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE-APACHE` — text #377
-- `LICENSE-BSD` — text #378
-- `LICENSE-MIT` — text #379
+- `LICENSE-APACHE` — text #380
+- `LICENSE-BSD` — text #381
+- `LICENSE-MIT` — text #382
 
 ## zerofrom 0.1.8
 
@@ -6190,7 +6232,7 @@ License/notice files:
 License/notice files:
 
 - `LICENSE-APACHE` — same text as entry #19
-- `LICENSE-MIT` — text #380
+- `LICENSE-MIT` — text #383
 
 ## zerotrie 0.2.5
 
@@ -6241,8 +6283,8 @@ License/notice files:
 License/notice files:
 
 - `LICENSE-APACHE` — same text as entry #19
-- `LICENSE-MIT` — text #381
-- `LICENSE-ZLIB` — text #382
+- `LICENSE-MIT` — text #384
+- `LICENSE-ZLIB` — text #385
 
 ## zune-jpeg 0.5.15
 
@@ -6253,8 +6295,8 @@ License/notice files:
 License/notice files:
 
 - `LICENSE-APACHE` — same text as entry #19
-- `LICENSE-MIT` — same text as entry #381
-- `LICENSE-ZLIB` — same text as entry #382
+- `LICENSE-MIT` — same text as entry #384
+- `LICENSE-ZLIB` — same text as entry #385
 
 ## zvariant 5.15.1
 
@@ -6264,7 +6306,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE` — same text as entry #375
+- `LICENSE` — same text as entry #378
 
 ## zvariant_derive 5.15.1
 
@@ -6274,7 +6316,7 @@ License/notice files:
 
 License/notice files:
 
-- `LICENSE` — same text as entry #375
+- `LICENSE` — same text as entry #378
 
 ## zvariant_utils 4.2.0
 
@@ -24372,7 +24414,66 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ~~~~
 
-## Text 316: tauri-winrt-notification 0.8.1: LICENSE.spdx
+## Text 316: task-local 0.1.1: LICENSE
+
+~~~~
+This project is licensed under either of
+
+ * Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+ * MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+
+at your option.
+~~~~
+
+## Text 317: task-local 0.1.1: LICENSE-APACHE
+
+~~~~
+Apache License
+                        Version 2.0, January 2004
+                     http://www.apache.org/licenses/
+
+Copyright 2025 Bugen Zhao
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+~~~~
+
+## Text 318: task-local 0.1.1: LICENSE-MIT
+
+~~~~
+MIT License
+
+Copyright (c) 2025 Bugen Zhao
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+~~~~
+
+## Text 319: tauri-winrt-notification 0.8.1: LICENSE.spdx
 
 ~~~~
 SPDXVersion: SPDX-2.1
@@ -24396,7 +24497,7 @@ PackageDownloadLocation: git+ssh://github.com/tauri-apps/winrt-notification.git
 Creator: Person: Daniel Thompson-Yvetot
 ~~~~
 
-## Text 317: tauri-winrt-notification 0.8.1: LICENSE_MIT
+## Text 320: tauri-winrt-notification 0.8.1: LICENSE_MIT
 
 ~~~~
 MIT License
@@ -24422,7 +24523,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~~
 
-## Text 318: tiny-skia 0.11.4: LICENSE
+## Text 321: tiny-skia 0.11.4: LICENSE
 
 ~~~~
 Copyright (c) 2011 Google Inc. All rights reserved.
@@ -24457,7 +24558,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ~~~~
 
-## Text 319: tiny-xlib 0.2.5: LICENSE-MIT.md
+## Text 322: tiny-xlib 0.2.5: LICENSE-MIT.md
 
 ~~~~
 MIT License
@@ -24483,7 +24584,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~~
 
-## Text 320: tiny-xlib 0.2.5: LICENSE-ZLIB.md
+## Text 323: tiny-xlib 0.2.5: LICENSE-ZLIB.md
 
 ~~~~
 Copyright (c) 2023 John Nunley
@@ -24499,7 +24600,7 @@ Permission is granted to anyone to use this software for any purpose, including 
 3. This notice may not be removed or altered from any source distribution.
 ~~~~
 
-## Text 321: tokio 1.54.1: LICENSE
+## Text 324: tokio 1.54.1: LICENSE
 
 ~~~~
 MIT License
@@ -24525,7 +24626,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~~
 
-## Text 322: tokio-macros 2.7.2: LICENSE
+## Text 325: tokio-macros 2.7.2: LICENSE
 
 ~~~~
 MIT License
@@ -24552,7 +24653,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~~
 
-## Text 323: tokio-rustls 0.26.6: LICENSE-APACHE
+## Text 326: tokio-rustls 0.26.6: LICENSE-APACHE
 
 ~~~~
 Apache License
@@ -24758,7 +24859,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ~~~~
 
-## Text 324: tokio-rustls 0.26.6: LICENSE-MIT
+## Text 327: tokio-rustls 0.26.6: LICENSE-MIT
 
 ~~~~
 Copyright (c) 2017 quininer kel
@@ -24788,7 +24889,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ~~~~
 
-## Text 325: tokio-socks 0.5.3: LICENSE
+## Text 328: tokio-socks 0.5.3: LICENSE
 
 ~~~~
 MIT License
@@ -24814,7 +24915,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~~
 
-## Text 326: tower 0.5.3: LICENSE
+## Text 329: tower 0.5.3: LICENSE
 
 ~~~~
 Copyright (c) 2019 Tower Contributors
@@ -24844,7 +24945,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ~~~~
 
-## Text 327: tower-http 0.6.11: LICENSE
+## Text 330: tower-http 0.6.11: LICENSE
 
 ~~~~
 Copyright (c) 2019-2021 Tower Contributors
@@ -24874,7 +24975,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ~~~~
 
-## Text 328: tracing 0.1.44: LICENSE
+## Text 331: tracing 0.1.44: LICENSE
 
 ~~~~
 Copyright (c) 2019 Tokio Contributors
@@ -24904,7 +25005,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ~~~~
 
-## Text 329: tracing-core 0.1.36: src/spin/LICENSE
+## Text 332: tracing-core 0.1.36: src/spin/LICENSE
 
 ~~~~
 The MIT License (MIT)
@@ -24930,7 +25031,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~~
 
-## Text 330: tree_magic_mini 3.2.2: LICENSE
+## Text 333: tree_magic_mini 3.2.2: LICENSE
 
 ~~~~
 MIT License
@@ -24956,7 +25057,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~~
 
-## Text 331: try-lock 0.2.5: LICENSE
+## Text 334: try-lock 0.2.5: LICENSE
 
 ~~~~
 Copyright (c) 2018-2023 Sean McArthur
@@ -24981,7 +25082,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~~
 
-## Text 332: typed-index-collections 3.5.0: LICENSE-MIT
+## Text 335: typed-index-collections 3.5.0: LICENSE-MIT
 
 ~~~~
 Copyright (c) 2020 Andrey Zheleznov <zheland.net@gmail.com>
@@ -25011,13 +25112,13 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ~~~~
 
-## Text 333: typenum 1.20.1: LICENSE
+## Text 336: typenum 1.20.1: LICENSE
 
 ~~~~
 MIT OR Apache-2.0
 ~~~~
 
-## Text 334: typenum 1.20.1: LICENSE-APACHE
+## Text 337: typenum 1.20.1: LICENSE-APACHE
 
 ~~~~
 Apache License
@@ -25223,7 +25324,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ~~~~
 
-## Text 335: typenum 1.20.1: LICENSE-MIT
+## Text 338: typenum 1.20.1: LICENSE-MIT
 
 ~~~~
 The MIT License (MIT)
@@ -25249,7 +25350,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~~
 
-## Text 336: typewit 1.15.2: LICENSE-ZLIB.md
+## Text 339: typewit 1.15.2: LICENSE-ZLIB.md
 
 ~~~~
 Copyright (c) 2023 Matias Rodriguez.
@@ -25271,7 +25372,7 @@ freely, subject to the following restrictions:
 3. This notice may not be removed or altered from any source distribution.
 ~~~~
 
-## Text 337: unicode-bidi 0.3.18: COPYRIGHT
+## Text 340: unicode-bidi 0.3.18: COPYRIGHT
 
 ~~~~
 This project is copyright 2015, The Servo Project Developers (given in the
@@ -25284,7 +25385,7 @@ carrying such notice may not be copied, modified, or distributed except
 according to those terms.
 ~~~~
 
-## Text 338: unicode-ident 1.0.27: LICENSE-UNICODE
+## Text 341: unicode-ident 1.0.27: LICENSE-UNICODE
 
 ~~~~
 UNICODE LICENSE V3
@@ -25328,7 +25429,7 @@ dealings in these Data Files or Software without prior written
 authorization of the copyright holder.
 ~~~~
 
-## Text 339: unicode-script 0.5.8: LICENSE-APACHE
+## Text 342: unicode-script 0.5.8: LICENSE-APACHE
 
 ~~~~
 Apache License
@@ -25534,7 +25635,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ~~~~
 
-## Text 340: unicode-script 0.5.8: LICENSE-MIT
+## Text 343: unicode-script 0.5.8: LICENSE-MIT
 
 ~~~~
 MIT License
@@ -25566,7 +25667,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ~~~~
 
-## Text 341: unicode-segmentation 1.13.3: COPYRIGHT
+## Text 344: unicode-segmentation 1.13.3: COPYRIGHT
 
 ~~~~
 Licensed under the Apache License, Version 2.0
@@ -25578,7 +25679,7 @@ notice may not be copied, modified, or distributed except
 according to those terms.
 ~~~~
 
-## Text 342: untrusted 0.7.1: LICENSE.txt
+## Text 345: untrusted 0.7.1: LICENSE.txt
 
 ~~~~
 // Copyright 2015-2016 Brian Smith.
@@ -25596,7 +25697,7 @@ according to those terms.
 // OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ~~~~
 
-## Text 343: urlencoding 2.1.3: LICENSE
+## Text 346: urlencoding 2.1.3: LICENSE
 
 ~~~~
 © 2016 Bertram Truong
@@ -25621,7 +25722,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~~
 
-## Text 344: utf8_iter 1.0.4: COPYRIGHT
+## Text 347: utf8_iter 1.0.4: COPYRIGHT
 
 ~~~~
 Copyright Mozilla Foundation
@@ -25668,7 +25769,7 @@ licensed under the Apache License, Version 2.0 <LICENSE-APACHE> or
 <LICENSE-MIT> or <http://opensource.org/licenses/MIT>, at your option.
 ~~~~
 
-## Text 345: uuid 1.29.0: LICENSE-MIT
+## Text 348: uuid 1.29.0: LICENSE-MIT
 
 ~~~~
 Copyright (c) 2014 The Rust Project Developers
@@ -25699,7 +25800,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ~~~~
 
-## Text 346: want 0.3.2: LICENSE
+## Text 349: want 0.3.2: LICENSE
 
 ~~~~
 Copyright (c) 2018-2019 Sean McArthur
@@ -25723,7 +25824,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~~
 
-## Text 347: wayland-backend 0.3.17: LICENSE.txt
+## Text 350: wayland-backend 0.3.17: LICENSE.txt
 
 ~~~~
 Copyright (c) 2015 Elinor Berger
@@ -25747,7 +25848,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~~
 
-## Text 348: wayland-protocols 0.32.13: protocols/COPYING
+## Text 351: wayland-protocols 0.32.13: protocols/COPYING
 
 ~~~~
 Copyright © 2008-2013 Kristian Høgsberg
@@ -25785,7 +25886,7 @@ The above is the version of the MIT "Expat" License used by X.org:
     http://cgit.freedesktop.org/xorg/xserver/tree/COPYING
 ~~~~
 
-## Text 349: wayland-protocols-plasma 0.3.12: plasma-wayland-protocols/COPYING.LIB
+## Text 352: wayland-protocols-plasma 0.3.12: plasma-wayland-protocols/COPYING.LIB
 
 ~~~~
 GNU LESSER GENERAL PUBLIC LICENSE
@@ -26297,7 +26398,7 @@ if necessary.  Here is a sample; alter the names:
 That's all there is to it!
 ~~~~
 
-## Text 350: wayland-protocols-plasma 0.3.12: plasma-wayland-protocols/LICENSES/BSD-3-Clause.txt
+## Text 353: wayland-protocols-plasma 0.3.12: plasma-wayland-protocols/LICENSES/BSD-3-Clause.txt
 
 ~~~~
 Copyright (c) <year> <owner>. All rights reserved.
@@ -26328,7 +26429,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
 USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ~~~~
 
-## Text 351: wayland-protocols-plasma 0.3.12: plasma-wayland-protocols/LICENSES/LGPL-2.1-or-later.txt
+## Text 354: wayland-protocols-plasma 0.3.12: plasma-wayland-protocols/LICENSES/LGPL-2.1-or-later.txt
 
 ~~~~
 GNU LESSER GENERAL PUBLIC LICENSE
@@ -26801,7 +26902,7 @@ Ty Coon, President of Vice
 That's all there is to it!
 ~~~~
 
-## Text 352: wayland-protocols-plasma 0.3.12: plasma-wayland-protocols/LICENSES/MIT-CMU.txt
+## Text 355: wayland-protocols-plasma 0.3.12: plasma-wayland-protocols/LICENSES/MIT-CMU.txt
 
 ~~~~
 <copyright notice> By obtaining, using, and/or copying this software and/or
@@ -26823,7 +26924,7 @@ PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
 ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ~~~~
 
-## Text 353: wayland-protocols-plasma 0.3.12: plasma-wayland-protocols/LICENSES/MIT.txt
+## Text 356: wayland-protocols-plasma 0.3.12: plasma-wayland-protocols/LICENSES/MIT.txt
 
 ~~~~
 MIT License Copyright (c) <year> <copyright holders>
@@ -26847,7 +26948,7 @@ WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF
 OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ~~~~
 
-## Text 354: web-time 1.1.0: LICENSE-APACHE
+## Text 357: web-time 1.1.0: LICENSE-APACHE
 
 ~~~~
 Apache License
@@ -27053,7 +27154,7 @@ Apache License
    limitations under the License.
 ~~~~
 
-## Text 355: web-time 1.1.0: LICENSE-MIT
+## Text 358: web-time 1.1.0: LICENSE-MIT
 
 ~~~~
 MIT License
@@ -27079,7 +27180,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~~
 
-## Text 356: webbrowser 1.2.5: LICENSE-APACHE
+## Text 359: webbrowser 1.2.5: LICENSE-APACHE
 
 ~~~~
 Apache License
@@ -27274,7 +27375,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ~~~~
 
-## Text 357: webbrowser 1.2.5: LICENSE-MIT
+## Text 360: webbrowser 1.2.5: LICENSE-MIT
 
 ~~~~
 The MIT License (MIT)
@@ -27306,7 +27407,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ~~~~
 
-## Text 358: webpki-roots 1.0.11: LICENSE
+## Text 361: webpki-roots 1.0.11: LICENSE
 
 ~~~~
 # Community Data License Agreement - Permissive - Version 2.0
@@ -27372,7 +27473,7 @@ of Data, including for example machine learning models and models'
 insights.
 ~~~~
 
-## Text 359: weezl 0.1.12: LICENSE-MIT
+## Text 362: weezl 0.1.12: LICENSE-MIT
 
 ~~~~
 The MIT License (MIT)
@@ -27398,7 +27499,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~~
 
-## Text 360: winapi 0.3.9: LICENSE-MIT
+## Text 363: winapi 0.3.9: LICENSE-MIT
 
 ~~~~
 Copyright (c) 2015-2018 The winapi-rs Developers
@@ -27422,7 +27523,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~~
 
-## Text 361: windows 0.62.2: license-apache-2.0
+## Text 364: windows 0.62.2: license-apache-2.0
 
 ~~~~
 Apache License
@@ -27628,7 +27729,7 @@ Apache License
    limitations under the License.
 ~~~~
 
-## Text 362: windows 0.62.2: license-mit
+## Text 365: windows 0.62.2: license-mit
 
 ~~~~
 MIT License
@@ -27654,7 +27755,7 @@ MIT License
     SOFTWARE
 ~~~~
 
-## Text 363: winnow 1.0.4: LICENSE-MIT
+## Text 366: winnow 1.0.4: LICENSE-MIT
 
 ~~~~
 Permission is hereby granted, free of charge, to any person obtaining
@@ -27677,7 +27778,7 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ~~~~
 
-## Text 364: wl-clipboard-rs 0.9.4: LICENSE-MIT
+## Text 367: wl-clipboard-rs 0.9.4: LICENSE-MIT
 
 ~~~~
 Copyright (c) 2019 Ivan Molodetskikh
@@ -27707,7 +27808,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ~~~~
 
-## Text 365: x11rb 0.13.2: LICENSE-MIT
+## Text 368: x11rb 0.13.2: LICENSE-MIT
 
 ~~~~
 Copyright 2019 x11rb Contributers
@@ -27737,7 +27838,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ~~~~
 
-## Text 366: xattr 1.6.1: LICENSE-MIT
+## Text 369: xattr 1.6.1: LICENSE-MIT
 
 ~~~~
 Copyright (c) 2015 Steven Allen
@@ -27767,7 +27868,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ~~~~
 
-## Text 367: xcursor 0.3.11: LICENSE
+## Text 370: xcursor 0.3.11: LICENSE
 
 ~~~~
 MIT License
@@ -27793,7 +27894,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~~
 
-## Text 368: xkbcommon-dl 0.4.2: LICENSE
+## Text 371: xkbcommon-dl 0.4.2: LICENSE
 
 ~~~~
 The MIT License (MIT)
@@ -27819,7 +27920,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~~
 
-## Text 369: xkeysym 0.2.1: LICENSE-APACHE
+## Text 372: xkeysym 0.2.1: LICENSE-APACHE
 
 ~~~~
 Apache License
@@ -28025,7 +28126,7 @@ Apache License
    limitations under the License.
 ~~~~
 
-## Text 370: xkeysym 0.2.1: LICENSE-MIT
+## Text 373: xkeysym 0.2.1: LICENSE-MIT
 
 ~~~~
 Copyright (c) 2022-2023 John Nunley
@@ -28049,7 +28150,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~~
 
-## Text 371: xkeysym 0.2.1: LICENSE-ZLIB
+## Text 374: xkeysym 0.2.1: LICENSE-ZLIB
 
 ~~~~
 Copyright (c) 2022-2023 John Nunley
@@ -28065,7 +28166,7 @@ Permission is granted to anyone to use this software for any purpose, including 
 3. This notice may not be removed or altered from any source distribution.
 ~~~~
 
-## Text 372: xmlwriter 0.1.0: LICENSE
+## Text 375: xmlwriter 0.1.0: LICENSE
 
 ~~~~
 The MIT License (MIT)
@@ -28091,7 +28192,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~~
 
-## Text 373: yazi 0.2.1: LICENSE-MIT
+## Text 376: yazi 0.2.1: LICENSE-MIT
 
 ~~~~
 Copyright (c) 2020 Chad Brokaw
@@ -28115,7 +28216,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~~
 
-## Text 374: yeslogic-fontconfig-sys 6.0.1: LICENSE
+## Text 377: yeslogic-fontconfig-sys 6.0.1: LICENSE
 
 ~~~~
 The MIT License (MIT)
@@ -28144,7 +28245,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~~
 
-## Text 375: zbus 5.19.0: LICENSE
+## Text 378: zbus 5.19.0: LICENSE
 
 ~~~~
 Copyright (c) 2024 Zeeshan Ali Khan & zbus contributors
@@ -28174,7 +28275,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ~~~~
 
-## Text 376: zcheapstr 1.1.0: LICENSE
+## Text 379: zcheapstr 1.1.0: LICENSE
 
 ~~~~
 Copyright (c) 2026 Zeeshan Ali Khan & zcheapstr contributors
@@ -28204,7 +28305,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ~~~~
 
-## Text 377: zerocopy 0.8.63: LICENSE-APACHE
+## Text 380: zerocopy 0.8.63: LICENSE-APACHE
 
 ~~~~
 Apache License
@@ -28410,7 +28511,7 @@ Apache License
    limitations under the License.
 ~~~~
 
-## Text 378: zerocopy 0.8.63: LICENSE-BSD
+## Text 381: zerocopy 0.8.63: LICENSE-BSD
 
 ~~~~
 Copyright 2019 The Fuchsia Authors.
@@ -28439,7 +28540,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ~~~~
 
-## Text 379: zerocopy 0.8.63: LICENSE-MIT
+## Text 382: zerocopy 0.8.63: LICENSE-MIT
 
 ~~~~
 Copyright 2023 The Fuchsia Authors
@@ -28469,7 +28570,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ~~~~
 
-## Text 380: zeroize 1.9.1: LICENSE-MIT
+## Text 383: zeroize 1.9.1: LICENSE-MIT
 
 ~~~~
 Copyright (c) 2018-2026 The RustCrypto Project Developers
@@ -28499,7 +28600,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ~~~~
 
-## Text 381: zune-core 0.5.3: LICENSE-MIT
+## Text 384: zune-core 0.5.3: LICENSE-MIT
 
 ~~~~
 MIT License
@@ -28525,7 +28626,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~~
 
-## Text 382: zune-core 0.5.3: LICENSE-ZLIB
+## Text 385: zune-core 0.5.3: LICENSE-ZLIB
 
 ~~~~
 zlib License

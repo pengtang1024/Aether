@@ -83,11 +83,11 @@
 
 | 平台/形态 | 状态 |
 | --- | --- |
-| Linux x86_64 | **第一优先**；打包已通，插件待实现 |
+| Linux x86_64 | **第一优先**；打包已通，插件待实现；托盘走 Slint/ksni（SNI），仍要求宿主（GNOME 需 AppIndicator） |
 | Linux arm64 | **第一优先**；打包已通，插件待实现 |
-| Windows x86_64 | 次优先；打包已通，未签名 |
+| Windows x86_64 | 次优先；打包已通，未签名；托盘走 Slint（Shell_NotifyIcon） |
 | Windows arm64 | 次优先；打包已通，未签名 |
-| macOS universal | 次优先；打包已通，adhoc 未公证 |
+| macOS universal | 次优先；打包已通，adhoc 未公证；托盘已接入（Slint AppKit），菜单栏/关闭到托盘运行时待真机验证（CI 仅 check） |
 | Android / iOS | 不做（当前） |
 | Web / WASM | 不做（当前） |
 | Linux 32-bit / Windows 32-bit | 不做 |

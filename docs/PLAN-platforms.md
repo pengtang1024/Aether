@@ -78,7 +78,7 @@
      或统一改为「左键开菜单、双击/Activate 显示」。
   3. 菜单能力边界：当前只有「显示主窗口/退出」，无子菜单/勾选需求，风险低；
      但 Windows 原生菜单与自研 FFI 菜单的观感差异需确认。
-  4. 许可与供应链：ksni（MPL-2.0，deny.toml 已允许）、objc2（MIT/Apache-2.0）；
+  4. 许可与供应链：ksni（Unlicense/公有领域，已加入 deny.toml allow）、objc2（MIT/Apache-2.0）；
      需要重跑 `THIRD_PARTY_*` 生成脚本与 `cargo-deny`，并确认不与 Slint 锁定的
      objc2 版本冲突（只允许树内一套）。
   5. 二次启动唤回仍需自研（Linux `org.aether.UI` / Windows 命名事件）；macOS 走
@@ -204,3 +204,25 @@
 2. 0.5.0 是否接受「macOS 优先、Flatpak 实验性」的排序；若 Flatpak 必须一等支持，
    M2 从 1 周扩到 2 周。
 3. macOS 公证是否列入预算（当前按「不做」排期）。
+
+## 10. M0 实施记录（2026-11-02）
+
+- **决策**：选 A。`slint` 开启 `system-tray`，新增 `ui/tray.slint`
+  （`inherits SystemTrayIcon` + `Menu`），`src/tray.rs` 只保留窗口唤起、
+  宿主探测与二次启动端点；删除 `src/tray_sni.rs` 与 `src/tray_windows.rs`
+  （约 1.4k 行自研协议）。
+- **Linux 实测（Ubuntu GNOME + AppIndicator，真实 session bus）**：
+  ksni 注册 `org.kde.StatusNotifierItem-<pid>-1`；`GetLayout` 返回
+  显示主窗口/退出；`Event(clicked)` 触发显示与退出；`--silent` 下无窗口
+  且进程常驻（托盘 keepalive）；`org.aether.UI` 唤起可用；`lang=en` 启动时
+  菜单为 "Show main window"/"Quit"。
+- **Windows**：`x86_64-pc-windows-gnu` 交叉 check 通过；`available()` 用
+  `FindWindowW("Shell_TrayWnd")` 判断通知区域是否存在，无 shell 时不隐藏。
+- **macOS**：CI 仅 check（本机无 macOS）；AppKit 后端由 Slint 提供，
+  菜单栏/关闭到托盘待真机验证。模板图标（单色）与 LaunchServices reopen
+  唤起仍属 P0 后续。
+- **许可/门禁**：`cargo-deny` 增补 Unlicense（ksni）；三方清单 
+  `THIRD_PARTY_LICENSES.md`/`docs/THIRD_PARTY_INVENTORY.md` 已重新生成，
+  `make check-licenses` 通过。
+- **遗留（P0/P1）**：macOS 模板图标、`applicationShouldHandleReopen`、
+  公证外部门禁；Flatpak/BSD/无头按原里程碑继续。

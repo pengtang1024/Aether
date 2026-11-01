@@ -7,13 +7,13 @@
 > in [`LICENSES/`](../LICENSES/); exact versions are pinned by `Cargo.lock` and
 > the release CycloneDX SBOM.
 
-Total packages: **591**
+Total packages: **595**
 
 ## By license
 
 | License | Packages |
 | --- | ---: |
-| `MIT OR Apache-2.0` | 244 |
+| `MIT OR Apache-2.0` | 247 |
 | `MIT` | 135 |
 | `Apache-2.0 OR MIT` | 50 |
 | `Apache-2.0` | 27 |
@@ -51,6 +51,7 @@ Total packages: **591**
 | `MIT / Apache-2.0` | 1 |
 | `MIT AND BSD-3-Clause` | 1 |
 | `MPL-2.0` | 1 |
+| `Unlicense` | 1 |
 
 ## Packages
 
@@ -153,6 +154,7 @@ Total packages: **591**
 | `crossbeam-channel` | `0.5.17` | `MIT OR Apache-2.0` | linux/windows/macos | <https://github.com/crossbeam-rs/crossbeam> |
 | `crossbeam-deque` | `0.8.8` | `MIT OR Apache-2.0` | linux/windows/macos | <https://github.com/crossbeam-rs/crossbeam> |
 | `crossbeam-epoch` | `0.9.21` | `MIT OR Apache-2.0` | linux/windows/macos | <https://github.com/crossbeam-rs/crossbeam> |
+| `crossbeam-queue` | `0.3.14` | `MIT OR Apache-2.0` | linux | <https://github.com/crossbeam-rs/crossbeam> |
 | `crossbeam-utils` | `0.8.23` | `MIT OR Apache-2.0` | linux/windows/macos | <https://github.com/crossbeam-rs/crossbeam> |
 | `crypto-common` | `0.1.7` | `MIT OR Apache-2.0` | linux/windows/macos | <https://github.com/RustCrypto/traits> |
 | `ctor` | `0.10.1` | `Apache-2.0 OR MIT` | linux | <https://github.com/mmastrac/rust-ctor> |
@@ -297,6 +299,7 @@ Total packages: **591**
 | `itertools` | `0.15.0` | `MIT OR Apache-2.0` | linux/windows/macos | <https://github.com/rust-itertools/itertools> |
 | `itoa` | `1.0.18` | `MIT OR Apache-2.0` | linux/windows/macos | <https://github.com/dtolnay/itoa> |
 | `keyboard-types` | `0.7.0` | `MIT OR Apache-2.0` | windows/macos | <https://github.com/pyfisch/keyboard-types> |
+| `ksni` | `0.3.7` | `Unlicense` | linux | <https://github.com/iovxw/ksni> |
 | `kurbo` | `0.13.1` | `Apache-2.0 OR MIT` | linux/windows/macos | <https://github.com/linebender/kurbo> |
 | `lazy-regex` | `3.6.2` | `MIT` | linux/windows/macos | <https://github.com/Canop/lazy-regex> |
 | `lazy-regex-proc_macros` | `3.6.2` | `MIT` | linux/windows/macos | <https://github.com/Canop/lazy-regex/tree/main/src/proc_macros> |
@@ -384,6 +387,7 @@ Total packages: **591**
 | `parlance` | `0.1.1` | `Apache-2.0 OR MIT` | linux/windows/macos | <https://github.com/linebender/parley> |
 | `parley` | `0.11.1` | `Apache-2.0 OR MIT` | linux/windows/macos | <https://github.com/linebender/parley> |
 | `parley_data` | `0.11.1` | `Apache-2.0 OR MIT` | linux/windows/macos | <https://github.com/linebender/parley> |
+| `pastey` | `0.2.3` | `MIT OR Apache-2.0` | linux | <https://github.com/as1100k/pastey> |
 | `percent-encoding` | `2.3.2` | `MIT OR Apache-2.0` | linux/windows/macos | <https://github.com/servo/rust-url/> |
 | `petgraph` | `0.8.3` | `MIT OR Apache-2.0` | linux | <https://github.com/petgraph/petgraph> |
 | `phf` | `0.13.1` | `MIT` | linux | <https://github.com/rust-phf/rust-phf> |
@@ -519,6 +523,7 @@ Total packages: **591**
 | `tagptr` | `0.2.0` | `MIT/Apache-2.0` | linux/windows/macos | <https://github.com/oliver-giersch/tagptr.git> |
 | `tap` | `1.0.1` | `MIT` | linux/windows/macos | <https://github.com/myrrlyn/tap> |
 | `tar` | `0.4.46` | `MIT OR Apache-2.0` | linux/windows/macos | <https://github.com/composefs/tar-rs> |
+| `task-local` | `0.1.1` | `MIT OR Apache-2.0` | linux | <https://github.com/BugenZhao/task-local> |
 | `tauri-winrt-notification` | `0.8.1` | `MIT OR Apache-2.0` | windows | <https://github.com/tauri-apps/winrt-notification> |
 | `text-size` | `1.1.1` | `MIT OR Apache-2.0` | linux/windows/macos | <https://github.com/rust-analyzer/text-size> |
 | `thiserror` | `1.0.69` | `MIT OR Apache-2.0` | linux/windows/macos | <https://github.com/dtolnay/thiserror> |

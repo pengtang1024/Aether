@@ -2004,6 +2004,7 @@ fn main() -> Result<(), slint::PlatformError> {
                         st.prefs.lang = code.to_string();
                         st.prefs.save();
                         i18n::set_language(code);
+                        tray::refresh_language();
                         if let Err(error) = slint::select_bundled_translation(if code == "zh" {
                             ""
                         } else {
@@ -2164,6 +2165,7 @@ fn main() -> Result<(), slint::PlatformError> {
                         // now instead of leaving the runtime on the old value
                         // until the next launch.
                         i18n::set_language("zh");
+                        tray::refresh_language();
                         if let Err(error) = slint::select_bundled_translation("") {
                             eprintln!("aether: language selection failed: {error:?}");
                         }
@@ -2732,13 +2734,22 @@ fn main() -> Result<(), slint::PlatformError> {
     // Follow live desktop theme changes while the user chose "follow system".
     // System tray (Linux StatusNotifier / Windows Shell_NotifyIcon): best
     // effort — without a host it logs one line and the window keeps working
-    // as the only entry point. Only a *visible* tray earns close-to-tray:
+    // as the only entry point. Only a *live* tray earns close-to-tray:
     // closing then hides the window (the tray menu quits), while a session
-    // without a tray keeps the default where closing quits.
-    let tray_up = tray::start(ui.as_weak()).is_some();
+    // without a tray keeps the default where closing quits. One Slint
+    // `SystemTrayIcon` covers Linux (ksni), Windows (Shell_NotifyIcon) and
+    // macOS (NSStatusItem); the component itself is the loop keepalive.
+    let tray = if tray::available() {
+        tray::start(ui.as_weak(), true)
+    } else {
+        None
+    };
+    let tray_up = tray.is_some();
+    let _tray = tray;
     if tray_up {
         ui.window()
             .on_close_requested(|| slint::CloseRequestResponse::HideWindow);
+        tray::start_endpoint(ui.as_weak());
     }
 
     let theme_timer = Timer::default();
@@ -2764,22 +2775,15 @@ fn main() -> Result<(), slint::PlatformError> {
     if silent && !tray_up {
         eprintln!("aether: --silent requested but no system tray is available; showing the window");
     }
-    // A tray icon is a second entry point, so the window no longer decides
-    // when the process ends: closing it hides it (HideWindow above), and
-    // Slint's default "quit once the last window is hidden" rule would then
-    // end the loop — and the app — the moment the user closes the window.
-    // Keep the loop alive until the tray menu's 退出 calls quit_event_loop,
-    // for a normal launch as much as for `--silent`. Without a tray the
-    // window is the only entry point, so the default rule stays and closing
-    // it still quits.
+    // A visible tray keeps the event loop alive on its own, so closing the
+    // window can hide it (HideWindow above) and the process stays resident
+    // until the tray's 退出 calls quit_event_loop. Without a tray the window
+    // is the only entry point and the default rule (last window closed =
+    // quit) stays in force.
     if !launch::hide_on_start(silent, tray_up) {
         ui.show()?;
     }
-    if tray_up {
-        slint::run_event_loop_until_quit()
-    } else {
-        slint::run_event_loop()
-    }
+    slint::run_event_loop()
 }
 
 #[cfg(test)]

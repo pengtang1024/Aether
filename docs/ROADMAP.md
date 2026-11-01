@@ -280,6 +280,11 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
   避开）、busctl/gdbus 必须与 app 在同一 `dbus-run-session` 内否则查的
   是另一条 bus、私有 bus 的 portal 激活刷屏需过滤；gdbus 给 `v` 参数传
   空串 variant 写 `"<''>"`。
+- **托盘统一（2026-11-02）**：启用 Slint `system-tray`，用
+  `SystemTrayIcon` 一处覆盖 Linux（ksni）/Windows（Shell_NotifyIcon）/
+  macOS（NSStatusItem）；删除自研 `tray_sni.rs` 与 `tray_windows.rs`
+  （约 1.4k 行协议代码）。Linux 保留 watcher 探测决定「关闭=隐藏还是退出」，
+  `org.aether.UI` / 命名事件唤起保留；macOS 运行时待真机验证（CI 仅 check）。
 - **Windows 托盘已落地（2026-10-30）**：
   - `src/tray.rs` 重构为平台分发器（Linux 实现原样挪进 `src/tray_sni.rs`，
     一行逻辑没动）；Windows 走 `src/tray_windows.rs`——**零依赖 raw FFI**

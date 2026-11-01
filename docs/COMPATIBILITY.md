@@ -30,6 +30,14 @@ publish packages.
   PAC is evaluated in the Host (`rquickjs` sandbox) from a URL, `file://` path or
   inline script and passed to HTTP/media plugins per task; WPAD autodiscovery is
   still planned for P2.
+- **System tray.** One Slint `SystemTrayIcon` covers all platforms: Linux
+  StatusNotifierItem (ksni; needs a host — GNOME requires the AppIndicator
+  extension), Windows notification area, macOS `NSStatusItem`. On Linux
+  without a hosting watcher the icon stays unregistered and closing the window
+  keeps the default behaviour (quit) instead of hiding into nothing. The macOS
+  tray compiles in CI (check-only) but its menu-bar interaction is verified
+  manually; treat macOS tray bugs as runtime-only until a macOS runner can
+  drive the menu bar.
 - **Display servers.** Linux builds support Wayland and X11. The packages
   depend on the usual `libwayland`, `libxkbcommon`, `libx11` and `libgl1`/
   `libegl1` libraries; desktops normally provide them.

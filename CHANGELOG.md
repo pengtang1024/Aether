@@ -3,6 +3,20 @@
 All notable changes to Aether are documented here. Versions follow semantic
 versioning; 0.x releases may still change structure.
 
+## [Unreleased]
+
+### Changed
+
+- The system tray now comes from Slint's cross-platform `SystemTrayIcon`
+  (Linux StatusNotifierItem via ksni, Windows `Shell_NotifyIcon`, macOS
+  `NSStatusItem`) instead of the hand-written D-Bus and Win32 implementations.
+  macOS gains a tray (menu bar), the tray itself keeps the event loop alive
+  while the window is hidden, and roughly 1.4k lines of protocol code are
+  gone. The Linux `StatusNotifierWatcher` probe still decides whether close
+  hides or quits, and the second-launch endpoints are unchanged. The macOS
+  tray is compiled in CI but its menu-bar behaviour is still verified by hand
+  (no macOS runtime CI).
+
 ## [0.5.0] - 2026-11-02
 
 ### Added

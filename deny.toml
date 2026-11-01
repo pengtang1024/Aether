@@ -50,6 +50,9 @@ allow = [
     # on crates.io, so MPL-2.0 §3.2/§3.3 obligations are met by shipping the
     # text and keeping the source available (see THIRD_PARTY_NOTICES.md).
     "MPL-2.0",
+    # ksni (Slint's Linux tray backend) is public-domain (Unlicense); no
+    # attribution or source-disclosure obligations.
+    "Unlicense",
 ]
 exceptions = [
     # Slint: tri-licensed GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0

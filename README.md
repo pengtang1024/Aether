@@ -158,7 +158,7 @@ git push -u origin release/0.1.0
 | --- | --- | --- |
 | Linux x86_64 | `.deb` + `.AppImage` | `.deb` 安装到 `/usr`；AppImage 可移动 |
 | Windows x86_64 | `setup.exe` + portable `.zip` | 安装器含开始菜单/桌面快捷方式；随附 daemon/CLI/native-host 与全部第一方插件 |
-| macOS universal | `.dmg` | Apple Silicon + Intel；未签名，需右键打开 |
+| macOS universal | `.dmg` | Apple Silicon + Intel；未签名，需右键打开；托盘已接入，运行时待真机验证 |
 
 所有产物会附加到一个 **draft GitHub Release**（tag `v<version>`），确认后发布即可。构建只在
 release 分支进行，`main`/feature 提交不会产生包。每个包都必须携带 `LICENSE`、
@@ -359,12 +359,14 @@ Esc 关闭；下载空状态提供“清除筛选条件”，一次恢复全部�
   HTTP/2 开关、镜像加速、低速断开、连接总数、BT 的加密/PEX/LSD/做种比例
   （librqbit 不支持）、媒体转码与浏览器接管
 - 详情面板按图标设计，标签在悬停提示里；不展示真实分段图与 BT 节点
-- 系统托盘（Linux StatusNotifier、Windows 通知区域）、剪贴板链接检测与
-  四语言界面（简体中文/English/日本語/繁體中文）已落地；协议关联由安装包
-  注册
+- 系统托盘（Linux StatusNotifier、Windows 通知区域、macOS 菜单栏）统一由
+  Slint `SystemTrayIcon` 提供；Linux 仍要求 StatusNotifier 宿主（GNOME 需
+  AppIndicator 扩展），macOS 菜单栏行为 CI 仅编译、运行时待真机验证。
+  剪贴板链接检测与四语言界面（简体中文/English/日本語/繁體中文）已落地；
+  协议关联由安装包注册
 - 单实例（第二次启动经托盘端点唤起已有窗口；端点不可用时才提示后退出）、
   关闭到托盘（有托盘时关闭窗口=隐藏，托盘菜单退出；无托盘时关闭=退出）、
-  托盘宿主重启后自动重新注册图标、开机自启（Linux XDG
+  托盘宿主重启后由托盘后端（ksni）重新注册图标、开机自启（Linux XDG
   autostart / Windows HKCU Run / macOS LaunchAgent）均为真实系统集成；
   开机自启开关显示操作系统里的真实状态，写失败会回弹并说明原因
 - 静默启动：自启项带 `--silent`（别名 `--minimized`），登录后驻留托盘继续
