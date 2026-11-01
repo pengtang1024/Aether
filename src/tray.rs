@@ -63,26 +63,199 @@ fn apply_language(tray: &Tray) {
 /// requested by a background process; that is the compositor's call.
 pub(crate) fn present(ui: &crate::AppWindow) {
     let window = ui.window();
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let wayland = wayland_session();
+    #[cfg(any(windows, target_os = "macos"))]
+    let wayland = false;
+
+    if wayland {
+        // Wayland surfaces created at startup are 0x0 and cannot be re-sized
+        // into a mapped window, and winit cannot unminimize either. Give the
+        // surface the model size, then drop and recreate it so the compositor
+        // gets a fresh, mappable toplevel.
+        let size = window.size();
+        if !window.is_visible() {
+            window.set_size(size);
+        }
+        let _ = window.show();
+        let _ = window.hide();
+    }
     let _ = window.show();
-    if raise_now(&window) {
+
+    if !wayland {
+        // X11 and Windows un-minimize and focus synchronously.
+        let _ = raise_now(&window);
         return;
     }
-    // Wayland destroys a hidden window and Slint recreates it on a later
-    // event-loop turn, so the winit window does not exist yet. One retry, on
-    // a thread-local timer (the handle must outlive this call), lands after
-    // the window is back.
+
+    // Wayland: xdg-activation is asynchronous and focus-stealing prevention
+    // may ignore a request sent before the new surface is mapped, so keep
+    // asking until the window reports focus (bounded).
+    present_attempt(ui.as_weak(), 0);
+}
+
+/// One delayed show/focus attempt. The first lands after the recreate; later
+/// attempts only run while the window still reports no focus.
+fn present_attempt(window: slint::Weak<crate::AppWindow>, attempt: u8) {
     PRESENT_TIMER.with(|timer| {
-        let window = ui.as_weak();
+        let weak = window.clone();
         timer.start(
             slint::TimerMode::SingleShot,
-            Duration::from_millis(150),
+            Duration::from_millis(if attempt == 0 { 250 } else { 400 }),
             move || {
-                if let Some(ui) = window.upgrade() {
-                    let _ = raise_now(&ui.window());
+                let Some(ui) = weak.upgrade() else {
+                    return;
+                };
+                let window = ui.window();
+                let _ = window.show();
+                let _ = raise_now(&window);
+                #[cfg(all(unix, not(target_os = "macos")))]
+                if attempt == 1 {
+                    gnome_raise();
+                }
+                if attempt < 3 {
+                    present_attempt(ui.as_weak(), attempt + 1);
                 }
             },
         );
     });
+}
+
+/// Is this process drawing through Wayland (not X11/XWayland)?
+#[cfg(all(unix, not(target_os = "macos")))]
+pub(crate) fn wayland_session() -> bool {
+    std::env::var_os("WAYLAND_DISPLAY").is_some()
+        && std::env::var_os("WINIT_UNIX_BACKEND").is_none_or(|backend| backend != "x11")
+}
+
+/// X11 close-to-tray must minimize instead of unmap: winit's X11 event loop
+/// panics ("Failed to unfocus input context", BadWindow) when the last window
+/// is hidden while an input context is focused. A minimized window stays
+/// mapped, and X11 can unminimize it again from the tray.
+pub fn minimize_on_close() -> bool {
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        !wayland_session()
+    }
+    #[cfg(any(windows, target_os = "macos"))]
+    {
+        false
+    }
+}
+
+/// GNOME/Wayland refuses to focus or raise a background app on its own:
+/// winit's `focus_window` is a no-op and an xdg-activation request without an
+/// input serial is ignored. The Window Calls shell extension exposes the
+/// privileged window operations, so when it is installed the window is put on
+/// top of the stack until the user actually focuses it. Best effort: every
+/// failure is ignored and the window stays where the compositor put it.
+#[cfg(all(unix, not(target_os = "macos")))]
+fn gnome_available() -> bool {
+    wayland_session()
+        && std::env::var("XDG_CURRENT_DESKTOP")
+            .map(|desktop| desktop.to_ascii_lowercase().contains("gnome"))
+            .unwrap_or(false)
+}
+
+/// The Window Calls extension's current window list.
+#[cfg(all(unix, not(target_os = "macos")))]
+fn gnome_windows(conn: &zbus::blocking::Connection) -> Option<Vec<serde_json::Value>> {
+    const SHELL: &str = "org.gnome.Shell";
+    const PATH: &str = "/org/gnome/Shell/Extensions/Windows";
+    const IFACE: &str = "org.gnome.Shell.Extensions.Windows";
+
+    let reply = conn
+        .call_method(Some(SHELL), PATH, Some(IFACE), "List", &())
+        .ok()?;
+    let body = reply.body();
+    let json: String = body.deserialize().ok()?;
+    serde_json::from_str(&json).ok()
+}
+
+/// The MetaWindow id of this process, as the shell sees it.
+#[cfg(all(unix, not(target_os = "macos")))]
+fn gnome_window_id(conn: &zbus::blocking::Connection) -> Option<u32> {
+    let pid = std::process::id() as u64;
+    gnome_windows(conn)?
+        .iter()
+        .find(|window| window["pid"].as_u64() == Some(pid))
+        .and_then(|window| window["id"].as_u64())
+        .map(|id| id as u32)
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn gnome_call(conn: &zbus::blocking::Connection, method: &str, id: u32) {
+    const SHELL: &str = "org.gnome.Shell";
+    const PATH: &str = "/org/gnome/Shell/Extensions/Windows";
+    const IFACE: &str = "org.gnome.Shell.Extensions.Windows";
+
+    let _ = conn.call_method(Some(SHELL), PATH, Some(IFACE), method, &(id,));
+}
+
+/// Put the window on top until the user focuses it (or two minutes pass).
+#[cfg(all(unix, not(target_os = "macos")))]
+fn gnome_raise() {
+    if !gnome_available() {
+        return;
+    }
+    // The D-Bus round trips run off the UI thread: a wedged shell must never
+    // freeze the event loop.
+    std::thread::spawn(|| {
+        let Ok(conn) = zbus::blocking::Connection::session() else {
+            return;
+        };
+        // The surface is recreated on a later event-loop turn; wait for it to
+        // show up in the shell's window list before raising it.
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        let id = loop {
+            if let Some(id) = gnome_window_id(&conn) {
+                break id;
+            }
+            if std::time::Instant::now() >= deadline {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(150));
+        };
+        gnome_call(&conn, "MakeAbove", id);
+        // Stay above only until the user actually focuses the window; if that
+        // never happens, drop the flag after two minutes rather than leaving
+        // the window always-on-top forever.
+        let give_up = std::time::Instant::now() + Duration::from_secs(120);
+        while std::time::Instant::now() < give_up {
+            std::thread::sleep(Duration::from_secs(1));
+            let Some(window) = gnome_windows(&conn).and_then(|windows| {
+                windows
+                    .into_iter()
+                    .find(|w| w["id"].as_u64() == Some(id as u64))
+            }) else {
+                return;
+            };
+            if window["focus"].as_bool().unwrap_or(false) {
+                gnome_call(&conn, "UnmakeAbove", id);
+                return;
+            }
+        }
+        gnome_call(&conn, "UnmakeAbove", id);
+    });
+}
+
+/// Drop the temporary always-on-top flag (window closed or hidden).
+pub fn release_above() {
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        if !gnome_available() {
+            return;
+        }
+        std::thread::spawn(|| {
+            let Ok(conn) = zbus::blocking::Connection::session() else {
+                return;
+            };
+            if let Some(id) = gnome_window_id(&conn) {
+                gnome_call(&conn, "UnmakeAbove", id);
+            }
+        });
+    }
 }
 
 /// Un-minimize and ask for focus; `false` = no winit window exists (yet).
@@ -92,6 +265,15 @@ fn raise_now(window: &slint::Window) -> bool {
     window
         .with_winit_window(|winit_window| {
             winit_window.set_minimized(false);
+            // winit's `focus_window` is a no-op on Wayland; its user-attention
+            // request goes through xdg-activation, which is the only way a
+            // background app can ask GNOME to raise/focus the window.
+            #[cfg(all(unix, not(target_os = "macos")))]
+            if wayland_session() {
+                winit_window.request_user_attention(Some(
+                    slint::winit_030::winit::window::UserAttentionType::Critical,
+                ));
+            }
             winit_window.focus_window();
         })
         .is_some()

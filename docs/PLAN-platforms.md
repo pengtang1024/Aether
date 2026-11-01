@@ -224,5 +224,13 @@
 - **许可/门禁**：`cargo-deny` 增补 Unlicense（ksni）；三方清单 
   `THIRD_PARTY_LICENSES.md`/`docs/THIRD_PARTY_INVENTORY.md` 已重新生成，
   `make check-licenses` 通过。
+- **Wayland 唤起补丁（同日，实机验证）**：`--silent` 启动的窗口是 0x0 表面，
+  首次 `show()` 会复用它而不映射；现在先按模型尺寸 `set_size` 再重建表面，
+  并做有界的 show/focus 重试。GNOME 忽略无输入序列的 xdg-activation，
+  因此当 Window Calls 扩展存在时用它的 `MakeAbove` 把窗口置顶直到用户聚焦
+  （2 分钟后兜底取消）；无扩展时层级由合成器决定。X11 关闭改为最小化，
+  绕开 winit 在隐藏聚焦窗口时的 `BadWindow` panic。**上游缺口**：Slint 的
+  `SystemTrayIcon` 没有把 `ProvideXdgActivationToken` 的 token 交给窗口，
+  winit 也无法对既有窗口应用 token——这是后续应向 Slint 反馈的点。
 - **遗留（P0/P1）**：macOS 模板图标、`applicationShouldHandleReopen`、
   公证外部门禁；Flatpak/BSD/无头按原里程碑继续。

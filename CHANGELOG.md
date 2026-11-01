@@ -17,6 +17,21 @@ versioning; 0.x releases may still change structure.
   tray is compiled in CI but its menu-bar behaviour is still verified by hand
   (no macOS runtime CI).
 
+### Fixed
+
+- Showing the window from the tray after `--silent` or close-to-tray works on
+  Wayland again: the surface created at startup is 0x0, so the first show
+  reused an unmapped window. The window is now sized and its surface
+  recreated, and the follow-up show/focus retries cover the asynchronous
+  remap.
+- GNOME/Wayland ignores self-issued xdg-activation requests, so a background
+  window stayed behind other windows. When the Window Calls shell extension is
+  installed the window is put on top until the user focuses it (best effort;
+  without the extension the compositor still decides placement).
+- X11 close-to-tray now minimizes instead of hiding the window: winit's X11
+  backend panics (`Failed to unfocus input context`, BadWindow) when a focused
+  window is hidden, and X11 can unminimize it again from the tray.
+
 ## [0.5.0] - 2026-11-02
 
 ### Added

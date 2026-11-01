@@ -2747,8 +2747,25 @@ fn main() -> Result<(), slint::PlatformError> {
     let tray_up = tray.is_some();
     let _tray = tray;
     if tray_up {
-        ui.window()
-            .on_close_requested(|| slint::CloseRequestResponse::HideWindow);
+        let close_ui = ui.as_weak();
+        ui.window().on_close_requested(move || {
+            tray::release_above();
+            // X11: minimize instead of unmap (winit panics on hiding a focused
+            // window there); the tray restores it with set_minimized(false).
+            if tray::minimize_on_close() {
+                if let Some(ui) = close_ui.upgrade() {
+                    use slint::winit_030::WinitWindowAccessor;
+                    let window = ui.window();
+                    if window.has_winit_window() {
+                        window.with_winit_window(|winit_window| {
+                            winit_window.set_minimized(true);
+                        });
+                        return slint::CloseRequestResponse::KeepWindowShown;
+                    }
+                }
+            }
+            slint::CloseRequestResponse::HideWindow
+        });
         tray::start_endpoint(ui.as_weak());
     }
 

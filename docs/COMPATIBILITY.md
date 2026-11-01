@@ -37,7 +37,12 @@ publish packages.
   keeps the default behaviour (quit) instead of hiding into nothing. The macOS
   tray compiles in CI (check-only) but its menu-bar interaction is verified
   manually; treat macOS tray bugs as runtime-only until a macOS runner can
-  drive the menu bar.
+  drive the menu bar. On GNOME/Wayland a background app cannot focus or raise
+  itself; the window is sized and recreated (a 0x0 startup surface is never
+  mappable), and when the Window Calls extension is available it is put on top
+  until the user focuses it. Without that extension the compositor decides
+  placement, so the window may stay behind. On X11 the close button minimizes
+  instead of unmapping (winit panics when hiding a focused X11 window).
 - **Display servers.** Linux builds support Wayland and X11. The packages
   depend on the usual `libwayland`, `libxkbcommon`, `libx11` and `libgl1`/
   `libegl1` libraries; desktops normally provide them.
