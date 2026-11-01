@@ -11,6 +11,8 @@
   （配置目录不可用等环境问题 → 照常启动，双开好过不开）。
 - 第二实例：`send_notification("Aether 已在运行", "请使用已经打开的窗口")`
   后 `return Ok(())`。**不做窗口唤起**（需 UI 级 IPC/窗口枚举）——诚实记录。
+  后续（2026-11-01）：已补窗口唤起——主实例在托盘可用时导出
+  `org.aether.UI`（Windows 为同名事件），第二实例先调它再决定是否发通知。
 - 锁冲突判定：unix WouldBlock；Windows fs2 报 ERROR_LOCK_VIOLATION(33)。
 - 测试：同进程两次 acquire_at 第二次 AlreadyRunning，drop 后可再取；
   CI Windows bin 测试也跑（LockFileEx 跨句柄冲突）。

@@ -25,11 +25,15 @@ AppIndicator 扩展、无 StatusNotifier host、Windows 通知区域被拒、mac
 
 ## 3. 事件循环
 
-- 可见启动：`ui.show()` + `slint::run_event_loop()`（与原先 `ui.run()` 等价）。
-- 静默启动：`slint::run_event_loop_until_quit()`。没有可见窗口时不能用
-  「最后一个窗口关闭即退出」的默认语义；循环必须活到托盘菜单调用
-  `quit_event_loop()`。窗口被托盘唤出后再关闭，仍是隐藏（`HideWindow`），
-  不退出。
+- **有真实托盘（可见启动与 `--silent` 相同）**：`slint::run_event_loop_until_quit()`。
+  关闭窗口走 `HideWindow`；Slint 1.18 在最后一个可见窗口隐藏时
+  `release_keepalive` 归零并调用 `quit_event_loop()`，所以默认的
+  `run_event_loop()` 会把「关闭到托盘」变成**直接退出进程**——可见启动
+  同样中招（0.4.0 前的实际行为）。循环必须活到托盘菜单调用
+  `quit_event_loop()`。
+- **无托盘**：`ui.show()` + `slint::run_event_loop()`。窗口是唯一入口，
+  关闭即退出（默认语义），绝不把进程藏进看不见的地方。
+- 静默启动只是跳过 `ui.show()`，事件循环的选法不再随启动参数变化。
 
 ## 4. 开机自启集成
 

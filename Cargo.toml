@@ -62,6 +62,9 @@ slint = { version = "1.18", default-features = false, features = [
     "compat-1-2",
     # AccessKit bridge: screen readers can see roles, labels and values.
     "accessibility",
+    # `WinitWindowAccessor`: the tray's "show" must also un-minimize and ask
+    # the compositor for focus; `Window::show()` alone cannot do either.
+    "unstable-winit-030",
 ] }
 
 # The StatusNotifierItem tray speaks D-Bus — unix only. Windows gets a
@@ -78,6 +81,9 @@ notify-rust = "4"
 
 [build-dependencies]
 slint-build = "1.18"
+
+[profile.dev.package.aether]
+opt-level = "z"
 
 [profile.release]
 opt-level = 3

@@ -23,8 +23,9 @@
 use std::cell::RefCell;
 use std::ffi::c_void;
 use std::mem::size_of;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc;
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
@@ -166,6 +167,16 @@ extern "system" {
 extern "system" {
     fn GetModuleHandleW(lp_module: *const u16) -> Handle;
     fn GetModuleFileNameW(h_module: Handle, lp_filename: *mut u16, n_size: u32) -> u32;
+    fn CreateEventW(
+        lp_event_attributes: *const c_void,
+        b_manual_reset: i32,
+        b_initial_state: i32,
+        lp_name: *const u16,
+    ) -> Handle;
+    fn OpenEventW(dw_desired_access: u32, b_inherit_handle: i32, lp_name: *const u16) -> Handle;
+    fn SetEvent(h_event: Handle) -> i32;
+    fn WaitForSingleObject(h_handle: Handle, dw_milliseconds: u32) -> u32;
+    fn CloseHandle(h_object: Handle) -> i32;
 }
 
 const NIM_ADD: u32 = 0x0000_0000;
@@ -182,6 +193,18 @@ const WM_LBUTTONDBLCLK: u32 = 0x0203;
 const WM_RBUTTONUP: u32 = 0x0205;
 /// `WM_APP + 1`: our `uCallbackMessage`; v0 semantics (LOWORD = mouse msg).
 const CALLBACK_MESSAGE: u32 = 0x8000 + 1;
+/// `WM_APP + 2`: a second launch asked for the window.
+const SUMMON_MESSAGE: u32 = 0x8000 + 2;
+
+/// Session-local named event the running tray waits on (auto-reset).
+const SUMMON_EVENT: &str = "aether-ui-summon";
+const EVENT_MODIFY_STATE: u32 = 0x0002;
+const INFINITE: u32 = 0xFFFF_FFFF;
+const WAIT_OBJECT_0: u32 = 0;
+
+/// Startup waits this long for the shell to accept the icon. A wedged shell
+/// must not freeze the window beyond it.
+const HANDSHAKE: Duration = Duration::from_secs(5);
 
 const CMD_SHOW: u32 = 1001;
 const CMD_QUIT: u32 = 1002;
@@ -230,20 +253,45 @@ static CLASS_SEQ: AtomicU32 = AtomicU32::new(0);
 /// (the reason is logged once, mirroring the unix path) and the window
 /// stays the only entry point.
 pub fn start(hooks: Hooks) -> Option<()> {
+    // A timed-out handshake must not leave an icon behind later: the app has
+    // already decided "no tray" (close = quit), so the thread is told to drop
+    // the icon it managed to add.
+    let cancel = Arc::new(AtomicBool::new(false));
+    let tray_cancel = cancel.clone();
     let (ready_tx, ready_rx) = mpsc::channel();
-    thread::spawn(move || run(hooks, ready_tx));
-    match ready_rx.recv_timeout(Duration::from_secs(5)) {
+    thread::spawn(move || run(hooks, tray_cancel, ready_tx));
+    match ready_rx.recv_timeout(HANDSHAKE) {
         Ok(Ok(())) => Some(()),
         Ok(Err(error)) => {
             eprintln!("aether: no system tray ({error})");
             None
         }
         // Setup wedged before reporting — same honest "no tray" as above.
-        Err(_) => None,
+        Err(_) => {
+            cancel.store(true, Ordering::SeqCst);
+            eprintln!(
+                "aether: no system tray (no answer within {}s)",
+                HANDSHAKE.as_secs()
+            );
+            None
+        }
     }
 }
 
-fn run(hooks: Hooks, ready: mpsc::Sender<Result<(), String>>) {
+/// Ask the running tray to surface its window. `false` = no running tray
+/// endpoint (the caller then shows the "already running" toast).
+pub fn summon() -> bool {
+    let name = wide(SUMMON_EVENT);
+    let event = unsafe { OpenEventW(EVENT_MODIFY_STATE, 0, name.as_ptr()) };
+    if event.is_null() {
+        return false;
+    }
+    let set = unsafe { SetEvent(event) } != 0;
+    let _ = unsafe { CloseHandle(event) };
+    set
+}
+
+fn run(hooks: Hooks, cancel: Arc<AtomicBool>, ready: mpsc::Sender<Result<(), String>>) {
     let Some(h_wnd) = create_window() else {
         let _ = ready.send(Err("window creation failed".into()));
         return;
@@ -264,7 +312,20 @@ fn run(hooks: Hooks, ready: mpsc::Sender<Result<(), String>>) {
         let _ = ready.send(Err("the shell refused the icon".into()));
         return;
     }
+    if cancel.load(Ordering::SeqCst) {
+        // The startup handshake timed out while the icon was being added;
+        // WM_DESTROY removes it again and posts the quit.
+        let _ = unsafe { DestroyWindow(h_wnd) };
+        return;
+    }
     let _ = ready.send(Ok(()));
+    if cancel.load(Ordering::SeqCst) {
+        // Timed out just as the icon landed: drop it rather than let a
+        // second launch summon a window whose tray the app does not trust.
+        let _ = unsafe { DestroyWindow(h_wnd) };
+        return;
+    }
+    install_summon(h_wnd);
     // Own the loop: GetMessageW returns >0 per message, 0 on WM_QUIT
     // (posted from WM_DESTROY once the icon is gone).
     loop {
@@ -278,6 +339,37 @@ fn run(hooks: Hooks, ready: mpsc::Sender<Result<(), String>>) {
             DispatchMessageW(&msg);
         }
     }
+}
+
+/// A second launch sets this named event; the waiter thread turns it into a
+/// window message so the callback stays on the tray thread.
+fn install_summon(h_wnd: Handle) {
+    let name = wide(SUMMON_EVENT);
+    let event = unsafe { CreateEventW(std::ptr::null(), 0, 0, name.as_ptr()) };
+    if event.is_null() {
+        eprintln!(
+            "aether: no second-launch summon ({})",
+            std::io::Error::last_os_error()
+        );
+        return;
+    }
+    let h_wnd = h_wnd as isize;
+    // Raw handles are not `Send`; the integer round-trip is what lets the
+    // waiter live on its own thread (the handle itself stays valid until the
+    // process exits).
+    let event = event as isize;
+    thread::spawn(move || {
+        let h_wnd = h_wnd as Handle;
+        let event = event as Handle;
+        loop {
+            if unsafe { WaitForSingleObject(event, INFINITE) } != WAIT_OBJECT_0 {
+                return;
+            }
+            unsafe {
+                PostMessageW(h_wnd, SUMMON_MESSAGE, 0, 0);
+            }
+        }
+    });
 }
 
 /// Register a per-start class and create the message-only window. The
@@ -335,7 +427,10 @@ fn add_icon(h_wnd: Handle, h_icon: Handle) -> bool {
     data.u_flags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
     data.u_callback_message = CALLBACK_MESSAGE;
     data.h_icon = h_icon;
-    let tip = wide("Aether 下载管理器");
+    let tip = wide(&crate::i18n::tr(
+        "Aether 下载管理器",
+        "Aether Download Manager",
+    ));
     let copy = tip.len().min(data.sz_tip.len() - 1);
     data.sz_tip[..copy].copy_from_slice(&tip[..copy]);
     data.sz_tip[copy] = 0;
@@ -398,7 +493,7 @@ fn load_icon(instance: Handle) -> (Handle, bool) {
 /// DestroyWindow, which re-enters here for WM_DESTROY.
 extern "system" fn wnd_proc(h_wnd: Handle, message: u32, w_param: usize, l_param: isize) -> isize {
     match message {
-        WM_LBUTTONUP | WM_LBUTTONDBLCLK => {
+        WM_LBUTTONUP | WM_LBUTTONDBLCLK | SUMMON_MESSAGE => {
             with_hooks(|hooks| (hooks.on_show)());
             0
         }
@@ -457,8 +552,8 @@ fn show_menu(h_wnd: Handle) {
     if menu.is_null() {
         return;
     }
-    let show_label = wide("显示主窗口");
-    let quit_label = wide("退出");
+    let show_label = wide(&crate::i18n::tr("显示主窗口", "Show main window"));
+    let quit_label = wide(&crate::i18n::tr("退出", "Quit"));
     let command = unsafe {
         AppendMenuW(menu, MF_STRING, CMD_SHOW as usize, show_label.as_ptr());
         AppendMenuW(menu, MF_STRING, CMD_QUIT as usize, quit_label.as_ptr());

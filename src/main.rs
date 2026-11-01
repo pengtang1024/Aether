@@ -1374,13 +1374,18 @@ fn main() -> Result<(), slint::PlatformError> {
     // (dropping it releases the lock).
     let _instance = match instance::acquire() {
         instance::Acquired::AlreadyRunning => {
-            send_notification(
-                &i18n::tr("Aether 已在运行", "Aether is already running"),
-                &i18n::tr(
-                    "请使用已经打开的窗口",
-                    "Use the window that is already open",
-                ),
-            );
+            // The primary instance exposes its window through the tray
+            // endpoint; only when that endpoint is missing (no tray, no
+            // session bus) does the old "already running" toast remain.
+            if !tray::summon_existing() {
+                send_notification(
+                    &i18n::tr("Aether 已在运行", "Aether is already running"),
+                    &i18n::tr(
+                        "请使用已经打开的窗口",
+                        "Use the window that is already open",
+                    ),
+                );
+            }
             return Ok(());
         }
         other => other,
@@ -2759,12 +2764,20 @@ fn main() -> Result<(), slint::PlatformError> {
     if silent && !tray_up {
         eprintln!("aether: --silent requested but no system tray is available; showing the window");
     }
-    if launch::hide_on_start(silent, tray_up) {
-        // Nothing is visible, so the loop must survive "the last window was
-        // closed" and quit only when the tray menu asks it to.
+    // A tray icon is a second entry point, so the window no longer decides
+    // when the process ends: closing it hides it (HideWindow above), and
+    // Slint's default "quit once the last window is hidden" rule would then
+    // end the loop — and the app — the moment the user closes the window.
+    // Keep the loop alive until the tray menu's 退出 calls quit_event_loop,
+    // for a normal launch as much as for `--silent`. Without a tray the
+    // window is the only entry point, so the default rule stays and closing
+    // it still quits.
+    if !launch::hide_on_start(silent, tray_up) {
+        ui.show()?;
+    }
+    if tray_up {
         slint::run_event_loop_until_quit()
     } else {
-        ui.show()?;
         slint::run_event_loop()
     }
 }
