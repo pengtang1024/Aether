@@ -1,11 +1,11 @@
 {
   "id": "aria2",
   "name": "aria2 RPC Compatibility",
-  "version": "0.2.2",
+  "version": "0.4.0",
   "api": 2,
   "kind": "service",
   "service": "aria2",
-  "min_host": "0.2.2",
+  "min_host": "0.4.0",
   "protocols": [],
   "capabilities": [],
   "executable": {

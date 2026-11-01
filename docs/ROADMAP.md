@@ -1,11 +1,13 @@
 # 路线图与会话交接
 
 > 面向后续会话/贡献者：现在在哪、下一步做什么、怎么做、别踩哪些坑。
-> 最后更新：2026-10-31（main @ `2e94d9f`，0.2.2 已发布）。历史盲区清单见 `GAP_AUDIT.md`，
+> 最后更新：2026-11-01（main @ 0.4.0 发布提交，0.4.0 已发布）。历史盲区清单见 `GAP_AUDIT.md`，
 > 本文跟踪其中已完成的部分与剩余特性的具体方案。
 
 ## 1. 当前状态
 
+- **0.4.0 已发布**（tag v0.4.0，2026-11-01）：服务生命周期统一、aria2 兼容硬化、
+  下载可靠性、UI detail、API 2。
 - **0.2.2 已发布**（tag v0.2.2，2026-10-30）。检查更新现在会弹出最终结果
   （最新/可下载/已下载/错误，含 150s 超时保护）；0.2.1 于同日发布，带来设置页
   诚实化、RPC 配置与真实更新检查。0.2.0 之后合入的波次：
@@ -36,6 +38,7 @@
 | `6ca28b8` | 设置开关全部改双向绑定（计划/自启回弹可见）、高级页新增 RPC 配置（监听/令牌/清除/状态），TCP + token 实测 |
 | `2e94d9f` | 0.2.2 发版：检查更新完成后 toast 最终状态（此前只有小字变化）；Linux deb/AppImage + Windows 产物，macOS DMG 构建失败缺席 |
 | `ef9c4f0` | 0.2.1 发版：版本号、release notes、签名清单；Linux deb/AppImage + Windows 产物，macOS DMG 因 runner 取消缺席 |
+| v0.4.0 | 0.4.0 发版：ServiceSupervisor 统一 service 生命周期、aria2 HTTP/WS 兼容硬化（addTorrent/addMetalink 持久 blob、changeOption/changePosition、getPeers、saveSession、keep-alive、整任务镜像 failover）、下载崩溃恢复/暂停状态/任务级 SHA-256/跨盘 staging/finalize 两阶段、UI BT detail 与插件 service 状态、插件协议 API 2、法务/依赖安全波次 |
 | `582faa8` | 设置页逐项审查：`update_check` RPC + `app_auto_update` 键（自动下载开关成真）、关于页真实打开文档/社区/反馈/版本说明/许可、PAC 回弹、重置补语言与主题；新增 `docs/SETTINGS_AUDIT.md` |
 
 - **设置页现状**：10 个分类中每个控件要么真实生效、要么是诚实的能力说明卡，

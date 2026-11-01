@@ -152,7 +152,7 @@ fn spawn_with_downloaders(with_bt_http: bool) -> Option<Daemon> {
         download_dir,
         plugins_dir: root.join("plugins"),
         socket: socket.clone(),
-        host_version: "0.2.2".into(),
+        host_version: "0.4.0".into(),
         update_url: None,
         update_public_key: None,
         update_appimage: None,

@@ -3,7 +3,7 @@
   "name": "yt-dlp Extractor",
   "version": "0.1.0",
   "api": 2,
-  "min_host": "0.2.0",
+  "min_host": "0.4.0",
   "protocols": ["extractor"],
   "capabilities": ["network", "filesystem:task", "external-process"],
   "executable": {

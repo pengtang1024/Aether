@@ -3,7 +3,7 @@
   "name": "HTTP / HTTPS Downloader",
   "version": "0.1.0",
   "api": 2,
-  "min_host": "0.2.0",
+  "min_host": "0.4.0",
   "protocols": ["http", "https", "metalink"],
   "capabilities": ["network", "filesystem:task"],
   "executable": {

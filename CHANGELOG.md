@@ -3,7 +3,7 @@
 All notable changes to Aether are documented here. Versions follow semantic
 versioning; 0.x releases may still change structure.
 
-## [Unreleased]
+## [0.4.0] - 2026-11-01
 
 ### Download reliability
 

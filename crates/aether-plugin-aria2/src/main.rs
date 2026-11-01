@@ -22,7 +22,7 @@ use blobs::BlobStore;
 use client::DaemonClient;
 
 const PLUGIN_ID: &str = "aria2";
-const PLUGIN_VERSION: &str = "0.2.2";
+const PLUGIN_VERSION: &str = "0.4.0";
 
 struct Aria2Plugin {
     socket: Option<String>,
