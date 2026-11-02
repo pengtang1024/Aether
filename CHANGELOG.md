@@ -3,7 +3,41 @@
 All notable changes to Aether are documented here. Versions follow semantic
 versioning; 0.x releases may still change structure.
 
-## [Unreleased]
+## [0.6.0] - 2026-11-02
+
+**A pluginization release: the UI and daemon now behave as a controller and a
+display. Plugin settings, behaviour tags and task details all come from the
+manifest instead of hardcoded plugin ids.**
+
+### Added
+
+- **Per-plugin settings, end to end.** A manifest may declare `settings_schema`
+  (`sections[].fields[]` with `bool`/`int`/`float`/`string`/`select`/`path`/
+  `secret`/`multiline`, plus `default`/`min`/`max`/`options`). The daemon
+  validates every write against that schema and stores it in the existing
+  `plugin_settings` table (0600 SQLite); `get_plugin_settings` /
+  `set_plugin_settings` and `aether-cli remote plugin-settings` /
+  `set-plugin-settings` expose it. Stored values are applied as a default layer
+  when a task is added, so per-task `settings` still win.
+- **Settings dialog in the plugin list.** Rows whose plugin declares at least one
+  field get a configure button; the modal renders bool as a switch, select as a
+  combo box, secrets masked, and shows defaults as placeholders. A parse error
+  keeps the dialog open instead of sending a half-typed number.
+- **`features` tags on manifests.** Free-form controller tags that grant no
+  permission: BitTorrent declares `torrent`, and the speed-limit refusal and the
+  torrent badge now key off the tag instead of `plugin_id == "bt"`. A new plugin
+  of the same kind behaves identically without touching Rust.
+- **Schema-driven task drawer.** The daemon ships each plugin's `detail_schema`
+  to the UI; the drawer renders `metrics` (label/value rows) and `peers`
+  (scrolling table) in schema order for the task's own plugin, skipping `logs`
+  and unknown section types. The HTTP plugin now emits a 1 Hz `Detail`
+  payload (speed, ETA, size), so HTTP tasks get the same detail rows BT had.
+- **Clipboard detection follows the plugins.** Link detection accepts the
+  schemes the daemon's installed plugins declare (`ipfs`, `s3`, …) instead of a
+  hardcoded list, falling back to the built-in default when the daemon is
+  unavailable.
+- `aether-daemon --help` now prints every flag instead of silently falling
+  through to "daemon is already running".
 
 ### Changed
 
@@ -16,9 +50,27 @@ versioning; 0.x releases may still change structure.
   hides or quits, and the second-launch endpoints are unchanged. The macOS
   tray is compiled in CI but its menu-bar behaviour is still verified by hand
   (no macOS runtime CI).
+- The home speed-limit pills now set `max_speed_bps` (1/5/20 MB/s) instead of
+  only showing a "not wired yet" toast, the connection count comes from the
+  settings instead of a fixed 24, and the stats card says 近 7 天 / Last 7 days
+  because the daemon reports a rolling window.
+- The drawer header always shows the task name and status; values inside the
+  drawer are no longer hover-only.
+- `README` plugin counts match reality: 17 first-party plugins (16 download
+  engines + the aria2 RPC service), no community plugins yet.
 
 ### Fixed
 
+- One incompatible or duplicate plugin manifest no longer aborts the whole
+  registry: it is skipped (or the first copy wins) with a message on stderr, so
+  a stale `/usr/lib/aether/plugins` cannot stop the daemon from starting.
+- Linux plugin discovery also looks in a `plugins` directory next to the
+  executable, so an unpacked/portable build finds its bundled plugins without
+  `AETHER_PLUGINS_DIR`.
+- The `aether-host` runtime suite no longer flakes with `ETXTBSY`: spawning a
+  freshly written plugin binary retries briefly before failing.
+- A daemon/UI version mismatch is displayed (`Aether v0.6.0 · 守护进程 v…`)
+  instead of showing the daemon's version as if it were the app's.
 - Showing the window from the tray after `--silent` or close-to-tray works on
   Wayland again: the surface created at startup is 0x0, so the first show
   reused an unmapped window. The window is now sized and its surface
@@ -31,6 +83,9 @@ versioning; 0.x releases may still change structure.
 - X11 close-to-tray now minimizes instead of hiding the window: winit's X11
   backend panics (`Failed to unfocus input context`, BadWindow) when a focused
   window is hidden, and X11 can unminimize it again from the tray.
+- `make check` clears an unusable `RUSTC_WRAPPER` (sccache configured but not
+  installed) instead of failing, and `make check-licenses` only checks the
+  current version's `.deb`, so a stale artifact can no longer pass.
 
 ## [0.5.0] - 2026-11-02
 
