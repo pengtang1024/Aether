@@ -162,7 +162,14 @@ fn run_inner(
         return Err(FtpError::Canceled);
     }
 
-    let target = parse_url(&task.url)?;
+    let mut target = parse_url(&task.url)?;
+    // Stored plugin settings supply credentials when the URL carries none.
+    if let Some(username) = task.settings.get("username").and_then(|v| v.as_str()) {
+        target.username = username.to_string();
+    }
+    if let Some(password) = task.settings.get("password").and_then(|v| v.as_str()) {
+        target.password = password.to_string();
+    }
     fs::create_dir_all(&paths.staging)?;
     let filename = task
         .filename

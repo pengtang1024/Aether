@@ -26,7 +26,7 @@ use std::process::Command;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use slint::{Model, ModelRc, Timer, TimerMode, VecModel};
+use slint::{Model, ModelRc, SharedString, Timer, TimerMode, VecModel};
 
 use aether_daemon::settings::{generate_rpc_secret, RPC_LISTEN_DEFAULT};
 use aether_daemon::PluginInfo;
@@ -52,6 +52,14 @@ struct State {
     toast_until: Option<Instant>,
     /// Task id the chunk model was seeded for.
     detail_data_for: i32,
+    /// Generic detail sections for the drawer. The model instance stays
+    /// stable while the drawer is open so the peers list keeps its scroll
+    /// position across payload refreshes.
+    sections: Rc<VecModel<DetailSection>>,
+    /// (task id, detail payload JSON) the sections model was built from.
+    sections_sig: Option<(i32, String)>,
+    /// Set once the window property points at `sections`.
+    sections_attached: bool,
     /// Last proxy URL typed on the settings page, so switching the mode can
     /// push a complete proxy setting.
     proxy_url: String,
@@ -109,6 +117,9 @@ impl State {
             record_ids: Vec::new(),
             toast_until: None,
             detail_data_for: -1,
+            sections: Rc::new(VecModel::default()),
+            sections_sig: None,
+            sections_attached: false,
             proxy_url: String::new(),
             proxy_mode: "跟随系统".into(),
             global_limit: true,
@@ -244,6 +255,197 @@ fn plugin_caps(info: &PluginInfo) -> String {
         })
         .collect::<Vec<_>>()
         .join(" · ")
+}
+
+/// A schema default or stored value rendered as the single text form the
+/// settings dialog edits.
+fn json_text(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(text) => text.clone(),
+        serde_json::Value::Bool(flag) => flag.to_string(),
+        other => other.to_string(),
+    }
+}
+
+/// Flatten a plugin's `settings_schema` into the dialog form: field metadata
+/// in schema order — the order the dialog renders, and therefore saves, in —
+/// plus each field's initial text. A stored value wins; "" means "not set",
+/// so the field starts empty and the default shows as its placeholder. Bools
+/// and selects always resolve to a concrete value so their control never sits
+/// on an ambiguous empty state.
+fn plugin_settings_form(info: &PluginInfo) -> (Vec<SettingField>, Vec<String>) {
+    let mut fields = Vec::new();
+    let mut values = Vec::new();
+    let Some(schema) = info.settings_schema.as_ref() else {
+        return (fields, values);
+    };
+    let stored = info.settings.as_object();
+    let Some(sections) = schema.get("sections").and_then(serde_json::Value::as_array) else {
+        return (fields, values);
+    };
+    for section in sections {
+        let section_title = section
+            .get("title")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("");
+        let Some(section_fields) = section.get("fields").and_then(serde_json::Value::as_array)
+        else {
+            continue;
+        };
+        for field in section_fields {
+            let Some(key) = field.get("key").and_then(serde_json::Value::as_str) else {
+                continue;
+            };
+            let kind = field
+                .get("type")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("string");
+            let default = field.get("default").map(json_text).unwrap_or_default();
+            let options: Vec<String> = field
+                .get("options")
+                .and_then(serde_json::Value::as_array)
+                .map(|list| {
+                    list.iter()
+                        .filter_map(|option| option.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let stored_value = stored
+                .and_then(|settings| settings.get(key))
+                .filter(|value| !value.is_null());
+            let value = match kind {
+                "bool" => stored_value
+                    .and_then(serde_json::Value::as_bool)
+                    .or_else(|| match default.as_str() {
+                        "true" => Some(true),
+                        "false" => Some(false),
+                        _ => None,
+                    })
+                    .unwrap_or(false)
+                    .to_string(),
+                "select" => {
+                    let in_options = |choice: &str| options.iter().any(|option| option == choice);
+                    stored_value
+                        .and_then(serde_json::Value::as_str)
+                        .filter(|choice| in_options(choice))
+                        .map(str::to_string)
+                        .or_else(|| in_options(&default).then(|| default.clone()))
+                        .or_else(|| options.first().cloned())
+                        .unwrap_or_default()
+                }
+                _ => stored_value.map(json_text).unwrap_or_default(),
+            };
+            let min = field.get("min").map(json_text);
+            let max = field.get("max").map(json_text);
+            fields.push(SettingField {
+                section: section_title.into(),
+                key: key.into(),
+                kind: kind.into(),
+                default: default.into(),
+                has_min: min.is_some(),
+                min: min.unwrap_or_default().into(),
+                has_max: max.is_some(),
+                max: max.unwrap_or_default().into(),
+                options: ModelRc::new(VecModel::from(
+                    options
+                        .iter()
+                        .map(String::as_str)
+                        .map(SharedString::from)
+                        .collect::<Vec<_>>(),
+                )),
+                options_text: options.join(" / ").into(),
+                value: value.clone().into(),
+            });
+            values.push(value);
+        }
+    }
+    (fields, values)
+}
+
+#[derive(Debug)]
+enum FormError {
+    Integer { key: String, text: String },
+    Number { key: String, text: String },
+}
+
+impl FormError {
+    fn message(self) -> String {
+        match self {
+            FormError::Integer { key, text } => format!(
+                "{} · {key} = {text}",
+                i18n::tr("需要整数", "Must be an integer")
+            ),
+            FormError::Number { key, text } => format!(
+                "{} · {key} = {text}",
+                i18n::tr("需要数字", "Must be a number")
+            ),
+        }
+    }
+}
+
+/// Turn the dialog's text slots into the JSON object stored for a plugin.
+/// Bools are always sent (the switch always shows a concrete state); an empty
+/// number or string means "not set" and is skipped — except that clearing a
+/// string the daemon still holds sends `""`, because the save replaces the
+/// whole object.
+fn plugin_settings_json(
+    fields: &slint::ModelRc<SettingField>,
+    values: &slint::ModelRc<SharedString>,
+    stored: &serde_json::Value,
+) -> Result<serde_json::Map<String, serde_json::Value>, FormError> {
+    let mut settings = serde_json::Map::new();
+    for index in 0..fields.row_count() {
+        let Some(field) = fields.row_data(index) else {
+            continue;
+        };
+        let text = values.row_data(index).unwrap_or_default();
+        let key = field.key.to_string();
+        match field.kind.as_str() {
+            "bool" => {
+                settings.insert(key, serde_json::Value::Bool(text == "true"));
+            }
+            "int" => {
+                if text.is_empty() {
+                    continue;
+                }
+                let Ok(number) = text.parse::<i64>() else {
+                    return Err(FormError::Integer {
+                        key,
+                        text: text.to_string(),
+                    });
+                };
+                settings.insert(key, serde_json::Value::from(number));
+            }
+            "float" => {
+                if text.is_empty() {
+                    continue;
+                }
+                let number = text
+                    .parse::<f64>()
+                    .ok()
+                    .and_then(serde_json::Number::from_f64);
+                let Some(number) = number else {
+                    return Err(FormError::Number {
+                        key,
+                        text: text.to_string(),
+                    });
+                };
+                settings.insert(key, serde_json::Value::Number(number));
+            }
+            _ => {
+                if !text.is_empty() {
+                    settings.insert(key, serde_json::Value::String(text.to_string()));
+                } else if stored
+                    .get(key.as_str())
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|stored| !stored.is_empty())
+                {
+                    settings.insert(key, serde_json::Value::String(String::new()));
+                }
+            }
+        }
+    }
+    Ok(settings)
 }
 
 /// Render the daemon's `plugin_pins` map as the text field's
@@ -578,6 +780,7 @@ fn refresh_rows(ui: &AppWindow, state: &Rc<RefCell<State>>) {
             let speed = settings["max_speed_bps"].as_u64().unwrap_or(0);
             st.global_limit = speed > 0;
             ui.set_settings_global_limit(st.global_limit);
+            ui.set_speed_limit_mode(speed_limit_mode(speed));
             if speed > 0 {
                 // The slider works in whole KB/s, so a smaller cap rounds up
                 // rather than showing a limit the daemon does not have.
@@ -593,6 +796,13 @@ fn refresh_rows(ui: &AppWindow, state: &Rc<RefCell<State>>) {
     ui.set_count_paused(paused);
     ui.set_count_failed(failed);
     ui.set_count_seed(seed);
+    ui.set_connections(
+        snapshot
+            .settings
+            .as_ref()
+            .and_then(|settings| settings["connections"].as_u64())
+            .unwrap_or(4) as i32,
+    );
     ui.set_total_speed(format_speed(speed).into());
 
     let history = &snapshot.history;
@@ -608,7 +818,25 @@ fn refresh_rows(ui: &AppWindow, state: &Rc<RefCell<State>>) {
     if let Some(stats) = &snapshot.stats {
         ui.set_today_bytes(format_size(stats.today_bytes as f64).into());
         ui.set_week_bytes(format_size(stats.week_bytes as f64).into());
-        ui.set_version_name(format!("Aether v{}", stats.version).into());
+        ui.set_version_name(
+            if stats.version == env!("CARGO_PKG_VERSION") {
+                format!("Aether v{}", stats.version)
+            } else {
+                i18n::tr(
+                    format!(
+                        "Aether v{} · 守护进程 v{}",
+                        env!("CARGO_PKG_VERSION"),
+                        stats.version
+                    ),
+                    format!(
+                        "Aether v{} · daemon v{}",
+                        env!("CARGO_PKG_VERSION"),
+                        stats.version
+                    ),
+                )
+            }
+            .into(),
+        );
         if !stats.plugins_dir.is_empty() {
             ui.set_plugins_dir(stats.plugins_dir.clone().into());
         }
@@ -778,17 +1006,56 @@ fn refresh_rows(ui: &AppWindow, state: &Rc<RefCell<State>>) {
     ui.set_extension_connected(st.extension_installed);
 
     // ---- plugin catalogue (daemon registry) ---------------------------------
+    // `configured: false` means the daemon has no update channel; never turn
+    // that into "up to date".
+    let plugin_updates = st.backend.plugin_updates();
+    let update_ids: Vec<&str> = plugin_updates
+        .as_ref()
+        .filter(|value| value["configured"].as_bool().unwrap_or(false))
+        .and_then(|value| value["updates"].as_array())
+        .map(|updates| {
+            updates
+                .iter()
+                .filter_map(|update| update["plugin_id"].as_str())
+                .collect()
+        })
+        .unwrap_or_default();
     let sig = snapshot
         .plugins
         .iter()
-        .map(|plugin| format!("{}:{}:{}", plugin.id, plugin.version, plugin.enabled))
+        .map(|plugin| {
+            format!(
+                "{}:{}:{}:{}:{}",
+                plugin.id,
+                plugin.version,
+                plugin.enabled,
+                update_ids.contains(&plugin.id.as_str()),
+                // Stored settings ride along: they change without a version
+                // bump, but the dialog reads them from `st.plugins`.
+                plugin.settings
+            )
+        })
         .collect::<Vec<_>>()
         .join("|");
     if sig != st.plugins_sig {
         st.plugins_sig = sig;
         st.plugins = snapshot.plugins.clone();
+        // Clipboard detection follows the protocols the daemon actually has.
+        if let Some(control) = st.clipboard_control.as_ref() {
+            let protocols: Vec<String> = snapshot
+                .plugins
+                .iter()
+                .flat_map(|plugin| plugin.protocols.iter().cloned())
+                .collect();
+            control.set_protocols(&protocols);
+        }
         let total = snapshot.plugins.len() as i32;
         let enabled = snapshot.plugins.iter().filter(|p| p.enabled).count() as i32;
+        let update_count = snapshot
+            .plugins
+            .iter()
+            .filter(|plugin| update_ids.contains(&plugin.id.as_str()))
+            .count() as i32;
         let rows: Vec<PluginRow> = snapshot
             .plugins
             .iter()
@@ -806,11 +1073,14 @@ fn refresh_rows(ui: &AppWindow, state: &Rc<RefCell<State>>) {
                 service: info.service,
                 running: info.running,
                 error: info.last_error.clone().unwrap_or_default().into(),
-                update: false,
+                update: update_ids.contains(&info.id.as_str()),
                 featured: false,
                 can_rollback: info.has_backup,
                 icon: plugin_icon(&info.id),
                 tone: plugin_tone(&info.id),
+                // Configure affordance only when the daemon declared a
+                // schema with at least one renderable field.
+                can_configure: !plugin_settings_form(info).0.is_empty(),
             })
             .collect();
         ui.global::<PluginCatalog>()
@@ -819,7 +1089,7 @@ fn refresh_rows(ui: &AppWindow, state: &Rc<RefCell<State>>) {
         ui.global::<PluginCatalog>().set_active(enabled);
         ui.global::<PluginCatalog>().set_builtin(total);
         ui.global::<PluginCatalog>().set_community(0);
-        ui.global::<PluginCatalog>().set_updates(0);
+        ui.global::<PluginCatalog>().set_updates(update_count);
     }
 
     let now_ms = st.backend.now_ms();
@@ -850,6 +1120,162 @@ fn refresh_rows(ui: &AppWindow, state: &Rc<RefCell<State>>) {
         st.records.set_vec(records);
     }
     ui.set_records(ModelRc::from(st.records.clone()));
+}
+
+/// Known `detail_schema` keys rendered with a translated label; anything
+/// else falls through as the raw key (the schema is plugin-owned data).
+fn detail_label(key: &str) -> String {
+    match key {
+        "speed" => i18n::tr("速度", "speed"),
+        "eta" => i18n::tr("剩余时间", "eta"),
+        "size" => i18n::tr("大小", "size"),
+        "address" => i18n::tr("地址", "address"),
+        "kind" => i18n::tr("状态", "kind"),
+        other => other.to_string(),
+    }
+}
+
+/// Render one scalar payload value; structured values are not rows.
+fn detail_scalar(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::String(text) => Some(text.clone()),
+        serde_json::Value::Number(number) => Some(number.to_string()),
+        serde_json::Value::Bool(flag) => Some(if *flag {
+            i18n::tr("是", "yes")
+        } else {
+            i18n::tr("否", "no")
+        }),
+        _ => None,
+    }
+}
+
+/// One peer cell: the declared column first, then the aria2-shaped keys
+/// the BT plugin actually sends. `None` skips the whole row so columns
+/// never render with empty holes.
+fn peer_cell(peer: &serde_json::Map<String, serde_json::Value>, column: &str) -> Option<String> {
+    if let Some(value) = peer.get(column) {
+        return detail_scalar(value);
+    }
+    match column {
+        "address" => {
+            let ip = peer.get("ip")?.as_str()?;
+            let port = peer
+                .get("port")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("");
+            Some(if port.is_empty() {
+                ip.to_string()
+            } else {
+                format!("{ip}:{port}")
+            })
+        }
+        "speed" => peer
+            .get("downloadSpeed")
+            .and_then(detail_scalar)
+            .or_else(|| peer.get("uploadSpeed").and_then(detail_scalar)),
+        "kind" => peer.get("state").and_then(detail_scalar).or_else(|| {
+            peer.get("seeder")
+                .and_then(serde_json::Value::as_bool)
+                .map(|flag| if flag { "seeder" } else { "leecher" }.to_string())
+        }),
+        _ => None,
+    }
+}
+
+/// Build the drawer's generic sections from a plugin's `detail_schema`
+/// and its live `Detail` payload. Only sections with at least one filled
+/// row are returned: `logs` / `chunks` / unknown types and missing keys
+/// degrade to nothing instead of empty labels.
+fn build_detail_sections(info: &PluginInfo, detail: &serde_json::Value) -> Vec<DetailSection> {
+    let Some(sections) = info
+        .detail_schema
+        .as_ref()
+        .and_then(|schema| schema.get("sections"))
+        .and_then(serde_json::Value::as_array)
+    else {
+        return Vec::new();
+    };
+
+    let mut built = Vec::new();
+    for section in sections {
+        match section
+            .get("type")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("")
+        {
+            "metrics" => {
+                let Some(items) = section.get("items").and_then(serde_json::Value::as_array) else {
+                    continue;
+                };
+                let rows: Vec<DetailRow> = items
+                    .iter()
+                    .filter_map(|item| {
+                        let key = item.as_str()?;
+                        let value = detail.get(key)?;
+                        Some(DetailRow {
+                            cells: ModelRc::new(VecModel::from(vec![
+                                SharedString::from(detail_label(key)),
+                                SharedString::from(detail_scalar(value)?),
+                            ])),
+                        })
+                    })
+                    .collect();
+                if !rows.is_empty() {
+                    built.push(DetailSection {
+                        kind: "metrics".into(),
+                        title: String::new().into(),
+                        columns: ModelRc::new(VecModel::default()),
+                        rows: ModelRc::new(VecModel::from(rows)),
+                    });
+                }
+            }
+            "peers" => {
+                let Some(declared) = section.get("columns").and_then(serde_json::Value::as_array)
+                else {
+                    continue;
+                };
+                let raw: Vec<&str> = declared
+                    .iter()
+                    .filter_map(serde_json::Value::as_str)
+                    .collect();
+                if raw.is_empty() {
+                    continue;
+                }
+                let Some(peers) = detail.get("peers").and_then(serde_json::Value::as_array) else {
+                    continue;
+                };
+                let rows: Vec<DetailRow> = peers
+                    .iter()
+                    .filter_map(|peer| {
+                        let object = peer.as_object()?;
+                        let cells: Vec<SharedString> = raw
+                            .iter()
+                            .map(|column| peer_cell(object, column).map(SharedString::from))
+                            .collect::<Option<_>>()?;
+                        Some(DetailRow {
+                            cells: ModelRc::new(VecModel::from(cells)),
+                        })
+                    })
+                    .collect();
+                if !rows.is_empty() {
+                    built.push(DetailSection {
+                        kind: "peers".into(),
+                        title: String::new().into(),
+                        columns: ModelRc::new(VecModel::from(
+                            raw.iter()
+                                .map(|column| SharedString::from(detail_label(column)))
+                                .collect::<Vec<_>>(),
+                        )),
+                        rows: ModelRc::new(VecModel::from(rows)),
+                    });
+                }
+            }
+            // `chunks` stays on the task's own chunk model (the payload
+            // carries no chunk list) and `logs` has no pane yet.
+            _ => {}
+        }
+    }
+    built
 }
 
 fn refresh_detail(ui: &AppWindow, state: &Rc<RefCell<State>>) {
@@ -898,6 +1324,37 @@ fn refresh_detail(ui: &AppWindow, state: &Rc<RefCell<State>>) {
     } else {
         String::new()
     };
+
+    // Generic sections from the owning plugin's `detail_schema`. The UI
+    // model carries no plugin id per task, so the payload is tried against
+    // each plugin's schema and the first schema that yields rows wins.
+    let sig = (
+        task.id,
+        detail.map(|value| value.to_string()).unwrap_or_default(),
+    );
+    if st.sections_sig.as_ref() != Some(&sig) {
+        let sections = detail.map_or_else(Vec::new, |payload| {
+            snapshot
+                .plugins
+                .iter()
+                .find(|info| info.id == task.plugin_id)
+                .map_or_else(Vec::new, |info| build_detail_sections(info, payload))
+        });
+        // Update rows in place when the shape is unchanged so the peers
+        // list keeps its scroll position between payload refreshes.
+        if st.sections.row_count() == sections.len() {
+            for (index, section) in sections.into_iter().enumerate() {
+                st.sections.set_row_data(index, section);
+            }
+        } else {
+            st.sections.set_vec(sections);
+        }
+        if !st.sections_attached {
+            ui.set_detail_sections(ModelRc::from(st.sections.clone()));
+            st.sections_attached = true;
+        }
+        st.sections_sig = Some(sig);
+    }
 
     let (line, area) = chart_paths(&task.history);
     let peak = chart_peak(&task.history).max(1.0);
@@ -1156,6 +1613,24 @@ fn rpc_status_text(listen: &str, has_secret: bool) -> String {
             format!("Configured on {listen} without a token (loopback only; applies after a daemon restart)"),
         )
     }
+}
+
+/// Speed-limit pill → bytes per second (`0` = unlimited).
+fn speed_limit_bps(mode: i32) -> u64 {
+    match mode {
+        1 => 1_000_000,
+        2 => 5_000_000,
+        3 => 20_000_000,
+        _ => 0,
+    }
+}
+
+/// Nearest pill index for a stored cap (the settings slider can set any KB/s).
+fn speed_limit_mode(bps: u64) -> i32 {
+    let presets: [u64; 4] = [0, 1_000_000, 5_000_000, 20_000_000];
+    (0..presets.len())
+        .min_by_key(|&index| presets[index].abs_diff(bps))
+        .unwrap_or(0) as i32
 }
 
 /// Human-readable app-update state for the About panel. `None` means the
@@ -2326,7 +2801,85 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
-    // ---- speed limit pills (global throttle is not wired yet) --------------
+    // ---- per-plugin settings dialog ----------------------------------------
+    // Rust owns the form: `configure` pushes fresh fields + values (schema
+    // order, seeded from the stored config) into the exported global; `save`
+    // rebuilds the JSON object, validates it and persists through the daemon.
+    // A failed parse toasts and returns false so the dialog stays open.
+    {
+        let ui_handle = ui.as_weak();
+        let state = state.clone();
+        ui.global::<PluginSettings>().on_configure(move |row| {
+            let Some(ui) = ui_handle.upgrade() else {
+                return;
+            };
+            let st = state.borrow();
+            let Some(info) = st.plugins.get(row as usize) else {
+                return;
+            };
+            let (fields, values) = plugin_settings_form(info);
+            if fields.is_empty() {
+                return;
+            }
+            let form = ui.global::<PluginSettings>();
+            form.set_row(row);
+            form.set_title(info.name.clone().into());
+            form.set_fields(ModelRc::new(VecModel::from(fields)));
+            form.set_values(ModelRc::new(VecModel::from(
+                values
+                    .into_iter()
+                    .map(SharedString::from)
+                    .collect::<Vec<_>>(),
+            )));
+            form.set_open(true);
+        });
+    }
+
+    {
+        let ui_handle = ui.as_weak();
+        let state = state.clone();
+        ui.global::<PluginSettings>().on_save(move || -> bool {
+            let Some(ui) = ui_handle.upgrade() else {
+                return false;
+            };
+            let form = ui.global::<PluginSettings>();
+            let row = form.get_row();
+            let fields = form.get_fields();
+            let values = form.get_values();
+            // One text slot per declared field; anything else means the
+            // dialog never finished opening.
+            if fields.row_count() != values.row_count() {
+                return false;
+            }
+            let outcome = (|| -> Result<(String, serde_json::Value), String> {
+                let st = state.borrow();
+                let Some(info) = st.plugins.get(row as usize) else {
+                    return Err(i18n::tr(
+                        "该插件已不在列表中",
+                        "That plugin is no longer listed",
+                    ));
+                };
+                let settings = plugin_settings_json(&fields, &values, &info.settings)
+                    .map_err(FormError::message)?;
+                Ok((info.id.clone(), serde_json::Value::Object(settings)))
+            })();
+            match outcome {
+                Ok((plugin_id, settings)) => {
+                    state
+                        .borrow()
+                        .backend
+                        .set_plugin_settings(&plugin_id, settings);
+                    true
+                }
+                Err(message) => {
+                    show_toast(&ui, &state, &message);
+                    false
+                }
+            }
+        });
+    }
+
+    // ---- speed limit pills (global throttle via set_settings) --------------
     {
         let ui_handle = ui.as_weak();
         let state = state.clone();
@@ -2334,18 +2887,23 @@ fn main() -> Result<(), slint::PlatformError> {
             let Some(ui) = ui_handle.upgrade() else {
                 return;
             };
+            let bps = speed_limit_bps(mode);
+            state
+                .borrow()
+                .backend
+                .set_setting(serde_json::json!({"max_speed_bps": bps}));
             let name = match mode {
-                1 => "低",
-                2 => "中",
-                3 => "高",
-                _ => "不限",
+                1 => "1 MB/s".to_string(),
+                2 => "5 MB/s".to_string(),
+                3 => "20 MB/s".to_string(),
+                _ => i18n::tr("不限", "Unlimited"),
             };
             show_toast(
                 &ui,
                 &state,
                 &i18n::tr(
-                    format!("全局限速「{name}」尚未接线"),
-                    format!("The global speed cap {name} is not wired up yet"),
+                    format!("全局限速：{name}"),
+                    format!("Global speed limit: {name}"),
                 ),
             );
         });
@@ -2933,5 +3491,138 @@ mod plugin_pin_tests {
         assert!(parse_plugin_pins("http").is_err());
         assert!(parse_plugin_pins("http=").is_err());
         assert!(parse_plugin_pins("=0.2.0").is_err());
+    }
+}
+
+#[cfg(test)]
+mod plugin_settings_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn field(key: &str, kind: &str) -> SettingField {
+        SettingField {
+            section: String::new().into(),
+            key: key.into(),
+            kind: kind.into(),
+            default: String::new().into(),
+            has_min: false,
+            min: String::new().into(),
+            has_max: false,
+            max: String::new().into(),
+            options: ModelRc::new(VecModel::from(Vec::<SharedString>::new())),
+            options_text: String::new().into(),
+            value: String::new().into(),
+        }
+    }
+
+    fn run(
+        fields: Vec<SettingField>,
+        values: &[&str],
+        stored: &serde_json::Value,
+    ) -> Result<serde_json::Value, FormError> {
+        let fields = ModelRc::new(VecModel::from(fields));
+        let values = ModelRc::new(VecModel::from(
+            values
+                .iter()
+                .map(|text| SharedString::from(*text))
+                .collect::<Vec<_>>(),
+        ));
+        plugin_settings_json(&fields, &values, stored).map(serde_json::Value::Object)
+    }
+
+    #[test]
+    fn sends_bools_and_skips_empty_values() {
+        let stored = json!({"ua": "old", "retries": 2});
+        let settings = run(
+            vec![
+                field("seed", "bool"),
+                field("retries", "int"),
+                field("ua", "string"),
+            ],
+            &["false", "", ""],
+            &stored,
+        )
+        .expect("no parse errors");
+        // Bool keeps its concrete state; the emptied int is dropped; the
+        // cleared string is sent empty so the replace drops the stored value.
+        assert_eq!(settings, json!({"seed": false, "ua": ""}));
+    }
+
+    #[test]
+    fn parses_numbers_and_text() {
+        let settings = run(
+            vec![
+                field("retries", "int"),
+                field("ratio", "float"),
+                field("ua", "string"),
+            ],
+            &["3", "1.5", "aether"],
+            &json!({}),
+        )
+        .expect("valid values");
+        assert_eq!(
+            settings,
+            json!({"retries": 3, "ratio": 1.5, "ua": "aether"})
+        );
+    }
+
+    #[test]
+    fn rejects_unparseable_numbers_with_their_field() {
+        assert!(matches!(
+            run(vec![field("retries", "int")], &["abc"], &json!({})),
+            Err(FormError::Integer { key, text }) if key == "retries" && text == "abc"
+        ));
+        assert!(matches!(
+            run(vec![field("ratio", "float")], &["fast"], &json!({})),
+            Err(FormError::Number { key, .. }) if key == "ratio"
+        ));
+    }
+}
+
+#[cfg(test)]
+mod detail_sections_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn metrics_rows_follow_the_schema_order() {
+        let info = PluginInfo {
+            id: "http".into(),
+            name: "HTTP".into(),
+            version: "0.1.0".into(),
+            protocols: vec!["http".into()],
+            capabilities: Vec::new(),
+            features: Vec::new(),
+            enabled: true,
+            blocked: false,
+            service: false,
+            running: true,
+            last_error: None,
+            has_backup: false,
+            settings_schema: None,
+            settings: json!({}),
+            detail_schema: Some(json!({
+                "sections": [
+                    {"type": "metrics", "items": ["speed", "eta", "size"]},
+                    {"type": "logs", "max_lines": 200}
+                ]
+            })),
+        };
+        let detail = json!({"speed": "936.1 KB/s", "eta": "18 s", "size": "7.7 MB / 25.0 MB"});
+        let sections = build_detail_sections(&info, &detail);
+        assert_eq!(sections.len(), 1);
+        let rows = sections[0].rows.clone();
+        assert_eq!(rows.row_count(), 3);
+        let labels: Vec<String> = (0..3)
+            .map(|index| {
+                rows.row_data(index)
+                    .unwrap()
+                    .cells
+                    .row_data(0)
+                    .unwrap()
+                    .to_string()
+            })
+            .collect();
+        assert_eq!(labels, vec!["速度", "剩余时间", "大小"]);
     }
 }

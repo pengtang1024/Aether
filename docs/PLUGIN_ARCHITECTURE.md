@@ -91,6 +91,9 @@ aether-plugin-http/
 - `id` 全局唯一，小写；任务里持久化 `plugin_id` + `plugin_version`。
 - `api` 是 IPC/SDK 大版本；Host 只加载 `api` 匹配的插件。
 - `min_host`/`max_host` 做 Host 版本约束；升级 Host 时先检查插件兼容性。
+- `features`（可选，默认空）：自由标签，不授予任何权限，只用于 Host/UI 的行为分支。
+  控制器不按插件 id 写死逻辑——例如 BT 插件声明 `"features": ["torrent"]`，
+  Host 据此显示 BT 详情、拒绝单任务限速；同类新插件只要声明同名标签即可复用。
 - `files`（相对路径 → SHA-256，不含 plugin.json）+ `signature` 由同一把
   第一方 release key（Ed25519，与 update 清单同源）覆盖：签名载荷为移除
   `signature` 键后的 canonical JSON，`files` 在载荷内 → 二进制被一并认证。
@@ -146,6 +149,10 @@ Plugin → Host: Ready
 被拒绝——manifest 是展示给用户的合同，不能单方面加码或缩水。反引号内的
 能力名使用 manifest 记法：`network` / `filesystem:task` / `external-process` /
 `clipboard` / `http3`。
+
+UI 的剪贴板链接检测也不再维护自己的协议表：scheme 集合来自 daemon 已知插件的
+`protocols`（`ipfs`、`s3` 等新插件的 scheme 会自动生效），daemon 不可用时才回退到
+内置默认表。
 
 ### 4.3 消息
 
@@ -266,8 +273,32 @@ Content-Type、manifest 探测和优先级消歧。
 ```
 
 字段类型：`bool`、`int`、`float`、`string`、`select`、`path`、`secret`、`multiline`。
-Host 负责校验、持久化、secret 存 keyring/受限文件；插件只读解析后的值。
-插件版本升级时 schema 迁移由 Host 按字段 key 保留旧值。
+
+当前实现（Host 侧，已可用）：
+
+- 校验：`set_plugin_settings` 按 schema 逐字段检查类型、`min`/`max`、`select` 的
+  `options`，并拒绝 schema 未声明的 key（拼写错误会在写入时报错，而不是被静默忽略）。
+  没有 `settings_schema` 的插件拒绝任何写入。
+- 持久化：存 `plugin_settings` 表（SQLite，库文件 0600），按插件 id 一行。
+  `get_plugin_settings` 读出全部，`aether-cli remote plugin-settings [<id>]` 查看，
+  `remote set-plugin-settings <id> <json>` 写入。
+- 生效方式：加任务时把已存值作为**默认层**合并进 `task.settings`，任务自带的同名
+  key 优先。schema 里的 `default` 不会被落库，插件在 key 缺失时自行取默认值。
+- 迁移：schema 删除字段后旧值仍留在库里但不参与校验/合并；重新添加该 key 时旧值恢复。
+- 凭据目前存在受限 DB 中，尚未接 keyring；`diag`/`export` 不包含插件设置，避免泄漏。
+
+UI（已实现）：设置 → 插件，schema 至少有一个字段的插件在行内出现「插件设置」按钮。
+对话框按 schema 顺序渲染分区与字段：`bool`→开关、`select`→下拉、其余→单行输入
+（`secret` 为密码掩码）；`default`/`min`/`max`/`options` 以占位符或提示行显示，
+占位符里的默认值不写入库。保存经 `backend.set_plugin_settings` 交给 daemon 校验落库，
+解析失败（如需要整数却填了字母）保持对话框打开并提示。
+
+已知限制：`multiline` 目前渲染为单行；`select` 依赖 vendored material `ComboBox`，
+弹出层重复打开后可能失效（当前第一方 schema 中没有 `select` 字段）。
+
+插件必须真正读取自己声明的
+key（HTTP 的 `user_agent`、FTP 的 `username`/`password`、S3 的凭据等均已读取，
+schema 中未被读取的字段已移除）。
 
 ## 9. 任务详情 Schema
 
@@ -284,10 +315,12 @@ Host 负责校验、持久化、secret 存 keyring/受限文件；插件只读�
 }
 ```
 
-Host 内置 `metrics/chunks/peers/logs/table/text` 渲染器；插件只发数据。这样：
-- 所有插件共享同一套 M3 视觉；
-- 新协议不需要改 Slint；
-- 插件不能注入任意 UI/脚本。
+当前实现：daemon 的 `plugins` RPC 下发 `detail_schema`，UI 按任务所属插件
+（`task.plugin_id`）取 schema，`build_detail_sections` 按 schema 顺序生成
+`DetailSection`/`DetailRow`，抽屉只渲染
+`metrics`（键存在才出行，未知键原样显示）与 `peers`（按 `columns`）；`chunks` 沿用
+抽屉原有的分段网格，`logs` 与未知 `type` 静默跳过，不会让抽屉空转。插件只发数据，
+新协议不需要改 Slint；插件不能注入任意 UI/脚本。
 
 ## 10. 调度、预算与限速
 
@@ -424,7 +457,7 @@ Host 的“插件”页面（Slint，2026-10-31 已接真）展示/执行：
 
 ## 19. 当前状态
 
-**P0 骨架已落地，但还没有接入 Host UI，也没有真实下载协议。**
+**v0.6.0 已发布：17 个第一方插件（16 个下载引擎 + aria2 服务），插件设置、特性标签与任务抽屉全部由 manifest schema 驱动。**
 
 - `crates/aether-plugin-sdk`：manifest、MessagePack IPC、协议类型、插件 runner、Host 侧 supervisor。
 - `crates/aether-plugin-fake`：fake 插件 + 真实进程契约测试（握手、Probe、Start、Progress、Completed、id 不匹配拒绝）。

@@ -16,6 +16,9 @@ pub struct PluginInfo {
     pub protocols: Vec<String>,
     #[serde(default)]
     pub capabilities: Vec<String>,
+    /// Manifest behaviour tags (`torrent`, …), not permissions.
+    #[serde(default)]
+    pub features: Vec<String>,
     #[serde(default)]
     pub enabled: bool,
     /// Host policy refuses to spawn this plugin (it declares
@@ -34,6 +37,15 @@ pub struct PluginInfo {
     /// A previous version is retained and can be reinstalled.
     #[serde(default)]
     pub has_backup: bool,
+    /// Declared `settings_schema`, when the plugin has one.
+    #[serde(default)]
+    pub settings_schema: Option<serde_json::Value>,
+    /// Declares the `Detail` payload the drawer renders (section/field labels).
+    #[serde(default)]
+    pub detail_schema: Option<serde_json::Value>,
+    /// Stored configuration (validated against `settings_schema`).
+    #[serde(default)]
+    pub settings: serde_json::Value,
 }
 
 /// Dashboard counters behind the daemon's `stats` method.

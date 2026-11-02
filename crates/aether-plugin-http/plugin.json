@@ -4,8 +4,15 @@
   "version": "0.1.0",
   "api": 2,
   "min_host": "0.4.0",
-  "protocols": ["http", "https", "metalink"],
-  "capabilities": ["network", "filesystem:task"],
+  "protocols": [
+    "http",
+    "https",
+    "metalink"
+  ],
+  "capabilities": [
+    "network",
+    "filesystem:task"
+  ],
   "executable": {
     "linux-x86_64": "bin/aether-plugin-http-linux-x86_64",
     "linux-aarch64": "bin/aether-plugin-http-linux-aarch64",
@@ -18,17 +25,37 @@
       {
         "title": "连接",
         "fields": [
-          { "key": "connections", "type": "int", "min": 1, "max": 16, "default": 8 },
-          { "key": "user_agent", "type": "string", "default": "Aether/0.2" }
+          {
+            "key": "user_agent",
+            "type": "string",
+            "default": "Aether/0.2"
+          }
         ]
       }
     ]
   },
   "detail_schema": {
     "sections": [
-      { "type": "metrics", "items": ["speed", "eta", "size"] },
-      { "type": "chunks", "legend": ["done", "active", "pending"] },
-      { "type": "logs", "max_lines": 200 }
+      {
+        "type": "metrics",
+        "items": [
+          "speed",
+          "eta",
+          "size"
+        ]
+      },
+      {
+        "type": "chunks",
+        "legend": [
+          "done",
+          "active",
+          "pending"
+        ]
+      },
+      {
+        "type": "logs",
+        "max_lines": 200
+      }
     ]
   }
 }

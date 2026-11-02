@@ -6,7 +6,7 @@
 
 Aether 是一个 Rust + Slint 的桌面下载管理器：窗口通过本地 socket 连接常驻的
 `aether-daemon`，任务、进度、暂停/继续/取消、新建下载与代理设置都走真实后端
-（16 个第一方插件）。交互与视觉参考 Motrix，完全用 Rust 与
+（17 个第一方插件：16 个下载插件 + 1 个 aria2 RPC 兼容服务）。交互与视觉参考 Motrix，完全用 Rust 与
 [Slint](https://slint.dev) 绘制：没有 Electron、没有 Chromium。除品牌 logo 外，
 窗口里的图标、进度条、折线图和背景流线全部是矢量渲染。
 
@@ -58,7 +58,7 @@ Material 组件会一起切换。
 ### 插件
 
 主页系统卡显示插件总数和可更新数量；设置 → 插件是完整目录：
-**18 个插件（15 个内置、3 个社区）**，另有 aria2 RPC 兼容服务插件；支持按全部/内置/已启用/可更新筛选，单独启停、
+**17 个第一方插件（16 个下载插件 + 1 个 aria2 RPC 兼容服务）**，社区插件为 0；支持按全部/内置/已启用/可更新筛选，单独启停、
 更新全部、安装、插件目录、自动更新、版本固定、卸载与回滚。每行显示 manifest 声明的
 **权限**（网络 / 任务目录 / 外部进程 / 剪贴板 / HTTP3）；声明 `external-process` 的
 插件受设置页闸门控制，关闭后不会启动并显示原因。插件在独立进程中运行
@@ -212,11 +212,26 @@ sudo apt install ./dist/aether_0.1.0_amd64.deb
 │   │   ├── settings.slint   # 10 分类设置中心
 │   │   ├── new-download.slint
 │   │   └── task-drawer.slint
-│   ├── plugins.slint        # 18 个插件的展示目录（15 内置 / 3 社区）
+│   ├── plugins.slint        # 17 个第一方插件的展示目录（16 下载 / 1 服务）
 │   └── material/            # vendored Slint 1.18.1 Material 3 组件库
 ├── crates/
-│   ├── aether-plugin-sdk/   # 首方插件协议、IPC framing 与 manifest 校验
-│   └── aether-plugin-fake/  # SDK 的测试插件
+│   ├── aether-plugin-sdk/       # 首方插件协议、IPC framing 与 manifest 校验
+│   ├── aether-plugin-http/      # HTTP/HTTPS/Metalink 下载
+│   ├── aether-plugin-ftp/       # FTP/FTPS 下载
+│   ├── aether-plugin-bt/        # BitTorrent / Magnet
+│   ├── aether-plugin-webdav/    # WebDAV
+│   ├── aether-plugin-s3/        # S3 兼容对象存储
+│   ├── aether-plugin-sftp/      # SFTP
+│   ├── aether-plugin-thunder/   # thunder:// 链接解码
+│   ├── aether-plugin-ipfs/      # IPFS/IPNS 网关
+│   ├── aether-plugin-rtmp/      # RTMP/RTSP 捕获
+│   ├── aether-plugin-media/     # HLS/DASH 媒体
+│   ├── aether-plugin-extractor/ # yt-dlp 提取
+│   ├── aether-plugin-cloud/     # Dropbox / Google Drive / OneDrive 分享链接
+│   ├── aether-plugin-aliyunpan/ # 阿里云盘
+│   ├── aether-plugin-baidupan/  # 百度网盘
+│   ├── aether-plugin-aria2/     # aria2 JSON-RPC 兼容服务
+│   └── aether-plugin-fake/      # SDK 的测试插件
 ├── assets/
 │   ├── icons/               # 单色描边 SVG（34 个），使用时 colorize
 │   ├── logo.png                 # 原始 logo（带浅色底板）
@@ -274,7 +289,7 @@ token，`ColorSchemeSelector` 驱动 Material 控件。
 连接、分段、动态分段、重试、超时、带宽、预分配、校验、完成动作；网络项覆盖代理、DNS、
 IPv6、User-Agent、请求头、HTTP/2、FTP 被动、镜像；BT/PT 覆盖端口、加密、DHT/PEX/LSD、
 uTP、上传、做种比例、Peer 上限、IP 过滤与 Tracker；另有媒体嗅探/ffmpeg、浏览器接管、
-18 个插件（15 内置 / 3 社区）的管理目录、计划任务、通知、RPC 与诊断。
+17 个第一方插件（16 下载 / 1 服务）的管理目录、计划任务、通知、RPC 与诊断。
 
 **双主题。** 自定义 token 全部从 `Aether.dark` 派生：表面、卡片渐变、画布、弹窗、
 抽屉、遮罩、阴影、代码与状态色都有浅/深值。上游 Material 控件通过
@@ -332,7 +347,7 @@ Esc 关闭；下载空状态提供“清除筛选条件”，一次恢复全部�
   文件落在下载目录；断点/续传由插件完成，最终大小与 SHA-256 由 Host 再复核
 - 主页的今日/本周下载量、每日柱状图、存储分类（视频/压缩包/应用/文档）、磁盘使用、
   版本、插件数、协议数都来自 daemon 的 `stats`；峰值速度与运行时长在 UI 侧计算
-- 设置 → 插件列出 daemon 注册表里的真实插件（16 个第一方），开关直接下发
+- 设置 → 插件列出 daemon 注册表里的真实插件（17 个第一方），开关直接下发
   `set_plugin_enabled`：禁用会持久化（SQLite），禁用中的插件拒接新任务，仍有任务
   在跑时拒绝停用；默认下载目录/插件目录/数据库路径显示真实值
 - 设置 → 网络的 DNS、IP 协议、User-Agent、自定义请求头、FTP 被动模式均已

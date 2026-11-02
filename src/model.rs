@@ -57,6 +57,8 @@ pub struct Task {
     /// Bytes transferred so far. `f64` keeps sub-byte increments smooth.
     pub done: f64,
     pub status: Status,
+    /// Owning plugin: its `detail_schema` drives the drawer's detail rows.
+    pub plugin_id: String,
     pub torrent: bool,
     pub speed: f64,
     pub history: VecDeque<f64>,

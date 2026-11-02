@@ -4,8 +4,15 @@
   "version": "0.1.0",
   "api": 2,
   "min_host": "0.4.0",
-  "protocols": ["hls", "dash"],
-  "capabilities": ["network", "filesystem:task", "external-process"],
+  "protocols": [
+    "hls",
+    "dash"
+  ],
+  "capabilities": [
+    "network",
+    "filesystem:task",
+    "external-process"
+  ],
   "executable": {
     "linux-x86_64": "bin/aether-plugin-media-linux-x86_64",
     "linux-aarch64": "bin/aether-plugin-media-linux-aarch64",
@@ -18,18 +25,42 @@
       {
         "title": "媒体",
         "fields": [
-          { "key": "prefer_highest_bandwidth", "type": "bool", "default": true },
-          { "key": "hls_live_interval_ms", "type": "int", "min": 500, "max": 10000, "default": 1000 },
-          { "key": "hls_live_idle_polls", "type": "int", "min": 1, "default": 3 }
+          {
+            "key": "hls_live_interval_ms",
+            "type": "int",
+            "min": 500,
+            "max": 10000,
+            "default": 1000
+          },
+          {
+            "key": "hls_live_idle_polls",
+            "type": "int",
+            "min": 1,
+            "default": 3
+          }
         ]
       }
     ]
   },
   "detail_schema": {
     "sections": [
-      { "type": "metrics", "items": ["size"] },
-      { "type": "chunks", "legend": ["done", "pending"] },
-      { "type": "logs", "max_lines": 200 }
+      {
+        "type": "metrics",
+        "items": [
+          "size"
+        ]
+      },
+      {
+        "type": "chunks",
+        "legend": [
+          "done",
+          "pending"
+        ]
+      },
+      {
+        "type": "logs",
+        "max_lines": 200
+      }
     ]
   }
 }

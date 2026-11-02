@@ -6,6 +6,7 @@
   "min_host": "0.4.0",
   "protocols": ["bt", "magnet"],
   "capabilities": ["network", "filesystem:task"],
+  "features": ["torrent"],
   "executable": {
     "linux-x86_64": "bin/aether-plugin-bt-linux-x86_64",
     "linux-aarch64": "bin/aether-plugin-bt-linux-aarch64",
@@ -18,8 +19,6 @@
       {
         "title": "BitTorrent",
         "fields": [
-          { "key": "seed_after_complete", "type": "bool", "default": true },
-          { "key": "max_peers", "type": "int", "min": 10, "max": 500, "default": 100 },
           { "key": "bt_files", "type": "string", "default": "" },
           { "key": "bt_seed_ratio", "type": "float", "min": 0, "default": 0 },
           { "key": "bt_seed_minutes", "type": "int", "min": 0, "default": 0 }

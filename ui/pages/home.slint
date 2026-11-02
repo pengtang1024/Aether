@@ -399,6 +399,7 @@ export component HomePage inherits Rectangle {
     in property <int> count-failed: 0;
     in property <int> count-seed: 0;
     in property <int> count-all: 0;
+    in property <int> connections: 4;
     in property <string> total-speed: "0 B/s";
     in property <string> chart-line: "";
     in property <string> chart-area: "";
@@ -491,7 +492,7 @@ export component HomePage inherits Rectangle {
                         }
 
                         Text {
-                            text: @tr("活跃 ") + root.count-active + @tr(" · 队列 ") + root.count-paused + @tr(" · 连接 24");
+                            text: @tr("活跃 ") + root.count-active + @tr(" · 队列 ") + root.count-paused + @tr(" · 连接 ") + root.connections;
                             color: Aether.on-surface-muted;
                             font-size: Aether.text-micro;
                         }
@@ -735,7 +736,7 @@ export component HomePage inherits Rectangle {
                         spacing: 0;
 
                         Text {
-                            text: @tr("本周下载");
+                            text: @tr("近 7 天");
                             color: Aether.on-surface-muted;
                             font-size: Aether.text-micro;
                         }

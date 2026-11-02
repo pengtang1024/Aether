@@ -30,9 +30,19 @@ pub struct DetectedLink {
 pub struct ClipboardControl {
     enabled: Arc<Mutex<bool>>,
     last: Arc<Mutex<String>>,
+    /// Schemes the installed plugins declare; replaced by each daemon snapshot.
+    schemes: Arc<Mutex<Vec<String>>>,
 }
 
 impl ClipboardControl {
+    /// Accept exactly the protocols the daemon's plugin list declares, so a
+    /// plugin that adds a scheme is detected without touching the UI.
+    pub fn set_protocols(&self, protocols: &[String]) {
+        let mut schemes = self.schemes.lock().unwrap();
+        schemes.clear();
+        schemes.extend(protocols.iter().cloned());
+    }
+
     pub fn set_enabled(&self, on: bool) {
         *self.enabled.lock().unwrap() = on;
         if !on {
@@ -69,11 +79,18 @@ pub fn start() -> Option<(ClipboardWatch, ClipboardControl)> {
     let control = ClipboardControl {
         enabled: Arc::new(Mutex::new(false)),
         last: Arc::new(Mutex::new(initial)),
+        schemes: Arc::new(Mutex::new(
+            DEFAULT_SCHEMES
+                .iter()
+                .map(|scheme| scheme.to_string())
+                .collect(),
+        )),
     };
     let (tx, rx) = mpsc::channel::<DetectedLink>();
 
     let thread_enabled = control.enabled.clone();
     let thread_last = control.last.clone();
+    let thread_schemes = control.schemes.clone();
     thread::spawn(move || loop {
         thread::sleep(POLL_INTERVAL);
         if !*thread_enabled.lock().unwrap() {
@@ -93,7 +110,7 @@ pub fn start() -> Option<(ClipboardWatch, ClipboardControl)> {
             continue;
         }
         *previous = text.clone();
-        if let Some(url) = detectable_url(&text) {
+        if let Some(url) = detectable_url(&text, &thread_schemes.lock().unwrap()) {
             // A failed send means the window is gone; stop quietly.
             if tx.send(DetectedLink { url }).is_err() {
                 break;
@@ -104,57 +121,75 @@ pub fn start() -> Option<(ClipboardWatch, ClipboardControl)> {
     Some((ClipboardWatch { links: rx }, control))
 }
 
+/// Schemes accepted before the daemon reports its plugin list. Kept identical
+/// to what 0.5.0 shipped so the watcher works during startup.
+const DEFAULT_SCHEMES: [&str; 7] = ["http", "https", "ftp", "ftps", "magnet", "ed2k", "thunder"];
+
 /// What counts as a download link: a single-token URL with a scheme the
 /// engine can actually handle. Anything else (multi-word text, paths,
 /// `file://`, javascript:) is not reported — the daemon's plugin probe would
 /// just reject it after the user clicked through.
-fn detectable_url(text: &str) -> Option<String> {
+fn detectable_url(text: &str, schemes: &[String]) -> Option<String> {
     // A link copied as "https://a/b (from chat)" has trailing words; accept
     // a leading URL token but never embedded ones.
     let token = text.split_whitespace().next()?;
     let trimmed = token.trim_end_matches(|ch: char| matches!(ch, ',' | ';' | '。' | '，'));
     let (scheme, _) = trimmed.split_once(':')?;
     let scheme = scheme.to_ascii_lowercase();
-    matches!(
-        scheme.as_str(),
-        "http" | "https" | "ftp" | "ftps" | "magnet" | "ed2k" | "thunder"
-    )
-    .then(|| trimmed.to_owned())
+    schemes
+        .iter()
+        .any(|known| known == &scheme)
+        .then(|| trimmed.to_owned())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn detect_with_default(text: &str) -> Option<String> {
+        let schemes: Vec<String> = DEFAULT_SCHEMES.iter().map(|s| s.to_string()).collect();
+        detectable_url(text, &schemes)
+    }
+
+    #[test]
+    fn accepts_a_plugin_declared_scheme() {
+        let schemes = vec!["ipfs".to_string()];
+        assert_eq!(
+            detectable_url("ipfs://bafy/file", &schemes),
+            Some("ipfs://bafy/file".into())
+        );
+        assert_eq!(detectable_url("https://example.com/a", &schemes), None);
+    }
+
     #[test]
     fn detects_downloadable_schemes() {
         assert_eq!(
-            detectable_url("https://example.com/file.bin"),
+            detect_with_default("https://example.com/file.bin"),
             Some("https://example.com/file.bin".into())
         );
         assert_eq!(
-            detectable_url("magnet:?xt=urn:btih:abc"),
+            detect_with_default("magnet:?xt=urn:btih:abc"),
             Some("magnet:?xt=urn:btih:abc".into())
         );
         // Trailing punctuation from a chat message is dropped.
         assert_eq!(
-            detectable_url("https://example.com/a.mp4，"),
+            detect_with_default("https://example.com/a.mp4，"),
             Some("https://example.com/a.mp4".into())
         );
         // A URL followed by commentary: first token wins.
         assert_eq!(
-            detectable_url("https://example.com/a.bin (from chat)"),
+            detect_with_default("https://example.com/a.bin (from chat)"),
             Some("https://example.com/a.bin".into())
         );
     }
 
     #[test]
     fn rejects_everything_else() {
-        assert_eq!(detectable_url("/home/user/file.iso"), None);
-        assert_eq!(detectable_url("file:///etc/passwd"), None);
-        assert_eq!(detectable_url("javascript:alert(1)"), None);
-        assert_eq!(detectable_url("hello world"), None);
-        assert_eq!(detectable_url(""), None);
-        assert_eq!(detectable_url("see https://example.com"), None);
+        assert_eq!(detect_with_default("/home/user/file.iso"), None);
+        assert_eq!(detect_with_default("file:///etc/passwd"), None);
+        assert_eq!(detect_with_default("javascript:alert(1)"), None);
+        assert_eq!(detect_with_default("hello world"), None);
+        assert_eq!(detect_with_default(""), None);
+        assert_eq!(detect_with_default("see https://example.com"), None);
     }
 }

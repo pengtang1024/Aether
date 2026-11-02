@@ -108,10 +108,18 @@ mod imp {
         RollbackPlugin {
             row: i32,
         },
+        /// Replace one plugin's stored configuration (validated by the daemon).
+        PluginSettings {
+            plugin_id: String,
+            settings: Value,
+        },
         /// Re-scan the plugins directory without restarting the daemon.
         RescanPlugins,
         /// Check the update manifest and install every outdated plugin.
         PluginUpdateAll,
+        /// Refresh the cached `plugin_updates` reply (rate-limited: the
+        /// daemon fetches and verifies a remote manifest).
+        PluginUpdates,
         /// Ask the daemon to check for a new app release now. The result
         /// appears in `stats.update` on the next sample.
         CheckUpdate,
@@ -121,6 +129,9 @@ mod imp {
         snapshot: Snapshot,
         notice: Option<String>,
         completed: Vec<Finished>,
+        /// Last `plugin_updates` reply; `configured: false` means the daemon
+        /// has no update channel, not that everything is current.
+        plugin_updates: Option<Value>,
     }
 
     pub struct Backend {
@@ -136,6 +147,7 @@ mod imp {
                 snapshot: Snapshot::default(),
                 notice: None,
                 completed: Vec::new(),
+                plugin_updates: None,
             }));
             let worker_shared = shared.clone();
             thread::spawn(move || worker(receiver, worker_shared));
@@ -215,6 +227,15 @@ mod imp {
             let _ = self.commands.send(Command::RollbackPlugin { row });
         }
 
+        /// Save one plugin's configuration. The daemon validates it against
+        /// the plugin's `settings_schema`; the outcome surfaces as a notice.
+        pub fn set_plugin_settings(&self, plugin_id: &str, settings: Value) {
+            let _ = self.commands.send(Command::PluginSettings {
+                plugin_id: plugin_id.to_string(),
+                settings,
+            });
+        }
+
         /// Ask the daemon to re-scan the plugins directory (count in the
         /// resulting notice).
         pub fn rescan_plugins(&self) {
@@ -225,6 +246,12 @@ mod imp {
         /// the summary arrives through `take_notice`.
         pub fn plugin_update_all(&self) {
             let _ = self.commands.send(Command::PluginUpdateAll);
+        }
+
+        /// Last `plugin_updates` reply, refreshed by the worker at plugin
+        /// list refresh time. `configured: false` means no update channel.
+        pub fn plugin_updates(&self) -> Option<Value> {
+            self.shared.lock().unwrap().plugin_updates.clone()
         }
 
         /// Trigger one app-update check in the daemon. The About panel reads
@@ -278,6 +305,10 @@ mod imp {
         stats: Option<Stats>,
         stats_sampled: Option<Instant>,
         plugins: Vec<PluginInfo>,
+        /// Cached `plugin_updates` reply and when it was last fetched (the
+        /// manifest check is a network round-trip).
+        plugin_updates: Option<Value>,
+        plugin_updates_at: Option<Instant>,
         /// Daemon settings, from `get_settings` and `settings_changed` events.
         settings: Option<Value>,
         /// Detail payloads from plugin `Detail` events, keyed by daemon id.
@@ -409,6 +440,8 @@ mod imp {
             self.stats = None;
             self.plugins.clear();
             self.settings = None;
+            self.plugin_updates = None;
+            self.plugin_updates_at = None;
             self.needs_refresh = true;
         }
 
@@ -550,6 +583,17 @@ mod imp {
                     client.set_plugin_enabled(&plugin_id, enabled)?;
                     self.needs_refresh = true;
                 }
+                Command::PluginSettings {
+                    plugin_id,
+                    settings,
+                } => {
+                    client.set_plugin_settings(&plugin_id, settings)?;
+                    self.needs_refresh = true;
+                    self.notice = Some(crate::i18n::tr(
+                        format!("已保存 {plugin_id} 的插件设置"),
+                        format!("Saved settings for {plugin_id}"),
+                    ));
+                }
                 Command::UninstallPlugin { row } => {
                     let Some(plugin) = self.plugins.get(row as usize) else {
                         return Ok(());
@@ -609,10 +653,26 @@ mod imp {
                     client.update_check()?;
                     self.stats_sampled = None;
                 }
+                Command::PluginUpdates => {
+                    let due = self
+                        .plugin_updates_at
+                        .map(|at| at.elapsed() >= Duration::from_secs(300))
+                        .unwrap_or(true);
+                    if due {
+                        if let Ok(value) = client.plugin_updates() {
+                            self.plugin_updates = Some(value);
+                            self.plugin_updates_at = Some(Instant::now());
+                        }
+                    }
+                }
                 Command::PluginUpdateAll => {
                     let value = client.plugin_update_all()?;
                     let updated = value["updated"].as_array().cloned().unwrap_or_default();
                     let failed = value["failed"].as_array().cloned().unwrap_or_default();
+                    // Re-check on the next refresh so updated rows stop
+                    // claiming an update is available.
+                    self.plugin_updates = None;
+                    self.plugin_updates_at = None;
                     self.needs_refresh = true;
                     self.notice = Some(if updated.is_empty() && failed.is_empty() {
                         crate::i18n::tr("插件已是最新", "Plugins are up to date")
@@ -669,7 +729,9 @@ mod imp {
             self.needs_refresh = false;
             self.refreshed = Some(Instant::now());
             self.sample_due();
-            Ok(())
+            // Plugin-list refresh is also the natural time to refresh the
+            // update status (the handler rate-limits the network check).
+            self.handle(Command::PluginUpdates)
         }
 
         /// Dashboard counters, refreshed about once a second (cheap SQL + one
@@ -920,6 +982,7 @@ mod imp {
                     guard.completed.push(entry);
                 }
             }
+            guard.plugin_updates = self.plugin_updates.clone();
             guard.snapshot = Snapshot {
                 tasks,
                 history: self.global.clone(),
@@ -948,22 +1011,24 @@ mod imp {
                 .entry(task_id.to_string())
                 .or_insert_with(|| VecDeque::from(vec![0.0; HISTORY_LEN]))
                 .clone();
+            let torrent = torrent(&self.plugins, record);
             Task {
                 id,
                 name: record
                     .filename
                     .clone()
                     .unwrap_or_else(|| name_from_url(&record.url)),
-                source: source_of(record),
+                source: source_of(record, torrent),
                 path: record
                     .target_dir
                     .clone()
                     .unwrap_or_else(|| self.download_dir.clone()),
+                plugin_id: record.plugin_id.clone(),
                 note: record.error_message.clone().unwrap_or_default(),
                 total: record.total.unwrap_or(0),
                 done: record.downloaded as f64,
                 status: status_of(record.state),
-                torrent: record.plugin_id == "bt" || record.url.starts_with("magnet:"),
+                torrent,
                 speed: if record.state == TaskState::Running {
                     record.speed_bps as f64
                 } else {
@@ -996,8 +1061,18 @@ mod imp {
         name.to_string()
     }
 
-    fn source_of(record: &StoredTask) -> String {
-        if record.plugin_id == "bt" || record.url.starts_with("magnet:") {
+    /// Torrent tasks are declared by the plugin (`features: ["torrent"]`) or
+    /// recognised from a magnet URL when plugin metadata is not loaded yet.
+    fn torrent(plugins: &[PluginInfo], record: &StoredTask) -> bool {
+        record.url.starts_with("magnet:")
+            || plugins.iter().any(|plugin| {
+                plugin.id == record.plugin_id
+                    && plugin.features.iter().any(|feature| feature == "torrent")
+            })
+    }
+
+    fn source_of(record: &StoredTask, torrent: bool) -> String {
+        if torrent {
             return "BT · magnet".to_string();
         }
         let authority = record
@@ -1073,29 +1148,32 @@ mod imp {
         fn names_and_sources_come_from_the_url() {
             assert_eq!(name_from_url("https://x.test/a/b.iso?token=1"), "b.iso");
             assert_eq!(
-                source_of(&StoredTask {
-                    id: "t".into(),
-                    url: "https://user@host.test:8443/x".into(),
-                    plugin_id: "http".into(),
-                    filename: None,
-                    state: TaskState::Queued,
-                    priority: 0,
-                    downloaded: 0,
-                    total: None,
-                    speed_bps: 0,
-                    error_kind: None,
-                    error_message: None,
-                    error_retryable: false,
-                    settings: json!({}),
-                    plugin_state: None,
-                    target_dir: None,
-                    retry_attempts: 0,
-                    retry_at: None,
-                    created_at: 0,
-                    updated_at: 0,
-                    completed_at: None,
-                    files: Vec::new(),
-                }),
+                source_of(
+                    &StoredTask {
+                        id: "t".into(),
+                        url: "https://user@host.test:8443/x".into(),
+                        plugin_id: "http".into(),
+                        filename: None,
+                        state: TaskState::Queued,
+                        priority: 0,
+                        downloaded: 0,
+                        total: None,
+                        speed_bps: 0,
+                        error_kind: None,
+                        error_message: None,
+                        error_retryable: false,
+                        settings: json!({}),
+                        plugin_state: None,
+                        target_dir: None,
+                        retry_attempts: 0,
+                        retry_at: None,
+                        created_at: 0,
+                        updated_at: 0,
+                        completed_at: None,
+                        files: Vec::new(),
+                    },
+                    false
+                ),
                 "host.test"
             );
         }

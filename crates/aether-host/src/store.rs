@@ -1,5 +1,6 @@
 //! SQLite persistence for tasks, files, plugin settings and task logs.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -573,6 +574,22 @@ impl TaskStore {
         Ok(())
     }
 
+    /// Every stored plugin configuration, keyed by plugin id.
+    pub fn all_plugin_settings(&self) -> Result<BTreeMap<String, Value>, StoreError> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT plugin_id, settings FROM plugin_settings")?;
+        let rows = statement.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let mut settings = BTreeMap::new();
+        for row in rows {
+            let (plugin_id, raw) = row?;
+            settings.insert(plugin_id, serde_json::from_str(&raw)?);
+        }
+        Ok(settings)
+    }
+
     pub fn plugin_settings(&self, plugin_id: &str) -> Result<Option<Value>, StoreError> {
         let value: Option<String> = self
             .connection
@@ -1083,7 +1100,13 @@ mod tests {
         let mut store = TaskStore::open_in_memory().unwrap();
         let settings = serde_json::json!({"connections": 8});
         store.save_plugin_settings("http", &settings).unwrap();
-        assert_eq!(store.plugin_settings("http").unwrap(), Some(settings));
+        assert_eq!(
+            store.plugin_settings("http").unwrap(),
+            Some(settings.clone())
+        );
+        let all = store.all_plugin_settings().unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all.get("http"), Some(&settings));
     }
 
     #[test]

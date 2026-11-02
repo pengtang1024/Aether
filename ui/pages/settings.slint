@@ -3,13 +3,32 @@
 // A local, scrollable category navigation on the left and one large settings
 // panel on the right. The three global destinations stay in the app bar.
 
-import { ScrollView, Switch, Slider, ComboBox, LineEdit, TextButton } from "std-widgets.slint";
+import { ScrollView, Switch, Slider, ComboBox, LineEdit, TextButton, IconButton } from "std-widgets.slint";
 import { Aether } from "theme.slint";
 import { AetherIcons } from "icons.slint";
 import { PluginGlyph, SectionCard, SettingRow } from "widgets.slint";
-import { PluginRow } from "model.slint";
+import { PluginRow, SettingField } from "model.slint";
 import { SettingsFilter, SettingsHit } from "../settings-filter.slint";
 import { PluginCatalog } from "plugins.slint";
+
+// Modal state for one plugin's declared settings (`settings_schema`).
+// Rust fills `title`/`fields`/`values` when `configure` fires — fresh from
+// the schema and the stored config — and validates + persists on `save`
+// (false keeps the dialog open, e.g. for an unparseable number, and raises
+// the toast itself). The dialog only renders; it never invents keys.
+export global PluginSettings {
+    in-out property <bool> open: false;
+    // Row index into `PluginCatalog.all` / the daemon's plugin list.
+    in-out property <int> row: -1;
+    in-out property <string> title: "";
+    // Flattened in schema order — the order the dialog renders and saves in.
+    in-out property <[SettingField]> fields: [];
+    // One text slot per field, same order as `fields`.
+    in-out property <[string]> values: [];
+
+    callback configure(int);
+    callback save() -> bool;
+}
 
 component ValueSlider inherits Rectangle {
     in property <image> icon-source;
@@ -938,6 +957,24 @@ component InstalledPlugin inherits Rectangle {
             clicked => { root.rolled-back(root.plugin.id); }
         }
 
+        // Slot is always reserved so rows with and without a schema keep the
+        // same action alignment; the button only exists when the daemon
+        // declared at least one field.
+        Rectangle {
+            width: Aether.control-md;
+            height: Aether.control-md;
+            background: transparent;
+            cross-axis-self-alignment: center;
+
+            if root.plugin.can-configure: IconButton {
+                width: 100%;
+                height: 100%;
+                icon: AetherIcons.tune;
+                accessible-label: @tr("插件设置");
+                clicked => { PluginSettings.configure(root.plugin.id); }
+            }
+        }
+
         TextButton {
             text: @tr("卸载");
             text-color: Aether.on-surface-variant;
@@ -1791,6 +1828,261 @@ component SearchResults inherits Rectangle {
     }
 }
 
+// One declared setting inside the dialog: label (the schema key), the
+// control its type maps to, and a single hint line assembled from the
+// schema's default / range / options.
+component PluginSettingField inherits VerticalLayout {
+    in property <SettingField> field;
+    in property <int> index: 0;
+    // True above the first field of each section so titles group the form.
+    in property <bool> show-section: false;
+    spacing: 4px;
+
+    property <string> hint-default: root.field.default == ""
+        ? ""
+        : @tr("默认：") + root.field.default;
+    property <string> hint-range:
+          root.field.has-min && root.field.has-max ? @tr("范围：") + root.field.min + " – " + root.field.max
+        : root.field.has-min ? @tr("最小：") + root.field.min
+        : root.field.has-max ? @tr("最大：") + root.field.max
+        : "";
+    property <string> hint-options: root.field.options-text == ""
+        ? ""
+        : @tr("可选：") + root.field.options-text;
+    property <string> hint: root.hint-join(root.hint-default, root.hint-range, root.hint-options);
+
+    function hint-join(a: string, b: string, c: string) -> string {
+        a
+        + (b == "" ? "" : (a == "" ? "" : " · ") + b)
+        + (c == "" ? "" : ((a == "" && b == "") ? "" : " · ") + c)
+    }
+
+    if root.show-section: Rectangle {
+        height: 14px;
+        background: transparent;
+
+        Text {
+            text: root.field.section;
+            color: Aether.primary-bright;
+            font-size: Aether.text-label;
+            font-weight: Aether.weight-medium;
+            vertical-alignment: bottom;
+        }
+    }
+
+    Text {
+        text: root.field.key;
+        color: Aether.on-surface-variant;
+        font-size: Aether.text-label;
+        font-weight: Aether.weight-medium;
+    }
+
+    if root.field.kind == "bool": Switch {
+        checked: PluginSettings.values[root.index] == "true";
+        toggled => { PluginSettings.values[root.index] = self.checked ? "true" : "false"; }
+    }
+
+    if root.field.kind == "select" && root.field.options.length > 0: ComboBox {
+        model: root.field.options;
+        current-index: root.field.options.index-of(PluginSettings.values[root.index]);
+        selected => { PluginSettings.values[root.index] = self.current-value; }
+    }
+
+    if root.field.kind != "bool" && !(root.field.kind == "select" && root.field.options.length > 0): LineEdit {
+        text: PluginSettings.values[root.index];
+        placeholder-text: root.field.default;
+        input-type: root.field.kind == "secret" ? InputType.password : InputType.text;
+        edited => { PluginSettings.values[root.index] = self.text; }
+    }
+
+    if root.hint != "": Text {
+        text: root.hint;
+        color: Aether.on-surface-muted;
+        font-size: Aether.text-caption;
+        overflow: elide;
+    }
+}
+
+// Modal for one plugin's declared settings — the same scrim/card shell as
+// the new-download dialog. Rust owns the lifecycle: `configure` fills the
+// global with fresh fields + values and opens it; `save` returns false to
+// keep it open when a value cannot be parsed.
+component PluginSettingsDialog inherits FocusScope {
+    in property <bool> open: false;
+
+    visible: root.open;
+    width: 100%;
+    height: 100%;
+
+    key-pressed(event) => {
+        if (event.text == Key.Escape) {
+            PluginSettings.open = false;
+            return accept;
+        }
+        return reject;
+    }
+
+    changed open => {
+        if (root.open) {
+            root.focus();
+        }
+    }
+
+    // ---- scrim -----------------------------------------------------------
+    Rectangle {
+        width: 100%;
+        height: 100%;
+        background: Aether.scrim;
+
+        TouchArea {
+            clicked => { PluginSettings.open = false; }
+        }
+    }
+
+    Rectangle {
+        width: 100%;
+        height: 100%;
+        background: @radial-gradient(circle, Aether.primary.with-alpha(0.06) 0%, transparent 58%);
+    }
+
+    // ---- dialog card -----------------------------------------------------
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: min(560px, parent.width - 48px);
+        // Height follows the form instead of a fixed 620px, so a one-field
+        // plugin does not open a mostly empty card; tall schemas still cap and scroll.
+        height: min(620px, parent.height - 48px, 236px + PluginSettings.fields.length * 92px);
+        border-radius: 24px;
+        background: @linear-gradient(160deg, Aether.dialog-top, Aether.dialog-bottom 100%);
+        border-width: 1px;
+        border-color: Aether.outline-variant;
+        drop-shadow-color: Aether.shadow-popup;
+        drop-shadow-blur: 38px;
+        drop-shadow-offset-y: 14px;
+        clip: true;
+
+        Rectangle {
+            x: 0;
+            y: 0;
+            width: 100%;
+            height: 1px;
+            background: @linear-gradient(90deg,
+                transparent,
+                Aether.primary.with-alpha(0.60) 24%,
+                Aether.live.with-alpha(0.34) 76%,
+                transparent);
+        }
+
+        Rectangle {
+            x: parent.width - 340px;
+            y: -220px;
+            width: 420px;
+            height: 380px;
+            background: @radial-gradient(circle, Aether.glow-primary 0%, transparent 68%);
+        }
+
+        TouchArea {}
+
+        VerticalLayout {
+            padding: 20px;
+            spacing: 12px;
+
+            // ---- header: accent icon + title + close --------------------
+            HorizontalLayout {
+                height: Aether.control-lg;
+                spacing: Aether.space-sm;
+
+                Rectangle {
+                    width: Aether.control-lg;
+                    height: Aether.control-lg;
+                    border-radius: Aether.radius-md;
+                    background: @linear-gradient(135deg, Aether.accent-top, Aether.accent-bottom);
+                    border-width: 1px;
+                    border-color: #FFFFFF.with-alpha(0.14);
+                    cross-axis-self-alignment: center;
+
+                    Image {
+                        source: AetherIcons.tune;
+                        width: 20px;
+                        height: 20px;
+                        colorize: Aether.on-primary;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                    }
+                }
+
+                Text {
+                    text: @tr("插件设置") + " · " + PluginSettings.title;
+                    color: Aether.on-surface;
+                    font-size: Aether.text-body;
+                    font-weight: Aether.weight-medium;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+
+                IconButton {
+                    icon: AetherIcons.close;
+                    accessible-label: @tr("取消");
+                    cross-axis-self-alignment: center;
+                    clicked => { PluginSettings.open = false; }
+                }
+            }
+
+            // ---- scrollable field list ----------------------------------
+            ScrollView {
+                vertical-stretch: 1;
+                min-height: 0px;
+                preferred-height: 0px;
+
+                VerticalLayout {
+                    width: 100%;
+                    spacing: 16px;
+                    // Fields keep their natural height; a stretched layout puts
+                    // the input at the bottom of a mostly empty 500px card.
+                    alignment: start;
+
+                    // `index` must be the loop variable: naming it like the
+                    // component property would bind the property to itself.
+                    for field[field-index] in PluginSettings.fields: PluginSettingField {
+                        field: field;
+                        index: field-index;
+                        show-section: field.section != ""
+                            && (field-index == 0 ? true : PluginSettings.fields[field-index - 1].section != field.section);
+                    }
+                }
+            }
+
+            Rectangle {
+                height: 1px;
+                background: Aether.outline-variant.with-alpha(0.55);
+            }
+
+            // ---- footer --------------------------------------------------
+            HorizontalLayout {
+                alignment: end;
+                spacing: 8px;
+
+                TextButton {
+                    text: @tr("取消");
+                    text-color: Aether.on-surface-variant;
+                    clicked => { PluginSettings.open = false; }
+                }
+
+                TextButton {
+                    text: @tr("保存");
+                    clicked => {
+                        if (PluginSettings.save()) {
+                            PluginSettings.open = false;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 export component SettingsPage inherits Rectangle {
     // Set by the window from `env!("CARGO_PKG_VERSION")`.
     in property <string> app-version: "";
@@ -1874,6 +2166,9 @@ export component SettingsPage inherits Rectangle {
         SettingsFilter.active = false;
         SettingsFilter.hits = "";
         SettingsFilter.results = [];
+        // Leaving Settings while the dialog is open destroys it; don't
+        // resurrect a stale form on re-entry.
+        PluginSettings.open = false;
     }
 
     function clear-search() {
@@ -2177,5 +2472,10 @@ export component SettingsPage inherits Rectangle {
                 }
             }
         }
+    }
+
+    // Declared after the page layout so the modal paints above it.
+    PluginSettingsDialog {
+        open: PluginSettings.open;
     }
 }

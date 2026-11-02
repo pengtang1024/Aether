@@ -45,6 +45,10 @@ pub struct PluginManifest {
     pub service: Option<String>,
     #[serde(default)]
     pub capabilities: Vec<Capability>,
+    /// Free-form behaviour tags the controller branches on (for example
+    /// `torrent`). They grant no permission; Host policy is `capabilities`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub features: Vec<String>,
     /// Platform key -> executable path relative to the plugin package root.
     #[serde(default)]
     pub executable: BTreeMap<String, String>,
@@ -131,6 +135,18 @@ impl PluginManifest {
                 return Err(ManifestError::Invalid(format!(
                     "duplicate capability {}",
                     capability.as_str()
+                )));
+            }
+        }
+
+        let mut feature_seen = std::collections::BTreeSet::new();
+        for feature in &self.features {
+            if feature.trim().is_empty() {
+                return Err(ManifestError::Invalid("feature must not be empty".into()));
+            }
+            if !feature_seen.insert(feature.as_str()) {
+                return Err(ManifestError::Invalid(format!(
+                    "duplicate feature {feature}"
                 )));
             }
         }
@@ -345,6 +361,20 @@ mod tests {
         ];
         let error = manifest.validate().unwrap_err();
         assert!(error.to_string().contains("duplicate capability network"));
+    }
+
+    #[test]
+    fn features_are_free_form_controller_tags() {
+        let mut manifest = minimal_manifest();
+        manifest.features = vec!["torrent".into()];
+        manifest.validate().unwrap();
+
+        manifest.features.push("torrent".into());
+        let error = manifest.validate().unwrap_err();
+        assert!(error.to_string().contains("duplicate feature torrent"));
+
+        manifest.features = vec![String::new()];
+        assert!(manifest.validate().is_err());
     }
 
     #[test]

@@ -40,6 +40,23 @@ export struct TaskDetail {
     bt-text: string,
 }
 
+// One row of a generic plugin detail section: plain cells in schema
+// column order (metrics rows carry label + value, peers rows one cell
+// per declared column).
+export struct DetailRow {
+    cells: [string],
+}
+
+// One `detail_schema` section flattened for the drawer. `kind` is the
+// schema `type` ("metrics", "peers", …); the Rust side only emits
+// sections it could actually fill, so `rows` is never empty.
+export struct DetailSection {
+    kind: string,
+    title: string,
+    columns: [string],
+    rows: [DetailRow],
+}
+
 export struct RecordRow {
     id: int,
     name: string,
@@ -47,6 +64,25 @@ export struct RecordRow {
     status: int,
     status-text: string,
     time: string,
+}
+
+// One declared setting of a plugin (`settings_schema` flattened in schema
+// order). The ABI carries no labels, so `key` doubles as the field label;
+// `section` repeats on every field of its section and is rendered when it
+// changes. `value` is the initial text: the stored value, or "" = not set
+// (the default then shows as the placeholder).
+export struct SettingField {
+    section: string,
+    key: string,
+    kind: string,
+    default: string,
+    has-min: bool,
+    min: string,
+    has-max: bool,
+    max: string,
+    options: [string],
+    options-text: string,
+    value: string,
 }
 
 export struct PluginRow {
@@ -67,4 +103,7 @@ export struct PluginRow {
     can-rollback: bool,
     icon: int,
     tone: int,
+    // The daemon declared a settings_schema with at least one field: only
+    // then does the row get a configure button.
+    can-configure: bool,
 }

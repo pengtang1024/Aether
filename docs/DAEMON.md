@@ -48,6 +48,8 @@ aether-daemon
 | `resolve_proxy` | `url` | PAC 诊断：返回该 URL 会用的代理与 `pac_error` |
 | `get_settings` | — | 返回 `{"settings":{…}}`，调度上限是解析后的生效值 |
 | `set_settings` | `settings.*` | 部分更新设置并落盘，广播 `settings_changed`；未知 key 报错 |
+| `get_plugin_settings` | — | 返回 `{"plugin_settings":{"<plugin-id>":{…}}}`（§8 的 per-plugin 配置） |
+| `set_plugin_settings` | `plugin`, `settings.*` | 按插件 `settings_schema` 校验后落盘；未知插件/key、类型/范围不符报错 |
 | `shutdown` | — | 停止 daemon |
 
 示例：

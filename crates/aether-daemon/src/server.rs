@@ -1200,6 +1200,7 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
                 .into_iter()
                 .map(|status| (status.service.clone(), status))
                 .collect();
+            let stored_settings = state.store.all_plugin_settings()?;
             let plugins = state
                 .manager
                 .registry()
@@ -1228,6 +1229,7 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
                         "version": entry.manifest.version,
                         "protocols": entry.manifest.protocols,
                         "capabilities": entry.manifest.capabilities,
+                        "features": entry.manifest.features,
                         "enabled": entry.enabled,
                         "blocked": blocked,
                         "service": entry.manifest.kind == PluginKind::Service,
@@ -1237,6 +1239,12 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
                             .join(&entry.manifest.id)
                             .join("plugin.json")
                             .is_file(),
+                        "settings_schema": entry.manifest.settings_schema.clone(),
+                        "detail_schema": entry.manifest.detail_schema.clone(),
+                        "settings": stored_settings
+                            .get(&entry.manifest.id)
+                            .cloned()
+                            .unwrap_or_else(|| json!({})),
                     })
                 })
                 .collect::<Vec<_>>();
@@ -1412,6 +1420,32 @@ fn handle_request(state: &mut State, request: Request) -> Result<Value, DaemonEr
                 .ok_or_else(|| DaemonError::Protocol("backup needs a path".into()))?;
             state.store.backup_to(path)?;
             Ok(json!({ "path": path }))
+        }
+        // Plugin-declared configuration (`settings_schema`). Stored per plugin
+        // and applied as a default layer to every task of that plugin.
+        "get_plugin_settings" => {
+            Ok(json!({ "plugin_settings": state.store.all_plugin_settings()? }))
+        }
+        "set_plugin_settings" => {
+            let plugin_id = request
+                .plugin
+                .clone()
+                .ok_or_else(|| DaemonError::Protocol("set_plugin_settings needs plugin".into()))?;
+            let entry = state
+                .manager
+                .registry()
+                .iter()
+                .find(|entry| entry.manifest.id == plugin_id)
+                .ok_or_else(|| DaemonError::Protocol(format!("unknown plugin {plugin_id}")))?;
+            aether_host::plugin_settings::validate(
+                entry.manifest.settings_schema.as_ref(),
+                &request.settings,
+            )
+            .map_err(|error| DaemonError::Protocol(format!("{plugin_id}: {error}")))?;
+            state
+                .store
+                .save_plugin_settings(&plugin_id, &request.settings)?;
+            Ok(json!({ "plugin_id": plugin_id, "settings": request.settings }))
         }
         "get_settings" => Ok(json!({ "settings": state.settings })),
         "set_settings" => {
@@ -2115,7 +2149,15 @@ fn set_task_limit(state: &mut State, request: Request) -> Result<Value, DaemonEr
         .store
         .task(&task_id)?
         .ok_or_else(|| DaemonError::Protocol(format!("task {task_id} not found")))?;
-    if task.plugin_id == "bt" {
+    let torrent = state.manager.registry().iter().any(|entry| {
+        entry.manifest.id == task.plugin_id
+            && entry
+                .manifest
+                .features
+                .iter()
+                .any(|feature| feature == "torrent")
+    });
+    if torrent {
         return Err(DaemonError::Protocol(
             "per-task speed limits are not supported for BitTorrent".into(),
         ));
@@ -2340,6 +2382,10 @@ fn add_task(state: &mut State, request: Request) -> Result<Value, DaemonError> {
         .and_then(aether_plugin_sdk::fsutil::sanitize_filename)
         .or_else(|| probe.suggested_filename.clone());
     let mut settings = request.settings;
+    // Plugin settings are a default layer: a task that names the same key wins.
+    if let Some(defaults) = state.store.plugin_settings(&plugin_id)? {
+        aether_host::plugin_settings::apply_defaults(&mut settings, &defaults);
+    }
     let checksum = parse_checksum(&settings)?;
     // The daemon-wide ffmpeg path is a default, not an override: a task that
     // names its own binary (or none at all) keeps/loses to its own choice,

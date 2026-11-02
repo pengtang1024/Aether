@@ -24,6 +24,8 @@ use crate::state::{self, ResumeState};
 use crate::throttle::Throttle;
 
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
+/// Detail is for the drawer's schema rows, not the progress bar: 1 Hz is plenty.
+const DETAIL_INTERVAL: Duration = Duration::from_secs(1);
 const STATE_INTERVAL: Duration = Duration::from_secs(1);
 const MAX_RETRIES: u32 = 3;
 const CHUNK: usize = 64 * 1024;
@@ -329,6 +331,7 @@ fn run_inner(
         let mut last_bytes = downloaded.load(Ordering::Relaxed);
         let mut last_speed_time = Instant::now();
         let mut last_progress = Instant::now() - PROGRESS_INTERVAL;
+        let mut last_detail = Instant::now() - DETAIL_INTERVAL;
         let mut last_state = Instant::now();
         let mut disconnected = false;
 
@@ -395,17 +398,34 @@ fn run_inner(
                 snapshot.chunks_total = total_ranges;
                 snapshot.seq = snapshot.seq.saturating_add(1);
 
+                let eta_secs = eta(bytes, total, speed);
                 let _ = sender.send(&PluginEvent::Progress {
                     task_id: task.task_id.clone(),
                     seq: snapshot.seq,
                     downloaded: bytes,
                     total,
                     speed_bps: speed,
-                    eta_secs: eta(bytes, total, speed),
+                    eta_secs,
                     connections: if control.is_paused() { 0 } else { range_count },
                     chunks_done: Some(done),
                     chunks_total: Some(total_ranges),
                 });
+
+                if now.duration_since(last_detail) >= DETAIL_INTERVAL {
+                    last_detail = now;
+                    let size = match total {
+                        Some(total) => format!("{} / {}", human_size(bytes), human_size(total)),
+                        None => human_size(bytes),
+                    };
+                    let _ = sender.send(&PluginEvent::Detail {
+                        task_id: task.task_id.clone(),
+                        data: serde_json::json!({
+                            "speed": format!("{}/s", human_size(speed)),
+                            "eta": eta_secs.map(|secs| format!("{secs} s")).unwrap_or_else(|| "-".into()),
+                            "size": size,
+                        }),
+                    });
+                }
             }
 
             if now.duration_since(last_state) >= STATE_INTERVAL {
@@ -750,6 +770,21 @@ fn backoff(attempt: u32) {
     thread::sleep(Duration::from_millis(200 * 2_u64.pow(attempt.min(4))));
 }
 
+fn human_size(bytes: u64) -> String {
+    const UNITS: [&str; 4] = ["B", "KB", "MB", "GB"];
+    let mut value = bytes as f64;
+    let mut unit = 0;
+    while value >= 1024.0 && unit < UNITS.len() - 1 {
+        value /= 1024.0;
+        unit += 1;
+    }
+    if unit == 0 {
+        format!("{bytes} B")
+    } else {
+        format!("{value:.1} {}", UNITS[unit])
+    }
+}
+
 fn eta(downloaded: u64, total: Option<u64>, speed: u64) -> Option<u64> {
     let total = total?;
     if speed == 0 {
@@ -887,6 +922,12 @@ mod tests {
     }
 
     #[test]
+    fn human_size_switches_units() {
+        assert_eq!(human_size(512), "512 B");
+        assert_eq!(human_size(1536), "1.5 KB");
+        assert_eq!(human_size(25 * 1024 * 1024), "25.0 MB");
+    }
+
     fn eta_is_none_without_speed() {
         assert_eq!(eta(10, Some(100), 0), None);
         assert_eq!(eta(10, Some(100), 10), Some(9));

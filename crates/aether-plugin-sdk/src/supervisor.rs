@@ -21,6 +21,33 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 const BRIDGE_TIMEOUT: Duration = Duration::from_secs(30);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 
+/// ETXTBSY (26) means a sibling thread/process briefly holds the just-written
+/// binary open for writing (a fork can inherit the copy's write fd), so retry
+/// instead of failing the probe.
+/// shortcut: 5 x 50 ms covers a local copy; widen if plugins are updated over
+/// a slow filesystem while the host is spawning.
+fn spawn_executable(executable: &Path) -> Result<Child, SdkError> {
+    let mut last = None;
+    for attempt in 0..5 {
+        match Command::new(executable)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+        {
+            Ok(child) => return Ok(child),
+            Err(error) if error.raw_os_error() == Some(26) && attempt < 4 => {
+                last = Some(error);
+                thread::sleep(Duration::from_millis(50));
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Err(last
+        .expect("spawn loop returns on success or on the final error")
+        .into())
+}
+
 /// One running plugin process.
 ///
 /// The process is killed on drop if it is still running. Use [`shutdown`] for a
@@ -53,11 +80,7 @@ impl PluginProcess {
             ));
         }
 
-        let mut child = Command::new(executable)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn()?;
+        let mut child = spawn_executable(executable)?;
 
         let stdin = child
             .stdin

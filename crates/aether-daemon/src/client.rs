@@ -284,6 +284,33 @@ impl Client {
         Ok(value.get("settings").cloned().unwrap_or(Value::Null))
     }
 
+    /// Every plugin's validated configuration, keyed by plugin id.
+    pub fn plugin_settings(&mut self) -> Result<Value, DaemonError> {
+        let value = self.call("get_plugin_settings", None, None, None, None, json!({}))?;
+        Ok(value
+            .get("plugin_settings")
+            .cloned()
+            .unwrap_or_else(|| json!({})))
+    }
+
+    /// Replace one plugin's configuration. Validated against the plugin's
+    /// `settings_schema`; returns the stored value.
+    pub fn set_plugin_settings(
+        &mut self,
+        plugin_id: &str,
+        settings: Value,
+    ) -> Result<Value, DaemonError> {
+        let value = self.call(
+            "set_plugin_settings",
+            None,
+            Some(plugin_id),
+            None,
+            None,
+            settings,
+        )?;
+        Ok(value.get("settings").cloned().unwrap_or(Value::Null))
+    }
+
     /// Ask the daemon which proxy it would use for `url` (PAC diagnostics).
     pub fn resolve_proxy(&mut self, url: &str) -> Result<Value, DaemonError> {
         self.call("resolve_proxy", Some(url), None, None, None, json!({}))

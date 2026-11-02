@@ -632,6 +632,38 @@ fn remote(args: &[String]) -> Result<(), String> {
                 serde_json::to_string_pretty(&stored).map_err(|error| error.to_string())?
             );
         }
+        "plugin-settings" => {
+            let all = client
+                .plugin_settings()
+                .map_err(|error| error.to_string())?;
+            let value = match args.get(1).filter(|value| !value.starts_with("--")) {
+                Some(plugin_id) => all.get(plugin_id).cloned().unwrap_or(Value::Null),
+                None => all,
+            };
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&value).map_err(|error| error.to_string())?
+            );
+        }
+        "set-plugin-settings" => {
+            let plugin_id = args
+                .get(1)
+                .filter(|value| !value.starts_with("--"))
+                .ok_or("remote set-plugin-settings needs a plugin id")?;
+            let raw = args
+                .get(2)
+                .filter(|value| !value.starts_with("--"))
+                .ok_or("remote set-plugin-settings needs a JSON object")?;
+            let value: Value = serde_json::from_str(raw)
+                .map_err(|error| format!("plugin settings must be JSON: {error}"))?;
+            let stored = client
+                .set_plugin_settings(plugin_id, value)
+                .map_err(|error| error.to_string())?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&stored).map_err(|error| error.to_string())?
+            );
+        }
         "plugins" => {
             let plugins = client.plugins().map_err(|error| error.to_string())?;
             if json_output {
@@ -739,6 +771,7 @@ fn remote(args: &[String]) -> Result<(), String> {
 
 fn remote_usage() -> &'static str {
     "\n  aether-cli remote <command> [--socket <path|ip:port>] [--token <rpc-token>] [--json]\n    ping | list [--json] | stats [--json] | plugins [--json]\n    add <url> [--plugin <id>] [--dir <dir>] [--priority <n>] [--settings <json>] [--json]\n    get <task-id> | logs <task-id> [--limit <n>] [--json]\n    pause|resume|cancel|rm <task-id>\n    enable|disable <plugin-id>\n    settings | set-settings <json> | resolve-proxy <url> | watch
+    plugin-settings [<plugin-id>] | set-plugin-settings <plugin-id> <json>
     db-check | backup <dest-path>\n  ip:port (or tcp://ip:port) selects RPC over TCP; token from --token or AETHER_RPC_TOKEN"
 }
 

@@ -60,8 +60,8 @@ msgstr "シード"
 msgid "数据统计"
 msgstr "統計"
 
-msgid "本周下载"
-msgstr "今週のダウンロード"
+msgid "近 7 天"
+msgstr "過去7日間"
 
 msgid "存储与分类"
 msgstr "ストレージと分類"
@@ -738,8 +738,8 @@ msgstr "高"
 msgid " · 队列 "
 msgstr " · 待機 "
 
-msgid " · 连接 24"
-msgstr " · 接続 24"
+msgid " · 连接 "
+msgstr " · 接続 "
 
 msgid " · 剩余 "
 msgstr " · 残り "
@@ -996,3 +996,21 @@ msgstr "リンクを貼り付けるか、左の + から最初のタスクを追
 
 msgid "可选备注"
 msgstr "メモ（任意）"
+
+msgid "插件设置"
+msgstr "プラグイン設定"
+
+msgid "默认："
+msgstr "デフォルト："
+
+msgid "范围："
+msgstr "範囲："
+
+msgid "最小："
+msgstr "最小："
+
+msgid "最大："
+msgstr "最大："
+
+msgid "可选："
+msgstr "選択肢："

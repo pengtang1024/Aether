@@ -7,7 +7,7 @@
 import { Aether } from "theme.slint";
 import { ColorSchemeSelector } from "color-scheme.slint";
 import { AetherIcons } from "icons.slint";
-import { TaskRow, TaskDetail, RecordRow } from "model.slint";
+import { TaskRow, TaskDetail, DetailSection, RecordRow } from "model.slint";
 import { FlowBackground, RailButton } from "widgets.slint";
 import { HomePage } from "pages/home.slint";
 import { DownloadsPage } from "pages/downloads.slint";
@@ -19,12 +19,17 @@ import { SettingsFilter, SettingsHit } from "settings-filter.slint";
 import { Tray } from "tray.slint";
 
 export { PluginCatalog, SettingsFilter, SettingsHit, Tray }
+// Per-plugin settings dialog: Rust fills it on configure and saves on demand.
+export { PluginSettings } from "pages/settings.slint";
 
 export component AppWindow inherits Window {
     // ---- data ------------------------------------------------------------
     in property <[TaskRow]> tasks: [];
     in property <[RecordRow]> records: [];
     in property <[float]> chunks: [];
+    // Generic plugin detail sections (schema-driven), kept off `detail`
+    // so the model instance can stay stable while the drawer is open.
+    in property <[DetailSection]> detail-sections: [];
     in property <TaskDetail> detail: {
         id: -1,
         name: "",
@@ -216,6 +221,7 @@ export component AppWindow inherits Window {
     in-out property <float> chart-latest: 0;
     in-out property <bool> chart-idle: true;
     in-out property <int> speed-limit-mode: 0;   // 0=不限, 1=低, 2=中, 3=高
+    in-out property <int> connections: 4;        // per-task HTTP connections
     callback speed-limit-picked(int);
 
     // ---- theme -----------------------------------------------------------
@@ -461,6 +467,7 @@ export component AppWindow inherits Window {
                         count-paused: root.count-paused;
                         count-failed: root.count-failed;
                         count-seed: root.count-seed;
+                        connections: root.connections;
                         speed-limit-mode: root.speed-limit-mode;
                         limit-picked(idx) => { root.speed-limit-picked(idx); }
                         total-speed: root.total-speed;
@@ -683,6 +690,7 @@ export component AppWindow inherits Window {
         open: root.drawer-open;
         detail: root.detail;
         chunks: root.chunks;
+        sections: root.detail-sections;
         task-action(id, action) => { root.task-action(id, action); }
         closed => {
             root.drawer-open = false;

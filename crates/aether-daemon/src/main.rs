@@ -3,6 +3,27 @@ fn main() -> std::process::ExitCode {
     use std::path::PathBuf;
 
     let args = std::env::args().skip(1).collect::<Vec<_>>();
+    if args.iter().any(|arg| arg == "--help" || arg == "-h") {
+        print!(concat!(
+            "aether-daemon ",
+            env!("CARGO_PKG_VERSION"),
+            "\n\n",
+            "Usage: aether-daemon [OPTIONS]\n\n",
+            "Options:\n",
+            "  --download-dir <DIR>      default download directory\n",
+            "  --plugins <DIR>           plugin package directory\n",
+            "  --socket <PATH>           unix socket path\n",
+            "  --rpc-listen <ADDR>       also serve JSON-RPC (and aria2) here\n",
+            "  --proxy <URL>             proxy for all transfers\n",
+            "  --pac-url <URL>           PAC script URL\n",
+            "  --update-url <URL>        app/plugin update manifest\n",
+            "  --update-key <HEX>        Ed25519 update signing key\n",
+            "  --update-appimage <PATH>  AppImage to replace on update\n",
+            "  --version                 print the version and exit\n",
+            "  --help                    print this help and exit\n",
+        ));
+        return std::process::ExitCode::SUCCESS;
+    }
     if args.iter().any(|arg| arg == "--version") {
         println!("aether-daemon {}", env!("CARGO_PKG_VERSION"));
         return std::process::ExitCode::SUCCESS;

@@ -4,10 +4,10 @@
 // glyphs, chart, chunk grid and info glyphs. Every label or value is a hover
 // tip; there is no persistent text.
 
-import { IconButton } from "std-widgets.slint";
+import { IconButton, ScrollView } from "std-widgets.slint";
 import { Aether, StatusColor } from "theme.slint";
 import { AetherIcons } from "icons.slint";
-import { TaskDetail } from "model.slint";
+import { TaskDetail, DetailSection } from "model.slint";
 import { ChunkGrid, FileGlyph, SpeedChart, Tip } from "widgets.slint";
 
 component ActionIcon inherits Rectangle {
@@ -108,6 +108,8 @@ export component TaskDrawer inherits FocusScope {
     in property <bool> open: false;
     in property <TaskDetail> detail;
     in property <[float]> chunks: [];
+    // Schema-driven sections (metrics / peers) rendered under the chart.
+    in property <[DetailSection]> sections: [];
 
     callback closed();
     callback task-action(int, int);
@@ -146,11 +148,13 @@ export component TaskDrawer inherits FocusScope {
     }
 
     // ---- compact floating inspector --------------------------------------
-    Rectangle {
+    panel := Rectangle {
         x: parent.width - self.width - 12px;
         y: (parent.height - self.height) / 2;
         width: 360px;
-        height: 470px;
+        // Sections add a bounded peers pane; reserve room for it so the
+        // generic content is visible without scrolling on a normal screen.
+        height: min(parent.height - 24px, root.sections.length > 0 ? 640px : 470px);
         border-radius: 22px;
         background: @linear-gradient(165deg, Aether.sheet-top, Aether.sheet-bottom 72%);
         border-width: 1px;
@@ -198,7 +202,28 @@ export component TaskDrawer inherits FocusScope {
                         glyph-touch := TouchArea {}
                     }
 
-                    Rectangle { horizontal-stretch: 1; background: transparent; }
+                    // Persistent identity: the same name/status pair as the
+                    // hover card, so a live task is never anonymous.
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: center;
+                        spacing: 1px;
+
+                        Text {
+                            text: root.detail.name;
+                            color: Aether.on-surface;
+                            font-size: Aether.text-caption;
+                            font-weight: Aether.weight-medium;
+                            overflow: elide;
+                        }
+
+                        Text {
+                            text: root.detail.status-text + " · " + root.detail.progress-text;
+                            color: Aether.on-surface-muted;
+                            font-size: Aether.text-micro;
+                            overflow: elide;
+                        }
+                    }
 
                     Rectangle {
                         width: 8px;
@@ -330,112 +355,209 @@ export component TaskDrawer inherits FocusScope {
             }
 
             // ---- visual body -------------------------------------------
-            VerticalLayout {
-                padding-left: 16px;
-                padding-right: 16px;
-                padding-top: 16px;
-                padding-bottom: 16px;
-                spacing: 16px;
+            // Explicit height (header 72 + actions 46) keeps the scroll
+            // viewport independent of the panel's preferred size.
+            body-box := Rectangle {
+                height: panel.height - 118px;
+                // Only clip when the content really overflows, so the hover
+                // tips above the first row keep their full height at rest.
+                clip: body-list.content-height > body-list.height;
+                background: transparent;
 
-                HorizontalLayout {
-                    spacing: 8px;
-
-                    MetricIcon {
-                        icon-source: AetherIcons.gauge;
-                        tone: Aether.live;
-                        tip: @tr("实时速度  ") + root.detail.speed;
-                        horizontal-stretch: 1;
-                    }
-
-                    MetricIcon {
-                        icon-source: AetherIcons.clock;
-                        tone: Aether.primary-bright;
-                        tip: @tr("剩余时间  ") + root.detail.eta;
-                        horizontal-stretch: 1;
-                    }
-
-                    MetricIcon {
-                        icon-source: AetherIcons.drive;
-                        tone: Aether.info;
-                        tip: @tr("文件大小  ") + root.detail.size;
-                        horizontal-stretch: 1;
-                    }
-                }
-
-                Rectangle {
-                    height: 110px;
-                    border-radius: 14px;
-                    background: Aether.surface-dim;
-                    border-width: 1px;
-                    border-color: Aether.outline-faint;
+                body-list := ScrollView {
+                    width: 100%;
+                    height: 100%;
 
                     VerticalLayout {
-                        padding: 10px;
+                        width: 100%;
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        // Headroom for the -30px hover tips above the first
+                        // row when the viewport does clip.
+                        padding-top: 30px;
+                        padding-bottom: 16px;
+                        spacing: 16px;
 
-                        SpeedChart {
-                            width: 100%;
-                            height: 100%;
-                            line-path: root.detail.line-path;
-                            area-path: root.detail.area-path;
-                            latest: root.detail.sample;
-                            caption: "";
+                        HorizontalLayout {
+                            spacing: 8px;
+
+                            MetricIcon {
+                                icon-source: AetherIcons.gauge;
+                                tone: Aether.live;
+                                tip: @tr("实时速度  ") + root.detail.speed;
+                                horizontal-stretch: 1;
+                            }
+
+                            MetricIcon {
+                                icon-source: AetherIcons.clock;
+                                tone: Aether.primary-bright;
+                                tip: @tr("剩余时间  ") + root.detail.eta;
+                                horizontal-stretch: 1;
+                            }
+
+                            MetricIcon {
+                                icon-source: AetherIcons.drive;
+                                tone: Aether.info;
+                                tip: @tr("文件大小  ") + root.detail.size;
+                                horizontal-stretch: 1;
+                            }
+                        }
+
+                        Rectangle {
+                            height: 110px;
+                            border-radius: 14px;
+                            background: Aether.surface-dim;
+                            border-width: 1px;
+                            border-color: Aether.outline-faint;
+
+                            VerticalLayout {
+                                padding: 10px;
+
+                                SpeedChart {
+                                    width: 100%;
+                                    height: 100%;
+                                    line-path: root.detail.line-path;
+                                    area-path: root.detail.area-path;
+                                    latest: root.detail.sample;
+                                    caption: "";
+                                }
+                            }
+
+                            chart-touch := TouchArea {}
+
+                            Tip {
+                                x: (parent.width - self.width) / 2;
+                                y: -30px;
+                                text: @tr("传输速度  ·  峰值 ") + root.detail.peak;
+                                show: chart-touch.has-hover;
+                            }
+                        }
+
+                        Rectangle {
+                            height: 48px;
+
+                            ChunkGrid {
+                                width: 100%;
+                                chunks: root.chunks;
+                            }
+
+                            chunk-touch := TouchArea {}
+
+                            Tip {
+                                x: (parent.width - self.width) / 2;
+                                y: -30px;
+                                text: @tr("分片进度  ") + root.detail.chunks-text;
+                                show: chunk-touch.has-hover;
+                            }
+                        }
+
+                        if root.detail.torrent: Text {
+                            text: @tr("BT 状态  ") + root.detail.bt-text;
+                            color: Aether.on-surface-variant;
+                            font-size: Aether.text-caption;
+                            overflow: elide;
+                        }
+
+                        // Generic sections from the plugin's `detail_schema`,
+                        // in schema order. The Rust mapping only emits
+                        // metrics/peers sections it could fill, so other
+                        // kinds (logs, chunks, unknown) render nothing here.
+                        for section in root.sections: VerticalLayout {
+                            spacing: 6px;
+
+                            if section.kind == "metrics": VerticalLayout {
+                                spacing: 6px;
+
+                                for row in section.rows: HorizontalLayout {
+                                    alignment: center;
+                                    spacing: 8px;
+
+                                    Text {
+                                        text: row.cells[0];
+                                        color: Aether.on-surface-muted;
+                                        font-size: Aether.text-micro;
+                                        overflow: elide;
+                                    }
+
+                                    Rectangle { horizontal-stretch: 1; background: transparent; }
+
+                                    Text {
+                                        text: row.cells[1];
+                                        color: Aether.on-surface;
+                                        font-size: Aether.text-caption;
+                                        horizontal-alignment: right;
+                                        overflow: elide;
+                                    }
+                                }
+                            }
+
+                            if section.kind == "peers": Rectangle {
+                                height: 100px;
+                                border-radius: 12px;
+                                background: Aether.surface-dim;
+                                border-width: 1px;
+                                border-color: Aether.outline-faint;
+                                clip: true;
+
+                                ScrollView {
+                                    width: 100%;
+                                    height: 100%;
+
+                                    VerticalLayout {
+                                        width: 100%;
+                                        padding: 8px;
+                                        spacing: 2px;
+
+                                        HorizontalLayout {
+                                            spacing: 8px;
+
+                                            for col[index] in section.columns: Text {
+                                                text: col;
+                                                color: Aether.on-surface-muted;
+                                                font-size: Aether.text-micro;
+                                                font-weight: Aether.weight-medium;
+                                                horizontal-stretch: index == 0 ? 2 : 1;
+                                                overflow: elide;
+                                            }
+                                        }
+
+                                        for row in section.rows: HorizontalLayout {
+                                            spacing: 8px;
+
+                                            for cell[index] in row.cells: Text {
+                                                text: cell;
+                                                color: index == 0 ? Aether.on-surface : Aether.on-surface-variant;
+                                                font-size: Aether.text-micro;
+                                                horizontal-stretch: index == 0 ? 2 : 1;
+                                                overflow: elide;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 8px;
+
+                            InfoIcon {
+                                icon-source: AetherIcons.link;
+                                tip: @tr("来源  ") + root.detail.source;
+                            }
+
+                            InfoIcon {
+                                icon-source: AetherIcons.folder;
+                                tip: @tr("保存位置  ") + root.detail.path;
+                            }
+
+                            InfoIcon {
+                                icon-source: AetherIcons.note;
+                                tip: @tr("备注  ") + (root.detail.note != "" ? root.detail.note : "—");
+                            }
+
+                            Rectangle { horizontal-stretch: 1; background: transparent; }
                         }
                     }
-
-                    chart-touch := TouchArea {}
-
-                    Tip {
-                        x: (parent.width - self.width) / 2;
-                        y: -30px;
-                        text: @tr("传输速度  ·  峰值 ") + root.detail.peak;
-                        show: chart-touch.has-hover;
-                    }
-                }
-
-                Rectangle {
-                    height: 48px;
-
-                    ChunkGrid {
-                        width: 100%;
-                        chunks: root.chunks;
-                    }
-
-                    chunk-touch := TouchArea {}
-
-                    Tip {
-                        x: (parent.width - self.width) / 2;
-                        y: -30px;
-                        text: @tr("分片进度  ") + root.detail.chunks-text;
-                        show: chunk-touch.has-hover;
-                    }
-                }
-
-                if root.detail.torrent: Text {
-                    text: @tr("BT 状态  ") + root.detail.bt-text;
-                    color: Aether.on-surface-variant;
-                    font-size: Aether.text-caption;
-                    overflow: elide;
-                }
-
-                HorizontalLayout {
-                    spacing: 8px;
-
-                    InfoIcon {
-                        icon-source: AetherIcons.link;
-                        tip: @tr("来源  ") + root.detail.source;
-                    }
-
-                    InfoIcon {
-                        icon-source: AetherIcons.folder;
-                        tip: @tr("保存位置  ") + root.detail.path;
-                    }
-
-                    InfoIcon {
-                        icon-source: AetherIcons.note;
-                        tip: @tr("备注  ") + (root.detail.note != "" ? root.detail.note : "—");
-                    }
-
-                    Rectangle { horizontal-stretch: 1; background: transparent; }
                 }
             }
         }

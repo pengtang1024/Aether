@@ -60,8 +60,8 @@ msgstr "Torrents"
 msgid "数据统计"
 msgstr "Statistics"
 
-msgid "本周下载"
-msgstr "Downloaded this week"
+msgid "近 7 天"
+msgstr "Last 7 days"
 
 msgid "存储与分类"
 msgstr "Storage"
@@ -741,8 +741,8 @@ msgstr "High"
 msgid " · 队列 "
 msgstr " · queued "
 
-msgid " · 连接 24"
-msgstr " · 24 connections"
+msgid " · 连接 "
+msgstr " · connections "
 
 msgid " · 剩余 "
 msgstr " · left "
@@ -996,3 +996,21 @@ msgstr "Paste a link, or click + on the left to add your first task"
 
 msgid "可选备注"
 msgstr "Optional note"
+
+msgid "插件设置"
+msgstr "Plugin settings"
+
+msgid "默认："
+msgstr "Default: "
+
+msgid "范围："
+msgstr "Range: "
+
+msgid "最小："
+msgstr "Min: "
+
+msgid "最大："
+msgstr "Max: "
+
+msgid "可选："
+msgstr "Options: "

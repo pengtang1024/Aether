@@ -3,6 +3,15 @@ VERSION := $(shell sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 ARCH ?= $(shell dpkg --print-architecture 2>/dev/null || echo amd64)
 STAGE := build/deb
 DIST := dist
+# sccache is often present in the environment without being installed; a
+# missing wrapper fails every cargo invocation with "could not execute process".
+ifneq (,$(findstring sccache,$(RUSTC_WRAPPER)))
+ifeq (,$(shell command -v sccache 2>/dev/null))
+export RUSTC_WRAPPER :=
+$(info note: sccache is not installed; building without it)
+endif
+endif
+
 GLIBC := $(shell objdump -T target/release/aether 2>/dev/null | grep -o 'GLIBC_[0-9.]*' | sort -V | tail -1 | sed 's/GLIBC_//')
 ifeq ($(GLIBC),)
 GLIBC := 2.39
@@ -22,9 +31,9 @@ check: release
 
 check-licenses:
 	python3 scripts/check-license-bundles.py --check-recipes --check-generated
-	@if compgen -G "$(DIST)/aether_*.deb" >/dev/null; then \
-		python3 scripts/check-license-bundles.py "$(DIST)"/aether_*.deb; \
-	fi
+	@test -f "$(DIST)/aether_$(VERSION)_$(ARCH).deb" || { \
+		echo "no $(DIST)/aether_$(VERSION)_$(ARCH).deb to check; run make deb first"; exit 1; }
+	python3 scripts/check-license-bundles.py "$(DIST)/aether_$(VERSION)_$(ARCH).deb"
 
 deb: release plugins
 	rm -rf "$(STAGE)"

@@ -5,6 +5,7 @@ pub mod error;
 pub mod finalize;
 pub mod manager;
 pub mod pac;
+pub mod plugin_settings;
 pub mod proxy;
 pub mod registry;
 pub mod space;
@@ -57,7 +58,14 @@ fn plugin_dir_candidates() -> Vec<std::path::PathBuf> {
         }
     }
     #[cfg(all(unix, not(target_os = "macos")))]
-    candidates.push(std::path::PathBuf::from("/usr/lib/aether/plugins"));
+    {
+        candidates.push(std::path::PathBuf::from("/usr/lib/aether/plugins"));
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                candidates.push(dir.join("plugins"));
+            }
+        }
+    }
     candidates.push(std::path::PathBuf::from("build/plugins"));
     candidates.push(std::path::PathBuf::from("plugins"));
     candidates
@@ -73,10 +81,15 @@ mod tests {
     fn plugin_dir_candidates_lead_with_the_platform_location() {
         let candidates = plugin_dir_candidates();
         #[cfg(all(unix, not(target_os = "macos")))]
-        assert_eq!(
-            candidates[0],
-            std::path::PathBuf::from("/usr/lib/aether/plugins")
-        );
+        {
+            assert_eq!(
+                candidates[0],
+                std::path::PathBuf::from("/usr/lib/aether/plugins")
+            );
+            // Portable installs keep `plugins/` beside the daemon too.
+            let exe = std::env::current_exe().unwrap();
+            assert_eq!(candidates[1], exe.parent().unwrap().join("plugins"));
+        }
         #[cfg(target_os = "macos")]
         {
             // Contents/MacOS/aether-daemon -> Contents/Resources/plugins.
