@@ -410,7 +410,7 @@ Total packages: **595**
 | `prefix-trie` | `0.8.4` | `MIT OR Apache-2.0` | linux/windows/macos | <https://github.com/tiborschneider/prefix-trie> |
 | `proc-macro-crate` | `3.5.0` | `MIT OR Apache-2.0` | linux/windows/macos | <https://github.com/bkchr/proc-macro-crate> |
 | `proc-macro2` | `1.0.107` | `MIT OR Apache-2.0` | linux/windows/macos | <https://github.com/dtolnay/proc-macro2> |
-| `pulldown-cmark` | `0.13.5` | `MIT` | linux/windows/macos | <https://github.com/raphlinus/pulldown-cmark> |
+| `pulldown-cmark` | `0.13.6` | `MIT` | linux/windows/macos | <https://github.com/raphlinus/pulldown-cmark> |
 | `pxfm` | `0.1.30` | `BSD-3-Clause OR Apache-2.0` | linux/windows/macos | <https://github.com/awxkee/pxfm> |
 | `quanta` | `0.12.6` | `MIT` | linux/windows/macos | <https://github.com/metrics-rs/quanta> |
 | `quick-error` | `2.0.1` | `MIT/Apache-2.0` | linux/windows/macos | <http://github.com/tailhook/quick-error> |
