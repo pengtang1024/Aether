@@ -107,18 +107,40 @@ impl PluginManager {
         input: &str,
         proxy: Option<ProxyConfig>,
     ) -> Vec<ProbeOutcome> {
-        let ids = self
+        let all = self
             .registry
             .iter()
             .filter(|entry| entry.enabled && entry.manifest.kind != PluginKind::Service)
             .map(|entry| entry.manifest.id.clone())
             .collect::<Vec<_>>();
+        // Cheap static filter first: a plugin whose declared protocols cannot
+        // apply to this URL is not spawned just to say "unsupported". An
+        // unknown scheme falls back to the full sweep so a plugin that forgot
+        // to declare its protocols keeps working.
+        let mut ids = match probe_protocols(input) {
+            Some(tags) => all
+                .iter()
+                .filter(|id| {
+                    self.registry.get(id).is_some_and(|entry| {
+                        entry.manifest.protocols.is_empty()
+                            || entry.manifest.protocols.iter().any(|protocol| {
+                                tags.iter().any(|tag| tag.eq_ignore_ascii_case(protocol))
+                            })
+                    })
+                })
+                .cloned()
+                .collect::<Vec<_>>(),
+            None => all.clone(),
+        };
+        if ids.is_empty() {
+            ids = all;
+        }
 
         let mut outcomes = Vec::new();
         for id in ids {
             match self
                 .ensure_process(&id)
-                .and_then(|process| process.probe(input, proxy.clone()).map_err(HostError::from))
+                .and_then(|process| process.probe(input, proxy.clone()))
             {
                 Ok(result) => outcomes.push(ProbeOutcome {
                     plugin_id: id,
@@ -144,6 +166,32 @@ impl PluginManager {
         outcomes
     }
 
+    /// Probe a single plugin, bypassing the static scheme filter. Used when
+    /// the client explicitly forces a plugin (aria2 `addTorrent` publishes
+    /// inline bytes over http but still wants the BT plugin).
+    pub fn probe_plugin(
+        &mut self,
+        plugin_id: &str,
+        input: &str,
+        proxy: Option<ProxyConfig>,
+    ) -> Option<ProbeOutcome> {
+        match self
+            .ensure_process(plugin_id)
+            .and_then(|process| process.probe(input, proxy))
+        {
+            Ok(result) => Some(ProbeOutcome {
+                plugin_id: plugin_id.to_string(),
+                result: Some(result),
+                error: None,
+            }),
+            Err(error) => Some(ProbeOutcome {
+                plugin_id: plugin_id.to_string(),
+                result: None,
+                error: Some(error.to_string()),
+            }),
+        }
+    }
+
     pub fn start(
         &mut self,
         plugin_id: &str,
@@ -152,7 +200,7 @@ impl PluginManager {
         budget: Budget,
     ) -> Result<u64, HostError> {
         let process = self.ensure_process(plugin_id)?;
-        Ok(process.start_task(task, paths, budget)?)
+        process.start_task(task, paths, budget)
     }
 
     pub fn send(
@@ -161,7 +209,7 @@ impl PluginManager {
         command: &aether_plugin_sdk::HostCommand,
     ) -> Result<(), HostError> {
         let process = self.ensure_process(plugin_id)?;
-        Ok(process.send(command)?)
+        process.send(command)
     }
 
     pub fn recv_event(
@@ -350,5 +398,66 @@ impl RunningPlugin {
 impl Drop for PluginManager {
     fn drop(&mut self) {
         self.shutdown();
+    }
+}
+
+/// Manifest protocol tags that can apply to an input URL. HTTP(S) is broad on
+/// purpose: HLS/DASH, yt-dlp and the cloud plugins all consume plain https
+/// links, so they must stay candidates. `None` means "unknown scheme, probe
+/// everything".
+pub(crate) fn probe_protocols(input: &str) -> Option<&'static [&'static str]> {
+    let scheme = input.split_once(':')?.0.trim().to_ascii_lowercase();
+    let tags: &'static [&'static str] = match scheme.as_str() {
+        "http" | "https" => &[
+            "http",
+            "https",
+            "metalink",
+            "hls",
+            "dash",
+            "extractor",
+            "gdrive",
+            "onedrive",
+            "dropbox",
+            "baidupan",
+            "aliyunpan",
+        ],
+        "magnet" => &["magnet", "bt"],
+        "ftp" | "ftps" => &["ftp", "ftps"],
+        "sftp" => &["sftp"],
+        "s3" => &["s3"],
+        "webdav" => &["webdav"],
+        "ipfs" | "ipns" => &["ipfs", "ipns"],
+        "rtmp" | "rtmps" | "rtsp" => &["rtmp", "rtmps", "rtsp"],
+        "thunder" => &["thunder"],
+        _ => return None,
+    };
+    Some(tags)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::probe_protocols;
+
+    #[test]
+    fn common_schemes_map_to_their_protocol_family() {
+        assert!(probe_protocols("https://example.com/file.bin")
+            .unwrap()
+            .contains(&"http"));
+        assert!(probe_protocols("magnet:?xt=urn:btih:abc")
+            .unwrap()
+            .contains(&"bt"));
+        assert_eq!(
+            probe_protocols("ftp://example.com/file").unwrap(),
+            &["ftp", "ftps"]
+        );
+        assert!(probe_protocols("https://example.com/live.m3u8")
+            .unwrap()
+            .contains(&"hls"));
+    }
+
+    #[test]
+    fn unknown_schemes_fall_back_to_a_full_sweep() {
+        assert!(probe_protocols("ed2k://|file|x|1|h|/").is_none());
+        assert!(probe_protocols("/tmp/movie.torrent").is_none());
     }
 }

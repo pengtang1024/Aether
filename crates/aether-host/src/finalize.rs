@@ -66,13 +66,25 @@ pub fn finalize_task_with_checksum(
                     "only SHA-256 finalization is supported".into(),
                 ));
             }
-            let actual = aether_plugin_sdk::checksum::sha256_file(&canonical_source)?;
+        }
+        // Hash the staged file at most once. When the plugin already streamed
+        // a SHA-256 that agrees with the task's expected value, reuse it
+        // instead of reading the whole file again (a 1 GiB task otherwise
+        // pays the read twice).
+        let actual = match (&file.checksum, expected) {
+            (Some(reported), Some(expected))
+                if reported.value.eq_ignore_ascii_case(&expected.value) =>
+            {
+                reported.value.clone()
+            }
+            _ => aether_plugin_sdk::checksum::sha256_file(&canonical_source)?,
+        };
+        if let Some(checksum) = &file.checksum {
             if !actual.eq_ignore_ascii_case(&checksum.value) {
                 return Err(HostError::ChecksumMismatch(file.relative_path.clone()));
             }
         }
         if let Some(expected) = expected {
-            let actual = aether_plugin_sdk::checksum::sha256_file(&canonical_source)?;
             if !actual.eq_ignore_ascii_case(&expected.value) {
                 return Err(HostError::ChecksumMismatch(file.relative_path.clone()));
             }
