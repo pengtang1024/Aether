@@ -146,7 +146,7 @@ client.set_settings(json!({
     "max_concurrent": 5,            // ≥1；上调立即提升排队任务，下调只挡新任务
     "max_speed_bps": 2048 * 1024,    // 全局限速（字节/秒），0 = 关闭；随任务启动生效
     "retry_max": 3,                  // 0 = 不自动重试；下次失败判定时生效
-    "connections": 8                 // 1..=16，仅 HTTP(S)；新任务生效
+    "connections": 8                 // 1..=16，仅 HTTP(S)；全局默认，可被任务级 settings 覆盖
 }))?;
 // get_settings 回报的是解析后的生效值（文件没写过的键 = 启动配置 AETHER_MAX_*），
 // 所以界面显示的就是 daemon 实际在用的值；未知 key、0 并发、越界连接数都会

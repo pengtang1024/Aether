@@ -94,7 +94,8 @@ aether-cli remote db-check     # PRAGMA integrity_check（ok = 健康）
 aether-cli remote backup <dest> # 在线备份数据库到 dest（daemon 无需停机）
 ```
 
-- `add` 的 `--settings` 是插件设置 JSON（如 `{"connections":8}`）。
+- `add` 的 `--settings` 是插件设置 JSON（HTTP 支持 `user_agent`/`referrer`/`cookies`/`headers` 等）；
+  连接数、全局限速等调度参数属于 daemon 全局设置，用 `aether-cli remote set-settings` 调整。
 - `rm` 只接受终态任务，和 UI 的删除语义一致。
 - `watch` 输出即 `subscribe` 事件流，便于脚本/排错；不要把它当长期日志。
 - 本地模式（`tasks`/`logs`/`resume`）直接读 SQLite、自己拉起插件，适合单次下载；
@@ -171,7 +172,8 @@ aether-cli diag report.json     # 或 - 输出到 stdout
   `settings_changed` 返回的是解析后的生效值，所以界面不会显示一个和实际不符的
   数字。
 - 生效时机：并发上调立刻提升排队任务，下调不打断正在跑的（只挡新任务）；
-  限速与连接数随任务启动生效，已在跑的任务保持启动时的预算；重试上限在
+  全局 `max_speed_bps` 与 `connections` 改动会立即重算正在运行任务的预算
+  （`apply_speed_budgets`），不需要重启任务；重试上限在
   下一次失败判定时读取。非法值（0 并发、连接数越界、未知 key、`null`）会被
   `set_settings` 拒绝，旧设置继续生效；启动时的非法文件则打日志后回退到环境
   变量值，不阻止 daemon 启动。
@@ -181,7 +183,12 @@ aether-cli diag report.json     # 或 - 输出到 stdout
   插入按写入顺序）。`StoredTask.priority` 会回显，UI 可做排序/标记。
   注意：严格优先级意味着低优先级任务可能被持续插队（无老化机制）；需要时把
   它们调回 0/正数即可。
-- 任务级限速优先：`add` 的 settings 里给 `max_speed_bps`（字节/秒，0 = 不限）。
+- 任务级限速优先，但不超过全局均摊份额：`add` 的 settings 里给 `max_speed_bps`
+  （字节/秒，0 = 不限）。设置了全局上限时，任务级值会被 clamp 到当前公平份额；
+  全局不限时按其值生效。
+- 任务级连接数优先：`add` 的 settings 里给 `connections`（1..=16，仅 HTTP(S)）。
+  它覆盖设置页的全局默认值；越界或非整数在 `add` 时直接返回协议错误，不会
+  被忽略。调度器在启动与重算预算时都按任务自己的值下发。
 - 限速在 HTTP 插件下载循环内实现（任务级共享 token bucket，多连接同一桶）；
   委托 HTTP 的插件（baidupan/aliyunpan/ipfs/thunder/cloud/webdav）自动继承。
 - daemon 在任务完成/失败/取消后立即提升队列，并广播 `task_state` 事件。
@@ -338,7 +345,20 @@ daemon 是常驻入口，但“接管所有下载”还需要：
   请求交给 `kind: "service"` 的 `aria2` 兼容插件，原生 Aether JSON-lines 仍走
   `auth` 握手。HTTP 侧复用同一个 `rpc_secret`（aria2 约定：params 首项为
   `token:<secret>`），并返回 CORS 头；插件未安装/未启用时 HTTP 返回 JSON-RPC 错误。
-  兼容层支持常用 aria2 方法与 `system.multicall`；`addTorrent`/`addMetalink`
+  兼容层支持下列 35 个方法（`system.listMethods` 返回同一集合）：
+  `addUri`/`addTorrent`/`addMetalink`、`tellStatus`/`tellActive`/`tellWaiting`/`tellStopped`、
+  `getGlobalStat`/`getFiles`/`getUris`/`getPeers`/`getServers`、`getVersion`/`getSessionInfo`、
+  `pause`/`forcePause`/`unpause`/`remove`/`forceRemove`、`pauseAll`/`forcePauseAll`/`unpauseAll`、
+  `purgeDownloadResult`/`removeDownloadResult`、
+  `getGlobalOption`/`changeGlobalOption`/`getOption`/`changeOption`/`changePosition`、
+  `saveSession`、`shutdown`/`forceShutdown`、
+  `system.multicall`/`system.listMethods`/`system.listNotifications`。上述 35 个方法均有
+  自动化用例（`crates/aether-daemon/tests/aria2.rs`），覆盖排队、暂停、重排、multicall、
+  `changeGlobalOption`/`getOption` 回读、`addTorrent`/`addMetalink` 内联载荷、
+  `getPeers`/`getServers` 无 BT 会话时的返回形状，以及 `saveSession` 写会话文件；
+  `shutdown`/`forceShutdown` 另在真实 daemon 进程上用独立 socket 与端口复核
+  （返回 `OK` 后 12–14 ms 内退出、socket 文件移除）。
+  `addTorrent`/`addMetalink`
   会把内联 base64 解码后写入 daemon 数据目录的 `aria2-blobs/`，由同一 6800
   端口的 `/aria2-blobs/<token>` 路由提供给 BT/HTTP 插件（重启后仍有效，7 天清理）。
   支持 `ws://.../jsonrpc`：JSON-RPC 调用与
