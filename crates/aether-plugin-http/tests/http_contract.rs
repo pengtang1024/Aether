@@ -545,6 +545,7 @@ fn resumes_from_persisted_state() {
 
     let file = std::fs::OpenOptions::new()
         .create(true)
+        .truncate(false)
         .write(true)
         .open(staging.join("file.bin"))
         .unwrap();

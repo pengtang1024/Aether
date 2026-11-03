@@ -273,7 +273,7 @@ fn resumes_with_rest_from_existing_file_length() {
     let root = temp_dir("resume");
     let staging = root.join("staging");
     fs::create_dir_all(&staging).unwrap();
-    fs::write(&staging.join("file.bin"), &data[..100]).unwrap();
+    fs::write(staging.join("file.bin"), &data[..100]).unwrap();
 
     let url = format!(
         "ftp://user:pass@127.0.0.1:{}/pub/file.bin",

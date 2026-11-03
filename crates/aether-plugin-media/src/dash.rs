@@ -131,6 +131,7 @@ fn download_inner(
     let jobs = jobs(&plan);
     let file = OpenOptions::new()
         .create(true)
+        .truncate(false)
         .read(true)
         .write(true)
         .open(&file_path)?;

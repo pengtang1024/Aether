@@ -194,7 +194,7 @@ fn spawn_daemon_at(
     })
 }
 
-fn connect(socket: &PathBuf) -> Client {
+fn connect(socket: &Path) -> Client {
     loop {
         if let Ok(client) = Client::connect(socket) {
             return client;
@@ -231,7 +231,7 @@ fn assert_reaches(client: &mut Client, task_id: &str, state: &str, attempts: usi
     );
 }
 
-fn final_file(root: &PathBuf, task_id: &str) -> PathBuf {
+fn final_file(root: &Path, task_id: &str) -> PathBuf {
     // Finalized files land directly in the download directory.
     let _ = task_id;
     root.join("downloads").join("fake.bin")
@@ -1079,7 +1079,7 @@ fn daemon_manual_resume_drops_a_pending_retry() {
     assert_reaches(&mut client, &task_id, "failed", 300);
     let record = client.task_record(&task_id).unwrap();
     assert_eq!(record.retry_attempts, 1);
-    assert_eq!(record.retry_at.is_some(), true);
+    assert!(record.retry_at.is_some());
 
     // An explicit resume clears the pending schedule and restarts the counter,
     // so the retry does not fire a second time behind the user's back.
@@ -1381,10 +1381,7 @@ fn spawn_http_stub(ip: IpAddr) -> Option<HttpStub> {
             let mut data = Vec::new();
             let mut buffer = [0_u8; 4096];
             // Read until the end of the request headers (GET/HEAD have no body).
-            loop {
-                let Ok(size) = stream.read(&mut buffer) else {
-                    break;
-                };
+            while let Ok(size) = stream.read(&mut buffer) {
                 if size == 0 {
                     break;
                 }

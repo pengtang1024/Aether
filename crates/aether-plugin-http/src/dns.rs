@@ -61,8 +61,7 @@ impl Resolve for CustomResolver {
         let host = name.as_str().to_string();
         Box::pin(async move {
             let failure = |message: String| {
-                Box::new(io::Error::new(io::ErrorKind::Other, message))
-                    as Box<dyn std::error::Error + Send + Sync>
+                Box::new(io::Error::other(message)) as Box<dyn std::error::Error + Send + Sync>
             };
             let lookup = resolver
                 .lookup_ip(host.clone())

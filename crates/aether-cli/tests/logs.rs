@@ -1,7 +1,7 @@
 //! `aether-cli logs` reads the task log table the daemon writes.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -21,7 +21,7 @@ fn temp_dir(label: &str) -> PathBuf {
     dir
 }
 
-fn seed(dir: &PathBuf) {
+fn seed(dir: &Path) {
     let mut store = TaskStore::open(dir.join(".aether").join("aether.db")).unwrap();
     store
         .create_task(&NewTask {

@@ -2,7 +2,7 @@
 //! `aether-cli import` against a running daemon with the fake plugin.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -23,7 +23,7 @@ fn temp_dir(label: &str) -> PathBuf {
     dir
 }
 
-fn spawn_daemon(root: &PathBuf) -> PathBuf {
+fn spawn_daemon(root: &Path) -> PathBuf {
     let exe = std::env::current_exe().unwrap();
     let debug_dir = exe.parent().unwrap().parent().unwrap();
     let fake = debug_dir.join(format!(

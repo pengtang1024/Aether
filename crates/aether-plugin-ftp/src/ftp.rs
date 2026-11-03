@@ -192,6 +192,7 @@ fn run_inner(
 
     let file = OpenOptions::new()
         .create(true)
+        .truncate(false)
         .read(true)
         .write(true)
         .open(&file_path)?;
@@ -229,9 +230,7 @@ fn run_inner(
     });
 
     if total.is_some_and(|total| done == total && total > 0) {
-        return finish(
-            sender, task, paths, &file, &file_path, &filename, done, control,
-        );
+        return finish(sender, task, paths, &file, &filename, done, control);
     }
 
     if done > 0 {
@@ -296,9 +295,7 @@ fn run_inner(
         }
     }
 
-    finish(
-        sender, task, paths, &file, &file_path, &filename, offset, control,
-    )
+    finish(sender, task, paths, &file, &filename, offset, control)
 }
 
 fn finish(
@@ -306,17 +303,17 @@ fn finish(
     task: &TaskSpec,
     paths: &TaskPaths,
     file: &File,
-    file_path: &Path,
     filename: &str,
     size: u64,
     control: &TaskControl,
 ) -> Result<(), FtpError> {
+    let file_path = paths.staging.join(filename);
     if control.is_canceled() {
         return Err(FtpError::Canceled);
     }
 
     file.sync_all()?;
-    let checksum = aether_plugin_sdk::checksum::sha256_file(file_path)?;
+    let checksum = aether_plugin_sdk::checksum::sha256_file(&file_path)?;
     if let Some(expected) = &task.checksum {
         if expected.algorithm != ChecksumAlgorithm::Sha256 {
             return Err(FtpError::Protocol("only SHA-256 is supported".into()));

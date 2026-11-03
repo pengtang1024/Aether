@@ -255,6 +255,7 @@ fn run_inner(
     let file_path = paths.staging.join(&filename);
     let mut file = OpenOptions::new()
         .create(true)
+        .truncate(false)
         .read(true)
         .write(true)
         .open(&file_path)?;

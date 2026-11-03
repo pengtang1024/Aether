@@ -61,7 +61,7 @@ struct HlsVariant {
 
 enum HlsPlaylist {
     Master(Vec<HlsVariant>),
-    Media(HlsMedia),
+    Media(Box<HlsMedia>),
 }
 
 pub struct HlsProbe {
@@ -238,6 +238,7 @@ fn download_vod(
 
     let file = OpenOptions::new()
         .create(true)
+        .truncate(false)
         .read(true)
         .write(true)
         .open(&file_path)?;
@@ -693,7 +694,7 @@ fn fetch_media(
     for _ in 0..2 {
         let text = http::get_text(client, &current)?;
         match parse_playlist(&text, &current)? {
-            HlsPlaylist::Media(media) => return Ok((media, current)),
+            HlsPlaylist::Media(media) => return Ok((*media, current)),
             HlsPlaylist::Master(variants) => {
                 let variant = variants
                     .into_iter()
@@ -769,7 +770,7 @@ fn parse_playlist(text: &str, base: &Url) -> Result<HlsPlaylist, MediaError> {
                 .get("BANDWIDTH")
                 .and_then(|value| value.parse().ok())
                 .unwrap_or(0);
-            while let Some(next) = lines.next() {
+            for next in lines.by_ref() {
                 if next.is_empty() || next.starts_with('#') {
                     continue;
                 }
@@ -797,12 +798,12 @@ fn parse_playlist(text: &str, base: &Url) -> Result<HlsPlaylist, MediaError> {
     if !variants.is_empty() {
         Ok(HlsPlaylist::Master(variants))
     } else {
-        Ok(HlsPlaylist::Media(HlsMedia {
+        Ok(HlsPlaylist::Media(Box::new(HlsMedia {
             segments,
             map,
             key,
             endlist,
-        }))
+        })))
     }
 }
 
