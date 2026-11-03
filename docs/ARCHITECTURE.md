@@ -1,6 +1,6 @@
 # Aether 架构与界面重设计契约
 
-> 状态：**0.6.0：Host runtime、SDK/CLI 与 17 个第一方插件（16 下载 + aria2 服务）
+> 状态：**0.6.1：Host runtime、SDK/CLI 与 17 个第一方插件（16 下载 + aria2 服务）
 > 已实现；Slint UI 全部数据来自 daemon，无 mock 引擎。**
 > Linux `.deb`/AppImage 已包含插件；插件设置 schema 表单尚未在 UI 渲染（CLI/RPC 可用）。  
 > 本文是产品/架构索引，也是隔壁界面重设计会话的契约；实现细节见链接文档。
@@ -150,7 +150,7 @@ PluginRow {
 | 浏览器/协议入口 | `aether-native-host` + MV3 扩展 + `aether-url-handler.desktop` 已实现基础；商店上架/Windows IPC 待补 |
 | 协议插件 | HTTP、BT、FTP/FTPS、HLS/DASH、WebDAV、S3、SFTP、yt-dlp、thunder、IPFS、RTMP/RTSP、Google Drive/OneDrive/Dropbox、百度/阿里官方 API 共 16 个下载插件 + aria2 服务 + fake；ED2K 见 SUPPORT_MATRIX.md |
 | 打包/CI/图标/发布 | Linux `.deb`/AppImage 已包含 17 个插件；Windows/macOS 仍只打包 Host |
-| 版本 | 0.6.0（2026-11-02） |
+| 版本 | 0.6.1（2026-11-03） |
 
 ## 5. 实施顺序
 

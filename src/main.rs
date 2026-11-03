@@ -1662,6 +1662,20 @@ fn update_status_text(update: Option<&serde_json::Value>) -> String {
             format!("新版本 {latest} 已下载，重启后生效"),
             format!("Version {latest} downloaded; restart to apply"),
         ),
+        // The updater cannot install this one itself; hand the user the file.
+        "package" => {
+            let artifact = update["artifact"].as_str().unwrap_or_default();
+            match update["kind"].as_str().unwrap_or_default() {
+                "deb" => i18n::tr(
+                    format!("新版本 {latest} 安装包已下载：{artifact}，运行 sudo dpkg -i 安装"),
+                    format!("Version {latest} package downloaded: {artifact}; install it with sudo dpkg -i"),
+                ),
+                _ => i18n::tr(
+                    format!("新版本 {latest} 安装包已下载：{artifact}"),
+                    format!("Version {latest} package downloaded: {artifact}"),
+                ),
+            }
+        }
         "error" => i18n::tr(
             format!("检查失败：{error}"),
             format!("Check failed: {error}"),

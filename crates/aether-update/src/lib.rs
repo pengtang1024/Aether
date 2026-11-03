@@ -34,6 +34,10 @@ pub struct UpdateManifest {
     pub notes_url: Option<String>,
     #[serde(default)]
     pub assets: BTreeMap<String, UpdateAsset>,
+    /// Installer packages keyed by platform (`.deb` and friends) that the
+    /// updater can download but not apply itself.
+    #[serde(default)]
+    pub packages: BTreeMap<String, UpdateAsset>,
     /// Optional plugin releases keyed by plugin id; absent in older
     /// manifests (serde default keeps them parsing).
     #[serde(default)]
@@ -149,7 +153,7 @@ impl UpdateClient {
         if version <= self.current_version {
             return Ok(None);
         }
-        if manifest.assets.is_empty() {
+        if manifest.assets.is_empty() && manifest.packages.is_empty() {
             return Err(UpdateError::Protocol("manifest has no assets".into()));
         }
         if manifest.rollout > 100 {
@@ -175,6 +179,32 @@ impl UpdateClient {
             .assets
             .get(&self.platform)
             .ok_or_else(|| UpdateError::Protocol(format!("no update asset for {}", self.platform)))
+    }
+
+    /// Asset the updater should fetch: the AppImage when the install can
+    /// replace itself, otherwise the platform's installer package, falling
+    /// back to the portable asset.
+    pub fn asset_to_install<'a>(
+        &self,
+        manifest: &'a UpdateManifest,
+        self_replacing: bool,
+    ) -> Result<&'a UpdateAsset, UpdateError> {
+        if !self_replacing {
+            if let Some(package) = self.package_for_platform(manifest) {
+                return Ok(package);
+            }
+        }
+        self.asset_for_platform(manifest)
+    }
+
+    /// Installer package for this platform, when the release ships one
+    /// (a `.deb` from a distro install, say). `None` means only the portable
+    /// asset exists.
+    pub fn package_for_platform<'a>(
+        &self,
+        manifest: &'a UpdateManifest,
+    ) -> Option<&'a UpdateAsset> {
+        manifest.packages.get(&self.platform)
     }
 
     /// Download an asset into `<state>/<version>/`, verify size + SHA-256.

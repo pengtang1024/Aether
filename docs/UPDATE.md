@@ -61,20 +61,27 @@ AETHER_UPDATE_SECRET_KEY=... cargo run -p aether-update --bin aether-plugin-sign
 
 ## 3. daemon 行为
 
-配置（systemd 用户单元读取 `~/.config/aether/daemon.env`，模板见
-`packaging/daemon.env.example`）：
+**默认开启**：daemon 内置 release 清单地址与官方公钥
+（`https://github.com/pengtang1024/Aether/releases/latest/download/update.json` +
+`gmTgGxsoxi9dyYiWQ+mlqeqx4gDNnMwQ+P0jwNbsa+w=`），所以无论是桌面应用拉起还是
+systemd 启动都会检查更新。覆盖或关闭（关闭时把变量置空即可，两条都要）：
 
 ```bash
-AETHER_UPDATE_URL=https://github.com/pengtang1024/Aether/releases/latest/download/update.json
-AETHER_UPDATE_PUBKEY=gmTgGxsoxi9dyYiWQ+mlqeqx4gDNnMwQ+P0jwNbsa+w=
-AETHER_UPDATE_APPIMAGE=/home/user/Applications/Aether.AppImage
+AETHER_UPDATE_URL=                       # 空 = 不检查更新
+AETHER_UPDATE_PUBKEY=
+AETHER_UPDATE_APPIMAGE=/home/user/Applications/Aether.AppImage  # 仅 AppImage 安装需要
 ```
+
+同名命令行旗标 `--update-url` / `--update-key` / `--update-appimage` 优先于环境变量。
 
 - daemon 启动后 30 秒做第一次检查，之后每 6 小时一次（不在下载/任务循环里轮询）。
 - 先验签，再下载到 `<downloads>/.aether/artifacts/<version>/`，校验 size/SHA-256。
 - `kind=appimage` 且配置了 `AETHER_UPDATE_APPIMAGE`：原子替换目标，旧文件保留为
   `<target>.old`；下次启动生效。失败可手工把 `.old` 复制回去。
-- `kind=deb`：只下载并报告 `ready`，由用户/包管理器安装；daemon 不自行提权。
+- 非 AppImage 安装（`.deb` 等）：下载清单 `packages` 里对应平台的安装包（如
+  `aether_0.6.0_amd64.deb`），状态报 `package` 并带上路径与 `kind`；daemon 不自行
+  提权，UI 提示 `sudo dpkg -i <path>`。没有 `packages` 条目时回退到 `assets` 的便携
+  产物，同样只报路径。
 - 状态查询：
 
 ```bash
@@ -82,7 +89,8 @@ printf '%s\n' '{"id":1,"method":"update_status"}' \
   | socat - UNIX-CONNECT:$XDG_RUNTIME_DIR/aether/daemon.sock
 ```
 
-返回 `disabled / idle / up_to_date / ready / error`。
+返回 `disabled / idle / up_to_date / available / ready / package / error`：
+`ready` 只在 AppImage 已原地替换后出现，`package` 表示安装包已下载、需用户安装。
 
 ## 4. 发布接入
 
@@ -142,7 +150,8 @@ scripts/make-update-manifest.py --dist artifacts --version "$VERSION" --out arti
 ```
 
 - 扫描产物：`.deb`（amd64/arm64）、AppImage、Windows 便携 zip、macOS dmg；
-  **每个平台 key 只收一个资产**，同平台 AppImage 优先于 `.deb`（可原地替换），
+  `assets` 每个平台 key 只收一个资产，同平台 AppImage 优先于 `.deb`（可原地替换）；
+  Linux 的 `.deb` 写进 `packages.linux-<arch>`（daemon 下载后交给用户安装），
   `setup.exe` 不进清单（便携 zip 已覆盖同 key，安装器仍是发布资产）。
 - 产物文件名里的版本必须等于 `--version`，否则脚本直接失败。
 - 清单 URL 用 tag 固定地址（`releases/download/v<ver>/<file>`）；清单本体发布在

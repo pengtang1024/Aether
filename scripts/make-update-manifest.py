@@ -9,8 +9,9 @@ Usage:
 
 Platform keys match aether_plugin_sdk::current_platform_key(). One asset per
 key: when a platform ships both a .deb and an AppImage, the AppImage wins
-(the updater can swap it in place) and the .deb remains a release asset for
-package managers. Windows setup .exe files are release assets but not
+(the updater can swap it in place). The installer package the platform also
+ships goes into `packages`, so a distro install can download the .deb and ask
+the user to run dpkg. Windows setup .exe files are release assets but not
 manifest entries — the portable zip covers that platform key.
 
 The manifest is only trustworthy once signed (aether-update-sign); the
@@ -79,6 +80,7 @@ def main() -> int:
     notes = (args.notes_url or DEFAULT_NOTES).format(version=args.version)
 
     assets: dict[str, dict] = {}
+    packages: dict[str, dict] = {}
     for path in sorted(dist.iterdir()):
         for pattern, key, kind in PATTERNS:
             match = pattern.match(path.name)
@@ -95,6 +97,14 @@ def main() -> int:
                 # Keep the stronger asset for this key (AppImage can be
                 # swapped in place; a .deb next to it is package-manager
                 # material only).
+                if kind == "deb":
+                    sha256, size = digest(path)
+                    packages[key] = {
+                        "url": f"{base}/{path.name}",
+                        "sha256": sha256,
+                        "size": size,
+                        "kind": kind,
+                    }
                 break
             sha256, size = digest(path)
             assets[key] = {
@@ -117,11 +127,18 @@ def main() -> int:
         "rollout": args.rollout,
         "assets": dict(sorted(assets.items())),
     }
+    if packages:
+        manifest["packages"] = dict(sorted(packages.items()))
     out = Path(args.out) if args.out else dist / "update.json"
     out.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    print(f"wrote {out} ({len(assets)} platform asset(s), rollout {args.rollout}%)")
+    print(
+        f"wrote {out} ({len(assets)} platform asset(s), "
+        f"{len(packages)} package(s), rollout {args.rollout}%)"
+    )
     for key in sorted(assets):
         print(f"  {key}: {assets[key]['kind']} {assets[key]['size']} bytes")
+    for key in sorted(packages):
+        print(f"  {key} package: {packages[key]['kind']} {packages[key]['size']} bytes")
     return 0
 
 

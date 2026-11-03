@@ -59,6 +59,23 @@ pub struct DaemonConfig {
     pub pac_url: Option<String>,
 }
 
+/// Signed release manifest. Overridable with `AETHER_UPDATE_URL` or
+/// `--update-url`; an empty value turns update checks off.
+const DEFAULT_UPDATE_URL: &str =
+    "https://github.com/pengtang1024/Aether/releases/latest/download/update.json";
+/// Official Aether release key. Public by design: it only verifies manifests.
+const RELEASE_PUBLIC_KEY: &str = "gmTgGxsoxi9dyYiWQ+mlqeqx4gDNnMwQ+P0jwNbsa+w=";
+
+/// `AETHER_UPDATE_*` when set (empty means "disabled"), else the built-in
+/// default so a daemon started by the desktop app checks updates too.
+fn update_setting(variable: &str, default: &str) -> Option<String> {
+    match std::env::var(variable) {
+        Ok(value) if value.is_empty() => None,
+        Ok(value) => Some(value),
+        Err(_) => Some(default.to_string()),
+    }
+}
+
 impl Default for DaemonConfig {
     fn default() -> Self {
         Self {
@@ -66,8 +83,8 @@ impl Default for DaemonConfig {
             plugins_dir: default_plugins_dir(),
             socket: crate::client::default_socket(),
             host_version: env!("CARGO_PKG_VERSION").into(),
-            update_url: std::env::var("AETHER_UPDATE_URL").ok(),
-            update_public_key: std::env::var("AETHER_UPDATE_PUBKEY").ok(),
+            update_url: update_setting("AETHER_UPDATE_URL", DEFAULT_UPDATE_URL),
+            update_public_key: update_setting("AETHER_UPDATE_PUBKEY", RELEASE_PUBLIC_KEY),
             update_appimage: std::env::var("AETHER_UPDATE_APPIMAGE")
                 .ok()
                 .map(PathBuf::from),
@@ -609,16 +626,24 @@ fn update_pass(
             // user decide from the About panel.
             return Ok(json!({"status": "available", "latest": manifest.version}));
         }
-        let asset = client.asset_for_platform(&manifest)?;
+        // AppImage replaces itself in place; every other install downloads
+        // the installer the platform ships and reports it for a manual step.
+        let asset = client.asset_to_install(&manifest, appimage.is_some())?;
         let artifact = client.download(&manifest, asset)?;
         if asset.kind == "appimage" {
             if let Some(target) = appimage {
                 client.apply_appimage(&artifact, target)?;
+                return Ok(json!({
+                    "status": "ready",
+                    "latest": manifest.version,
+                    "artifact": artifact.to_string_lossy(),
+                }));
             }
         }
         Ok(json!({
-            "status": "ready",
+            "status": "package",
             "latest": manifest.version,
+            "kind": asset.kind,
             "artifact": artifact.to_string_lossy(),
         }))
     })();

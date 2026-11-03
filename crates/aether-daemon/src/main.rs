@@ -76,6 +76,12 @@ fn main() -> std::process::ExitCode {
     }
     match run(config) {
         Ok(()) => std::process::ExitCode::SUCCESS,
+        // A second instance is not a failure: systemd restarts on failure only,
+        // so reporting success stops the restart loop against a live daemon.
+        Err(aether_daemon::DaemonError::AlreadyRunning) => {
+            eprintln!("aether-daemon: daemon is already running");
+            std::process::ExitCode::SUCCESS
+        }
         Err(error) => {
             eprintln!("aether-daemon: {error}");
             std::process::ExitCode::FAILURE

@@ -457,7 +457,7 @@ Host 的“插件”页面（Slint，2026-10-31 已接真）展示/执行：
 
 ## 19. 当前状态
 
-**v0.6.0 已发布：17 个第一方插件（16 个下载引擎 + aria2 服务），插件设置、特性标签与任务抽屉全部由 manifest schema 驱动。**
+**v0.6.1 已发布：17 个第一方插件（16 个下载引擎 + aria2 服务），插件设置、特性标签与任务抽屉全部由 manifest schema 驱动。**
 
 - `crates/aether-plugin-sdk`：manifest、MessagePack IPC、协议类型、插件 runner、Host 侧 supervisor。
 - `crates/aether-plugin-fake`：fake 插件 + 真实进程契约测试（握手、Probe、Start、Progress、Completed、id 不匹配拒绝）。

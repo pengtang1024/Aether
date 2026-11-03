@@ -6,7 +6,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use aether_update::{unpack_plugin_archive, UpdateError, UpdateManifest};
+use aether_update::{unpack_plugin_archive, UpdateClient, UpdateError, UpdateManifest};
 
 fn temp_dir(label: &str) -> PathBuf {
     let nanos = SystemTime::now()
@@ -44,6 +44,64 @@ fn manifests_without_plugins_still_parse() {
     assert_eq!(manifest.version, "0.3.0");
     assert!(manifest.plugins.is_empty(), "old manifests keep parsing");
     assert_eq!(manifest.assets.len(), 1);
+}
+
+#[test]
+fn packages_parse_next_to_assets() {
+    // A release that also ships a .deb: the portable asset stays in `assets`
+    // and the installer goes to `packages`.
+    let manifest: UpdateManifest = serde_json::from_str(
+        r#"{
+  "version": "0.6.0",
+  "assets": {
+    "linux-x86_64": { "url": "https://example.test/a.AppImage", "sha256": "aa", "size": 1, "kind": "appimage" }
+  },
+  "packages": {
+    "linux-x86_64": { "url": "https://example.test/a.deb", "sha256": "ab", "size": 2, "kind": "deb" }
+  }
+}"#,
+    )
+    .unwrap();
+    assert_eq!(manifest.packages["linux-x86_64"].kind, "deb");
+    assert!(serde_json::from_str::<UpdateManifest>(OLD_MANIFEST)
+        .unwrap()
+        .packages
+        .is_empty());
+}
+
+#[test]
+fn installs_pick_the_package_or_the_portable_asset() {
+    let manifest: UpdateManifest = serde_json::from_str(
+        r#"{
+  "version": "0.6.0",
+  "assets": {
+    "linux-x86_64": { "url": "https://example.test/a.AppImage", "sha256": "aa", "size": 1, "kind": "appimage" }
+  },
+  "packages": {
+    "linux-x86_64": { "url": "https://example.test/a.deb", "sha256": "ab", "size": 2, "kind": "deb" }
+  }
+}"#,
+    )
+    .unwrap();
+    let client = UpdateClient::new(
+        "https://example.test/update.json",
+        "gmTgGxsoxi9dyYiWQ+mlqeqx4gDNnMwQ+P0jwNbsa+w=",
+        "0.5.0",
+        aether_plugin_sdk::current_platform_key(),
+        &temp_dir("install-pick"),
+    )
+    .unwrap();
+    if aether_plugin_sdk::current_platform_key() != "linux-x86_64" {
+        return;
+    }
+    assert_eq!(
+        client.asset_to_install(&manifest, false).unwrap().kind,
+        "deb"
+    );
+    assert_eq!(
+        client.asset_to_install(&manifest, true).unwrap().kind,
+        "appimage"
+    );
 }
 
 #[test]
