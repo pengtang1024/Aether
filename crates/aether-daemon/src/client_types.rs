@@ -7,7 +7,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 /// One installed plugin as the daemon registry reports it.
-#[derive(Debug, Clone, serde::Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, Deserialize)]
 pub struct PluginInfo {
     pub id: String,
     pub name: String,
@@ -49,7 +49,7 @@ pub struct PluginInfo {
 }
 
 /// Dashboard counters behind the daemon's `stats` method.
-#[derive(Debug, Clone, Default, serde::Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
 pub struct Stats {
     /// Completed bytes per day, oldest (7 days ago) first, today last.
     pub daily: [u64; 7],

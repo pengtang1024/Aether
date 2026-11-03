@@ -22,7 +22,7 @@ pub fn split_urls(input: &str) -> Vec<&str> {
 }
 
 /// Immutable view of the daemon state, cloned per UI refresh.
-#[derive(Default)]
+#[derive(Clone, Default, PartialEq)]
 pub struct Snapshot {
     pub tasks: Vec<Task>,
     /// Aggregate download speed samples (one per second).
@@ -123,6 +123,9 @@ mod imp {
         /// Ask the daemon to check for a new app release now. The result
         /// appears in `stats.update` on the next sample.
         CheckUpdate,
+        /// Stop polling while the window is not visible. Resuming forces one
+        /// full refresh so the first visible frame is not stale.
+        Pause(bool),
     }
 
     struct Shared {
@@ -179,6 +182,12 @@ mod imp {
 
         pub fn apply_action(&self, id: i32, action: i32) {
             let _ = self.commands.send(Command::Action { id, action });
+        }
+
+        /// Stop or resume the polling loop. Hidden windows do not need
+        /// samples; resuming re-reads the daemon once before the next tick.
+        pub fn set_paused(&self, paused: bool) {
+            let _ = self.commands.send(Command::Pause(paused));
         }
 
         pub fn add_task(&self, url: &str, path: &str, speed_limit_kb: f32) {
@@ -316,6 +325,9 @@ mod imp {
         /// Finished tasks (completed or failed), drained by the UI to run the
         /// "after done" action and the desktop notification.
         completed: VecDeque<Finished>,
+        /// The window is hidden: no sampling, no daemon round-trips, no
+        /// publishing. The loop parks on the command channel instead.
+        paused: bool,
     }
 
     fn worker(receiver: Receiver<Command>, shared: Arc<Mutex<Shared>>) {
@@ -326,6 +338,14 @@ mod imp {
         };
 
         loop {
+            // Hidden window: park on the command channel. Resuming flips
+            // `paused` in `handle`, and the next pass does a full refresh.
+            if worker.paused {
+                let Ok(command) = receiver.recv() else { return };
+                run_command(&mut worker, command, &shared);
+                continue;
+            }
+
             if worker.client.is_none() {
                 match worker.ensure_client(&socket) {
                     Ok(()) => worker.offline_notice = false,
@@ -348,19 +368,7 @@ mod imp {
             }
 
             if let Ok(command) = receiver.recv_timeout(Duration::from_millis(50)) {
-                match worker.handle(command) {
-                    Ok(()) => {
-                        if let Some(notice) = worker.notice.take() {
-                            shared.lock().unwrap().notice = Some(notice);
-                        }
-                    }
-                    Err(error) => {
-                        // Connection died mid-command: drop it and reconnect.
-                        worker.disconnect();
-                        let mut guard = shared.lock().unwrap();
-                        guard.notice = Some(error.to_string());
-                    }
-                }
+                run_command(&mut worker, command, &shared);
             }
             worker.pump_events();
             worker.sample();
@@ -368,6 +376,21 @@ mod imp {
             worker.maybe_stats();
             worker.publish(&shared);
             thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    fn run_command(worker: &mut Worker, command: Command, shared: &Arc<Mutex<Shared>>) {
+        match worker.handle(command) {
+            Ok(()) => {
+                if let Some(notice) = worker.notice.take() {
+                    shared.lock().unwrap().notice = Some(notice);
+                }
+            }
+            Err(error) => {
+                // Connection died mid-command: drop it and reconnect.
+                worker.disconnect();
+                shared.lock().unwrap().notice = Some(error.to_string());
+            }
         }
     }
 
@@ -467,6 +490,20 @@ mod imp {
         }
 
         fn handle(&mut self, command: Command) -> Result<(), DaemonError> {
+            // Visibility is handled without a daemon round-trip: pausing must
+            // work even while the daemon is down.
+            if let Command::Pause(paused) = command {
+                self.paused = paused;
+                if !paused {
+                    // Back on screen: re-read everything on the next pass
+                    // instead of waiting for the usual 1s/5s/20s intervals.
+                    self.needs_refresh = true;
+                    self.refreshed = None;
+                    self.stats_sampled = None;
+                    self.sampled = None;
+                }
+                return Ok(());
+            }
             let socket = aether_daemon::client::default_socket();
             self.ensure_client(&socket)?;
             let Some(client) = self.client.as_mut() else {
@@ -696,6 +733,7 @@ mod imp {
                         )
                     });
                 }
+                Command::Pause(_) => unreachable!("handled before connecting"),
             }
             Ok(())
         }

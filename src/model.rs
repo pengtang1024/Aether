@@ -45,7 +45,7 @@ impl Status {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct Task {
     pub id: i32,
     pub name: String,
