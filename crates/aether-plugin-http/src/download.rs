@@ -102,16 +102,19 @@ fn run_inner(
     let mut resolved_task = task.clone();
     let extra = client::headers_from_settings(&task.settings)
         .map_err(|error| DownloadError::Protocol(error.to_string()))?;
-    // The daemon already folds a per-task `max_speed_bps` into this budget;
-    // keep the old fallback for direct/contract callers.
+    // The daemon folds a per-task `max_speed_bps` into this budget (including
+    // the fair share of the global limit). Only fall back to the raw setting
+    // when the caller passed no budget at all.
     let speed_limit_bps = {
         let mut current = budget.lock().unwrap();
-        if let Some(limit) = task
-            .settings
-            .get("max_speed_bps")
-            .and_then(serde_json::Value::as_u64)
-        {
-            current.download_bps = limit;
+        if current.download_bps == 0 {
+            if let Some(limit) = task
+                .settings
+                .get("max_speed_bps")
+                .and_then(serde_json::Value::as_u64)
+            {
+                current.download_bps = limit;
+            }
         }
         current.download_bps
     };
@@ -238,6 +241,7 @@ fn run_inner(
     let file_path = paths.staging.join(&filename);
     let file = OpenOptions::new()
         .create(true)
+        .truncate(false)
         .read(true)
         .write(true)
         .open(&file_path)?;
@@ -928,6 +932,7 @@ mod tests {
         assert_eq!(human_size(25 * 1024 * 1024), "25.0 MB");
     }
 
+    #[test]
     fn eta_is_none_without_speed() {
         assert_eq!(eta(10, Some(100), 0), None);
         assert_eq!(eta(10, Some(100), 10), Some(9));
