@@ -7,6 +7,7 @@
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -39,13 +40,18 @@ impl Drop for Daemon {
 }
 
 fn temp_dir(label: &str) -> PathBuf {
+    // Parallel tests share the process id; the counter keeps two `temp_dir`
+    // calls made in the same nanosecond from picking the same root (one
+    // test's cleanup would then delete the other's directory mid-spawn).
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
     let dir = std::env::temp_dir().join(format!(
-        "aether-aria2-{label}-{}-{nanos}",
-        std::process::id()
+        "aether-aria2-{label}-{}-{nanos}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
     ));
     std::fs::create_dir_all(&dir).unwrap();
     dir
@@ -404,33 +410,7 @@ fn websocket_answers_calls_and_pushes_notifications() {
         return;
     };
     let addr = daemon.addr;
-    let mut ws = TcpStream::connect(addr).unwrap();
-    ws.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-    ws.write_all(
-        b"GET /jsonrpc HTTP/1.1\r\n\
-          Host: localhost\r\n\
-          Upgrade: websocket\r\n\
-          Connection: Upgrade\r\n\
-          Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\
-          Sec-WebSocket-Version: 13\r\n\
-          \r\n",
-    )
-    .unwrap();
-    ws.flush().unwrap();
-
-    // Read the 101 response byte-by-byte so no frame bytes are swallowed.
-    let mut response = Vec::new();
-    let mut byte = [0u8; 1];
-    while !response.ends_with(b"\r\n\r\n") {
-        ws.read_exact(&mut byte).unwrap();
-        response.push(byte[0]);
-    }
-    let response = String::from_utf8_lossy(&response);
-    assert!(response.starts_with("HTTP/1.1 101"), "{response}");
-    assert!(
-        response.contains("s3pPLMBiTxaQ9kYGzzhZRbK+xOo="),
-        "{response}"
-    );
+    let mut ws = connect_websocket(addr);
 
     write_client_text(
         &mut ws,
@@ -532,6 +512,38 @@ fn read_server_text(stream: &mut TcpStream) -> Option<String> {
         0x8 => None,
         _ => Some(String::new()),
     }
+}
+
+/// Open the `/jsonrpc` WebSocket and assert the 101 handshake.
+fn connect_websocket(addr: SocketAddr) -> TcpStream {
+    let mut ws = TcpStream::connect(addr).unwrap();
+    ws.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    ws.write_all(
+        b"GET /jsonrpc HTTP/1.1\r\n\
+          Host: localhost\r\n\
+          Upgrade: websocket\r\n\
+          Connection: Upgrade\r\n\
+          Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\
+          Sec-WebSocket-Version: 13\r\n\
+          \r\n",
+    )
+    .unwrap();
+    ws.flush().unwrap();
+
+    // Read the 101 response byte-by-byte so no frame bytes are swallowed.
+    let mut response = Vec::new();
+    let mut byte = [0u8; 1];
+    while !response.ends_with(b"\r\n\r\n") {
+        ws.read_exact(&mut byte).unwrap();
+        response.push(byte[0]);
+    }
+    let response = String::from_utf8_lossy(&response);
+    assert!(response.starts_with("HTTP/1.1 101"), "{response}");
+    assert!(
+        response.contains("s3pPLMBiTxaQ9kYGzzhZRbK+xOo="),
+        "{response}"
+    );
+    ws
 }
 
 #[test]
@@ -828,6 +840,115 @@ fn save_session_writes_active_urls() {
     let text = std::fs::read_to_string(path).unwrap();
     assert!(text.contains("session.bin"), "{text}");
     local.shutdown().unwrap();
+}
+
+#[test]
+fn shutdown_methods_stop_the_daemon() {
+    for method in ["aria2.shutdown", "aria2.forceShutdown"] {
+        let Some(daemon) = spawn() else {
+            eprintln!("plugin binaries are not built; skipping");
+            return;
+        };
+        let addr = daemon.addr;
+        let reply = rpc(addr, 1, method, json!(["token:s3cret"]));
+        assert_eq!(reply["result"], "OK", "{method}: {reply}");
+
+        let finished = (0..100).any(|_| {
+            if daemon
+                .handle
+                .as_ref()
+                .is_some_and(|handle| handle.is_finished())
+            {
+                true
+            } else {
+                thread::sleep(Duration::from_millis(50));
+                false
+            }
+        });
+        assert!(finished, "{method}: daemon did not stop");
+    }
+}
+
+#[test]
+fn multicall_shutdown_replies_before_the_daemon_stops() {
+    let Some(daemon) = spawn() else {
+        eprintln!("plugin binaries are not built; skipping");
+        return;
+    };
+    let addr = daemon.addr;
+    // The getting call comes first so the reply proves every entry made it
+    // onto the wire, not just the stopping one.
+    let reply = rpc(
+        addr,
+        1,
+        "system.multicall",
+        json!([[
+            { "methodName": "aria2.getVersion", "params": ["token:s3cret"] },
+            { "methodName": "aria2.shutdown", "params": ["token:s3cret"] },
+            { "methodName": "aria2.getGlobalStat", "params": ["token:s3cret"] },
+        ]]),
+    );
+    let results = reply["result"]
+        .as_array()
+        .unwrap_or_else(|| panic!("multicall reply was truncated: {reply}"));
+    // Calls after the stopping entry are not executed (aria2 exits first).
+    assert_eq!(results.len(), 2, "{reply}");
+    assert!(
+        results[0].get("error").is_none(),
+        "prefix call failed: {reply}"
+    );
+    assert_eq!(results[1], json!({ "result": "OK" }), "{reply}");
+
+    let finished = (0..100).any(|_| {
+        if daemon
+            .handle
+            .as_ref()
+            .is_some_and(|handle| handle.is_finished())
+        {
+            true
+        } else {
+            thread::sleep(Duration::from_millis(50));
+            false
+        }
+    });
+    assert!(finished, "daemon did not stop");
+}
+
+#[test]
+fn websocket_shutdown_reply_is_complete() {
+    let Some(daemon) = spawn() else {
+        eprintln!("plugin binaries are not built; skipping");
+        return;
+    };
+    let addr = daemon.addr;
+    let mut ws = connect_websocket(addr);
+    write_client_text(
+        &mut ws,
+        &json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "aria2.shutdown",
+            "params": ["token:s3cret"],
+        })
+        .to_string(),
+    );
+    let reply = read_server_text(&mut ws).expect("no websocket shutdown reply");
+    let reply: Value = serde_json::from_str(&reply).unwrap();
+    assert_eq!(reply["result"], "OK", "{reply}");
+
+    let finished = (0..100).any(|_| {
+        if daemon
+            .handle
+            .as_ref()
+            .is_some_and(|handle| handle.is_finished())
+        {
+            true
+        } else {
+            thread::sleep(Duration::from_millis(50));
+            false
+        }
+    });
+    assert!(finished, "daemon did not stop");
 }
 
 #[cfg(target_os = "linux")]
