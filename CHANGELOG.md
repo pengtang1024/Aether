@@ -3,6 +3,42 @@
 All notable changes to Aether are documented here. Versions follow semantic
 versioning; 0.x releases may still change structure.
 
+## [0.6.1] - 2026-11-03
+
+**Auto-updates now work out of the box: the daemon carries the release manifest
+URL and the official public key, and distro packages download the `.deb` instead
+of pretending an AppImage was applied.**
+
+### Added
+
+- Update manifests can carry a `packages` map (one installer per platform
+  key) alongside the portable `assets`; `scripts/make-update-manifest.py`
+  emits it, so Linux releases expose `aether_<ver>_amd64.deb` /
+  `arm64.deb` to the updater.
+- New `update_status` state `package`: an installer was downloaded and needs
+  a manual step. The About panel shows the file and, for `.deb`, the exact
+  `sudo dpkg -i` command.
+- `UpdateClient::asset_to_install` / `package_for_platform` pick the asset for
+  the install shape (self-replacing AppImage vs package-managed install).
+
+### Changed
+
+- Auto-update checks are on by default: `DaemonConfig` falls back to the
+  release `update.json` URL and the official release public key, so a daemon
+  started by the desktop app behaves like the systemd one. `AETHER_UPDATE_URL`,
+  `AETHER_UPDATE_PUBKEY`, `--update-url` and `--update-key` still override;
+  an empty value disables checks.
+- `packaging/daemon.env.example` and `docs/UPDATE.md` describe the new default
+  instead of an opt-in flow.
+
+### Fixed
+
+- The updater reported `ready` ("restart to apply") after downloading a
+  package it had not applied. Status now reflects what happened.
+- `aether-daemon` exited with a failure when another instance already held the
+  socket, so `Restart=on-failure` restarted it indefinitely (thousands of
+  attempts on a desktop install). It now exits successfully.
+
 ## [0.6.0] - 2026-11-02
 
 **A pluginization release: the UI and daemon now behave as a controller and a
