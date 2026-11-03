@@ -185,14 +185,12 @@ fn handle_http_request(
         && headers
             .iter()
             .any(|(name, value)| name == "expect" && value.eq_ignore_ascii_case("100-continue"))
-    {
-        if writer
+        && writer
             .write_all(b"HTTP/1.1 100 Continue\r\n\r\n")
             .and_then(|()| writer.flush())
             .is_err()
-        {
-            return false;
-        }
+    {
+        return false;
     }
 
     let request = match method {
@@ -243,8 +241,161 @@ fn handle_http_request(
         }
     };
 
-    let response = process_request(&request, bridge, secret);
-    write_json(writer, "200 OK", &response, keep_alive).is_ok() && keep_alive
+    // `aria2.shutdown` stops the daemon from inside the plugin call, so the
+    // body must already be on the wire: otherwise the process exits between
+    // the headers and the body and clients see a truncated response. This
+    // applies to `system.multicall` too, where the stopping call can sit
+    // anywhere in the array.
+    let (response, pending) = prepare_reply(&request, bridge, secret);
+    let written = write_json(writer, "200 OK", &response, keep_alive).is_ok();
+    if let Some(stop) = pending {
+        let _ = process_request(&stop, bridge, secret);
+        return false;
+    }
+    written && keep_alive
+}
+
+/// Turn one JSON-RPC request into the reply to write.
+///
+/// When the request stops the daemon, the second value is the call to run
+/// *after* the reply is on the wire (the process may exit inside it).
+fn prepare_reply(
+    request: &Value,
+    bridge: Option<&dyn Bridge>,
+    secret: &Arc<Mutex<Option<String>>>,
+) -> (Value, Option<Value>) {
+    let id = request.get("id").cloned().unwrap_or(Value::Null);
+    let Some(plan) = shutdown_plan(request, bridge.is_some(), secret) else {
+        return (process_request(request, bridge, secret), None);
+    };
+    match plan {
+        ShutdownPlan::Direct { response, execute } => {
+            let pending = execute.then(|| request.clone());
+            (response, pending)
+        }
+        ShutdownPlan::Multicall {
+            prefix,
+            entry,
+            method,
+            params,
+            execute,
+        } => {
+            // Calls before the shutdown run normally; calls after it are not
+            // executed (aria2 would exit before reaching them).
+            let mut response = match prefix {
+                Some(prefix) => process_request(&prefix, bridge, secret),
+                None => json!({ "jsonrpc": "2.0", "id": id, "result": [] }),
+            };
+            let appended = response
+                .get_mut("result")
+                .and_then(Value::as_array_mut)
+                .map(|results| results.push(entry))
+                .is_some();
+            let pending = (appended && execute).then(|| {
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "method": method,
+                    "params": params,
+                })
+            });
+            (response, pending)
+        }
+    }
+}
+
+/// A request that would stop the daemon before its HTTP body is written.
+enum ShutdownPlan {
+    /// `aria2.shutdown` / `aria2.forceShutdown` called directly.
+    Direct { response: Value, execute: bool },
+    /// `system.multicall` whose call array stops the daemon at the first
+    /// stopping entry.
+    Multicall {
+        /// The calls before the stopping one, wrapped as their own
+        /// `system.multicall` request (`None` when it is the first call).
+        prefix: Option<Value>,
+        /// The response slot reserved for the stopping call.
+        entry: Value,
+        method: String,
+        params: Value,
+        execute: bool,
+    },
+}
+
+fn is_shutdown_method(method: &str) -> bool {
+    matches!(method, "aria2.shutdown" | "aria2.forceShutdown")
+}
+
+fn shutdown_plan(
+    request: &Value,
+    bridge_present: bool,
+    secret: &Arc<Mutex<Option<String>>>,
+) -> Option<ShutdownPlan> {
+    let id = request.get("id").cloned().unwrap_or(Value::Null);
+    let method = request.get("method").and_then(Value::as_str)?;
+    let params = request.get("params").cloned().unwrap_or_else(|| json!([]));
+
+    if is_shutdown_method(method) {
+        let authorized = authorized_params(method, params, secret).is_some();
+        let response = match (authorized, bridge_present) {
+            (true, true) => json!({ "jsonrpc": "2.0", "id": id, "result": "OK" }),
+            (false, _) => rpc_error(&id, 1, "Unauthorized: invalid or missing token"),
+            (true, false) => rpc_error(
+                &id,
+                1,
+                "aria2 compatibility plugin is not installed or enabled",
+            ),
+        };
+        return Some(ShutdownPlan::Direct {
+            response,
+            execute: authorized && bridge_present,
+        });
+    }
+
+    if method != "system.multicall" {
+        return None;
+    }
+    let calls = params.as_array()?.first()?.as_array()?;
+    let index = calls.iter().position(|call| {
+        call.get("methodName")
+            .and_then(Value::as_str)
+            .is_some_and(is_shutdown_method)
+    })?;
+    let call = &calls[index];
+    let method = call.get("methodName").and_then(Value::as_str)?.to_string();
+    let params = call
+        .get("params")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let authorized = authorized_params(&method, Value::Array(params.clone()), secret).is_some();
+    let entry = match (authorized, bridge_present) {
+        (true, true) => json!({ "result": "OK" }),
+        (false, _) => json!({
+            "error": { "code": 1, "message": "Unauthorized: invalid or missing token" },
+        }),
+        (true, false) => json!({
+            "error": {
+                "code": 1,
+                "message": "aria2 compatibility plugin is not installed or enabled",
+            },
+        }),
+    };
+    let prefix = (index > 0).then(|| {
+        json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": "system.multicall",
+            "params": [Value::Array(calls[..index].to_vec())],
+        })
+    });
+    Some(ShutdownPlan::Multicall {
+        prefix,
+        entry,
+        method,
+        params: Value::Array(params),
+        execute: authorized && bridge_present,
+    })
 }
 
 /// Validate one JSON-RPC request and turn it into a full JSON-RPC response.
@@ -448,11 +599,20 @@ fn serve_websocket(
     loop {
         match inbound_rx.recv_timeout(Duration::from_millis(50)) {
             Ok(WsIn::Text(text)) => {
-                let reply = match serde_json::from_str::<Value>(&text) {
-                    Ok(request) => process_request(&request, bridge, secret),
-                    Err(error) => rpc_error(&Value::Null, -32700, &format!("parse error: {error}")),
+                let (reply, pending) = match serde_json::from_str::<Value>(&text) {
+                    Ok(request) => prepare_reply(&request, bridge, secret),
+                    Err(error) => (
+                        rpc_error(&Value::Null, -32700, &format!("parse error: {error}")),
+                        None,
+                    ),
                 };
                 if write_text(writer, &reply.to_string()).is_err() {
+                    break;
+                }
+                // The frame is on the wire before the daemon stops, so a
+                // WebSocket client also sees a complete reply.
+                if let Some(stop) = pending {
+                    let _ = process_request(&stop, bridge, secret);
                     break;
                 }
             }
