@@ -488,7 +488,10 @@ fn change_global_option(client: &mut DaemonClient, params: &[Value]) -> RpcResul
         }
     }
     if !patch.is_empty() {
-        client.call("set_settings", Value::Object(patch))?;
+        // `set_settings` reads the patch from the request's `settings` field,
+        // not from top-level keys: `DaemonClient::call` merges the extra object
+        // into the request, so the patch must stay nested.
+        client.call("set_settings", json!({ "settings": patch }))?;
     }
     Ok(json!("OK"))
 }

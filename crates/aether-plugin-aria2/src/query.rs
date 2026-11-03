@@ -179,12 +179,14 @@ pub fn option(client: &mut DaemonClient, params: &[Value]) -> RpcResult {
         .and_then(Value::as_str)
         .ok_or_else(|| RpcError::new(-32602, "missing gid"))?;
     let task = resolve(client, gid)?;
+    let (_, dir) = client.list()?;
     let settings = task.get("settings").cloned().unwrap_or(Value::Null);
     Ok(json!({
         "dir": task
             .get("target_dir")
             .and_then(Value::as_str)
-            .unwrap_or_default(),
+            .filter(|dir| !dir.is_empty())
+            .unwrap_or(&dir),
         "max-download-limit": settings
             .get("max_speed_bps")
             .and_then(Value::as_u64)
