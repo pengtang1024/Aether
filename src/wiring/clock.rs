@@ -1,32 +1,33 @@
-//! The 5 Hz UI clock: drift, notices, toasts, notifications and page state.
+//! The 5 Hz UI clock: lifecycle, drift sampling and page state.
 //!
 //! The clock owns visibility. While the window is hidden or minimized both
 //! timers stop and the daemon poller parks, so a resident Aether that nobody
 //! can see does no UI work at all. `resume` restarts the timers and paints the
 //! last snapshot immediately, then the poller re-reads the daemon once.
+//! The per-tick body lives in `clock/tick.rs`.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use slint::ComponentHandle;
 use slint::{Timer, TimerMode};
 
 use crate::backend::Snapshot;
 use crate::detail::refresh_detail;
-use crate::i18n;
-use crate::platform::{open_path, send_notification, system_is_dark};
+use crate::platform::system_is_dark;
 use crate::state::State;
-use crate::toast::{show_action_toast, show_toast};
-use crate::update_status::update_status_text;
 use crate::AppWindow;
+
+mod tick;
+
+#[cfg(test)]
+mod tests;
 
 /// 5 Hz: fast enough for the drift/speed animation, slow enough to stay cheap.
 const TICK: Duration = Duration::from_millis(200);
 /// Desktop theme changes are rare; 10 s is plenty.
 const THEME_TICK: Duration = Duration::from_secs(10);
-/// Sub-pixel drift cadence; see `tick_body`.
-const DRIFT_INTERVAL: Duration = Duration::from_secs(1);
 
 type Callback = Rc<RefCell<Box<dyn FnMut()>>>;
 
@@ -132,184 +133,8 @@ fn make_tick(ui: &AppWindow, state: &Rc<RefCell<State>>) -> Callback {
             suspend();
             return;
         }
-        tick_body(&ui, &state);
+        tick::tick_body(&ui, &state);
     })))
-}
-
-fn tick_body(ui: &AppWindow, state: &Rc<RefCell<State>>) {
-    let drawer_open = ui.get_drawer_open();
-    // The ambient drift is a 28 s sine: sampling it at 1 Hz moves the layers
-    // by at most 0.22 px per step, visually identical to 5 Hz but only
-    // repaints once a second. Everything else keeps its tick rate.
-    let drift_due = {
-        let mut st = state.borrow_mut();
-        let due = st.drift_at.is_none_or(|at| at.elapsed() >= DRIFT_INTERVAL);
-        if due {
-            st.drift_at = Some(Instant::now());
-        }
-        due
-    };
-    if drift_due {
-        let drift = state.borrow().backend.drift();
-        ui.set_drift(drift);
-    }
-    let (expire_toast, notice) = {
-        let mut st = state.borrow_mut();
-        let notice = st.backend.take_notice().filter(|notice| {
-            if st.last_notice.as_deref() == Some(notice.as_str()) {
-                false
-            } else {
-                st.last_notice = Some(notice.clone());
-                true
-            }
-        });
-        let expire_toast = st.toast_until.is_some_and(|until| Instant::now() >= until);
-        if expire_toast {
-            st.toast_until = None;
-        }
-        (expire_toast, notice)
-    };
-    if expire_toast {
-        ui.set_toast_open(false);
-    }
-    if let Some(text) = notice {
-        show_toast(ui, state, &text);
-    }
-    // Clipboard detections: stage the URL and offer one-click start.
-    {
-        let detected = state
-            .borrow()
-            .clipboard
-            .as_ref()
-            .map(|watch| watch.drain())
-            .unwrap_or_default();
-        for link in detected {
-            // Stage first, then drop the borrow: show_action_toast
-            // borrows the state itself.
-            state.borrow_mut().clipboard_url = Some(link.url);
-            show_action_toast(
-                ui,
-                state,
-                &i18n::tr("检测到下载链接", "Download link detected"),
-                &i18n::tr("新建任务", "New task"),
-            );
-        }
-    }
-    // One snapshot per tick: rows and the detail drawer share it instead
-    // of each cloning every task, plugin and detail payload. Applying a
-    // snapshot dirties the window on every setter, so skip the pass while
-    // the data (and the uptime minute) has not moved.
-    let snapshot = state.borrow().backend.snapshot();
-    let uptime_minute = state.borrow().started.elapsed().as_secs() / 60;
-    let repaint = {
-        let mut st = state.borrow_mut();
-        let repaint = needs_repaint(st.last_painted.as_ref(), &snapshot, uptime_minute);
-        if repaint {
-            st.last_painted = Some((snapshot.clone(), uptime_minute));
-        }
-        repaint
-    };
-    if repaint {
-        crate::rows::apply_snapshot(ui, state, &snapshot);
-    }
-    // A user-triggered check is asynchronous: wait until the daemon
-    // leaves `checking`, then toast the real result. Without this the
-    // "checking…" toast vanished and the panel silently flipped back.
-    {
-        let outcome = {
-            let mut st = state.borrow_mut();
-            let update = st.backend.update_status();
-            match (st.update_watch.as_mut(), update) {
-                (None, _) => None,
-                (Some(watch), None) => {
-                    if watch.since.elapsed() > Duration::from_secs(150) {
-                        st.update_watch = None;
-                        Some(i18n::tr(
-                            "检查更新超时：daemon 没有返回状态",
-                            "Update check timed out: the daemon reported no state",
-                        ))
-                    } else {
-                        None
-                    }
-                }
-                (Some(watch), Some(update)) => {
-                    let status = update["status"].as_str().unwrap_or("");
-                    if status == "checking" {
-                        watch.saw_checking = true;
-                        None
-                    } else if watch.saw_checking || watch.since.elapsed() > Duration::from_secs(2) {
-                        st.update_watch = None;
-                        Some(update_status_text(Some(&update)))
-                    } else {
-                        None
-                    }
-                }
-            }
-        };
-        if let Some(message) = outcome {
-            show_toast(ui, state, &message);
-        }
-    }
-    if drawer_open && repaint {
-        refresh_detail(ui, state, &snapshot);
-    }
-    // Persist the page for "上次页面"; run the after-done action for
-    // tasks that completed since the last tick.
-    {
-        let mut st = state.borrow_mut();
-        let page = ui.get_page();
-        if page != st.seen_page {
-            st.seen_page = page;
-            st.prefs.last_page = page;
-            st.prefs.save();
-        }
-        let mut done = Vec::new();
-        st.backend.take_finished(&mut done);
-        let after = st.prefs.after_done;
-        let notify_done = st.prefs.notify_done;
-        let notify_fail = st.prefs.notify_fail;
-        drop(st);
-        for item in done {
-            if item.done {
-                if notify_done {
-                    send_notification(
-                        &i18n::tr("下载完成", "Download completed"),
-                        &i18n::tr(
-                            format!("「{}」已下载完成", item.name),
-                            format!("“{}” has finished downloading", item.name),
-                        ),
-                    );
-                }
-                match after {
-                    1 => {
-                        if let Some(dir) = &item.dir {
-                            let _ = open_path(std::path::Path::new(dir));
-                        }
-                    }
-                    2 => {
-                        if let (Some(dir), Some(file)) = (&item.dir, &item.file) {
-                            let _ = open_path(&std::path::Path::new(dir).join(file));
-                        }
-                    }
-                    _ => {}
-                }
-            } else if notify_fail {
-                let detail = item.error.as_deref().unwrap_or_default();
-                let body = if detail.is_empty() {
-                    i18n::tr(
-                        format!("「{}」下载失败", item.name),
-                        format!("“{}” failed to download", item.name),
-                    )
-                } else {
-                    i18n::tr(
-                        format!("「{}」下载失败：{detail}", item.name),
-                        format!("“{}” failed to download: {detail}", item.name),
-                    )
-                };
-                send_notification(&i18n::tr("下载失败", "Download failed"), &body);
-            }
-        }
-    }
 }
 
 /// Repaint only when something visible moved: first paint, a changed
@@ -333,76 +158,4 @@ fn make_theme_tick(ui: &AppWindow) -> Callback {
             }
         }
     })))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::needs_repaint;
-    use crate::backend::Snapshot;
-    use crate::model::{Status, Task, CHUNK_COUNT};
-
-    fn task(speed: f64, status: Status) -> Task {
-        Task {
-            id: 1,
-            name: "test.zip".into(),
-            source: "http".into(),
-            path: String::new(),
-            note: String::new(),
-            total: 1024,
-            done: 100.0,
-            status,
-            plugin_id: "http".into(),
-            torrent: false,
-            speed,
-            history: Default::default(),
-            order: [0; CHUNK_COUNT],
-            time_ms: 0,
-        }
-    }
-
-    fn snapshot(speed: f64, status: Status) -> Snapshot {
-        Snapshot {
-            tasks: vec![task(speed, status)],
-            ..Snapshot::default()
-        }
-    }
-
-    #[test]
-    fn first_paint_always_happens() {
-        assert!(needs_repaint(None, &Snapshot::default(), 0));
-    }
-
-    #[test]
-    fn unchanged_data_skips_the_repaint() {
-        let snap = snapshot(10.0, Status::Downloading);
-        let painted = (snap.clone(), 3);
-        assert!(!needs_repaint(Some(&painted), &snap, 3));
-    }
-
-    #[test]
-    fn a_new_minute_repaints_for_the_uptime_label() {
-        let snap = snapshot(10.0, Status::Downloading);
-        let painted = (snap.clone(), 3);
-        assert!(needs_repaint(Some(&painted), &snap, 4));
-    }
-
-    #[test]
-    fn a_moving_speed_repaints() {
-        let painted = (snapshot(10.0, Status::Downloading), 3);
-        assert!(needs_repaint(
-            Some(&painted),
-            &snapshot(11.0, Status::Downloading),
-            3
-        ));
-    }
-
-    #[test]
-    fn a_status_change_repaints() {
-        let painted = (snapshot(10.0, Status::Downloading), 3);
-        assert!(needs_repaint(
-            Some(&painted),
-            &snapshot(10.0, Status::Completed),
-            3
-        ));
-    }
 }
