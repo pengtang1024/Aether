@@ -4,6 +4,7 @@ import { Aether } from "../../theme.slint";
 import { AetherIcons } from "../../icons.slint";
 import { ProgressTrack, SectionCard, SettingRow } from "../../widgets.slint";
 import { SettingsFilter } from "../../settings-filter.slint";
+import { SettingsValidation } from "common.slint";
 
 export component AdvancedPanel inherits Rectangle {
     in property <string> plugins-dir: "";
@@ -73,11 +74,23 @@ export component AdvancedPanel inherits Rectangle {
                 title: @tr("监听地址");
                 badge: @tr("重启后生效");
                 description: @tr("默认 127.0.0.1:6800；留空关闭；非回环地址必须设置令牌");
-                LineEdit {
-                    text <=> root.rpc-listen-value;
-                    placeholder-text: root.rpc-listen == "" ? @tr("未开启") : root.rpc-listen;
-                    min-width: Aether.field-md;
-                    max-width: Aether.field-md;
+                VerticalLayout {
+                    spacing: 2px;
+                    alignment: end;
+                    LineEdit {
+                        text <=> root.rpc-listen-value;
+                        placeholder-text: root.rpc-listen == "" ? @tr("未开启") : root.rpc-listen;
+                        min-width: Aether.field-md;
+                        max-width: Aether.field-md;
+                    }
+                    if SettingsValidation.error("rpc-listen") != "": Text {
+                        text: SettingsValidation.error("rpc-listen");
+                        color: Aether.error;
+                        font-size: Aether.text-micro;
+                        width: Aether.field-md;
+                        horizontal-alignment: right;
+                        wrap: word-wrap;
+                    }
                 }
             }
             SettingRow {
@@ -85,16 +98,28 @@ export component AdvancedPanel inherits Rectangle {
                 icon-source: AetherIcons.shield;
                 title: @tr("访问令牌");
                 description: @tr("默认自动生成；随机按钮换一个；留空表示不使用令牌（仅回环地址）；应用后立即生效");
-                HorizontalLayout {
-                    spacing: Aether.space-sm;
-                    LineEdit {
-                        text <=> root.rpc-secret-value;
-                        input-type: InputType.password;
-                        placeholder-text: @tr("留空表示不使用令牌");
-                        min-width: Aether.field-md;
-                        max-width: Aether.field-md;
+                VerticalLayout {
+                    spacing: 2px;
+                    alignment: end;
+                    HorizontalLayout {
+                        spacing: Aether.space-sm;
+                        LineEdit {
+                            text <=> root.rpc-secret-value;
+                            input-type: InputType.password;
+                            placeholder-text: @tr("留空表示不使用令牌");
+                            min-width: Aether.field-md;
+                            max-width: Aether.field-md;
+                        }
+                        TextButton { text: @tr("随机"); clicked => { root.rpc-random-secret(); } }
                     }
-                    TextButton { text: @tr("随机"); clicked => { root.rpc-random-secret(); } }
+                    if SettingsValidation.error("rpc-secret") != "": Text {
+                        text: SettingsValidation.error("rpc-secret");
+                        color: Aether.error;
+                        font-size: Aether.text-micro;
+                        width: Aether.field-md;
+                        horizontal-alignment: right;
+                        wrap: word-wrap;
+                    }
                 }
             }
             SettingRow {
