@@ -8,7 +8,7 @@ import { SettingsFilter } from "../../settings-filter.slint";
 // presets. The appended row only echoes that value, so the hint explains
 // why it is not written back until the user picks a real preset.
 export component PresetCustomHint inherits Text {
-    text: @tr("当前取值不在预设档位，按原样显示；选择其他档位才会写入");
+    text: @tr("当前取值不在预设档位；选择其他档位才会写入");
     color: Aether.on-surface-muted;
     font-size: Aether.text-micro;
     width: Aether.field-md;

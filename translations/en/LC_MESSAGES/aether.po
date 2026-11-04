@@ -294,12 +294,6 @@ msgstr "Auto-update plugins"
 msgid "daemon 每 6 小时按更新清单安装插件新版；需配置更新清单与签名公钥"
 msgstr "The daemon installs plugin updates from the update manifest every 6 hours; the manifest URL and signing key must be configured"
 
-msgid "加载插件目录之外的文件"
-msgstr "Load files outside the plugin directory"
-
-msgid "不做签名校验的直加载没有提供；请用上面的「安装插件」（会复制进插件目录并验签）"
-msgstr "Unsigned direct loading is not offered; use “Install plugin” above (it copies into the plugin directory and verifies the signature)"
-
 msgid "不支持"
 msgstr "Not supported"
 
@@ -323,9 +317,6 @@ msgstr "Development"
 
 msgid "开发者模式"
 msgstr "Developer mode"
-
-msgid "插件日志查看与调试入口（任务详情里已有每任务日志）"
-msgstr "Plugin logs and debugging entry points (per-task logs already live in the task detail)"
 
 msgid "未实现"
 msgstr "Not implemented"
@@ -393,8 +384,8 @@ msgstr "Accent color"
 msgid "品牌强调色，按钮、进度与高亮同步换色"
 msgstr "Brand accent; buttons, progress and highlights follow"
 
-msgid "当前取值不在预设档位，按原样显示；选择其他档位才会写入"
-msgstr "This value is outside the presets and is shown as-is; only choosing another preset writes a new value"
+msgid "当前取值不在预设档位；选择其他档位才会写入"
+msgstr "This value is outside the presets; only choosing another preset writes a new value"
 
 msgid "界面"
 msgstr "Interface"
@@ -441,12 +432,6 @@ msgstr "Check for updates"
 msgid "更新"
 msgstr "Updates"
 
-msgid "更新通道"
-msgstr "Update channel"
-
-msgid "稳定版优先，测试版获取新能力"
-msgstr "Stable first; the beta channel gets new features earlier"
-
 msgid "自动下载更新"
 msgstr "Download updates automatically"
 
@@ -482,10 +467,6 @@ msgstr "License"
 
 msgid "设置中心"
 msgstr "Settings"
-
-msgid "偏好、网络与扩展"
-msgstr "Preferences, network and extensions"
-
 
 msgid "启动位置与窗口行为"
 msgstr "Startup location and window behavior"
@@ -645,9 +626,6 @@ msgstr "Open"
 msgid "查看"
 msgstr "View"
 
-msgid "传输速度  ·  峰值 "
-msgstr "Transfer speed  ·  peak "
-
 msgid "分片进度  "
 msgstr "Chunk progress  "
 
@@ -696,9 +674,6 @@ msgstr "Not connected"
 msgid " 个已安装 · "
 msgstr " installed · "
 
-msgid " 个运行中 · "
-msgstr " running · "
-
 msgid " 个可更新"
 msgstr " updates"
 
@@ -741,7 +716,6 @@ msgstr " tasks · most recently added"
 msgid "搜索任务名称或地址"
 msgstr "Search by name or URL"
 
-
 msgid "开机自启"
 msgstr "Start at login"
 
@@ -780,9 +754,6 @@ msgstr "CLI and other devices connect to the daemon"
 
 msgid "监听地址"
 msgstr "Listen address"
-
-msgid "默认 127.0.0.1:6800；留空关闭；非回环地址必须设置令牌；修改后重启 daemon 生效"
-msgstr "Defaults to 127.0.0.1:6800; leave blank to turn it off; a non-loopback address requires a token; a restart applies the address"
 
 msgid "访问令牌"
 msgstr "Access token"
