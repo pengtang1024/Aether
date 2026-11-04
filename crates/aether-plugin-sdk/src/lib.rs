@@ -17,6 +17,7 @@ pub mod plugin;
 pub mod protocol;
 pub mod supervisor;
 pub mod task;
+pub mod tool;
 
 pub use error::SdkError;
 pub use ipc::{read_frame, write_frame, MAX_FRAME_SIZE};

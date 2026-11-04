@@ -26,14 +26,21 @@ BT 任务会连接 tracker、DHT 和陌生 peer，**用户的 IP 地址对它们
 
 ## 3. 流媒体、录屏与外部工具
 
-`extractor` 插件调用用户自行安装的 **yt-dlp**，`rtmp`/`media` 转封装调用用户
-自行安装的 **ffmpeg**。它们不随 Aether 分发，各自按其许可证（yt-dlp 为
-GPL-3.0-or-later；ffmpeg 的许可取决于构建选项）由用户自行取得和遵守。YouTube
-等平台的服务条款通常禁止未经授权的下载；录制直播/会议也可能涉及肖像权、隐私权
-和著作权。请自行取得授权。
+`extractor` 插件调用用户自行安装的 **yt-dlp**（GPL-3.0-or-later），不随
+Aether 分发。Windows/macOS 的 `rtmp`/`media` 也使用用户自行安装的 **ffmpeg**。
 
-Aether 不包含 H.264/AAC 等编解码器，也不承担用户安装的第三方工具产生的专利许可
-义务。
+Linux 的 `.deb`/AppImage 包例外：`media` 与 `rtmp` 插件包各带一份精简版
+**ffmpeg 9.0.2**（`bin/ffmpeg`），由 `scripts/build-ffmpeg.py` 从
+ffmpeg.org 源码构建，许可证为 GPL-2.0-or-later（构建时启用 `--enable-gpl`、
+未启用 `--enable-version3`）。它只用于 `-c copy` 转封装和 RTMP 录制，不含
+编码器；完整源码与构建参数见 `THIRD_PARTY_NOTICES.md`，源码下载地址：
+<https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz>。按 GPL 要求，如需对应源码
+可向项目维护者索取。
+
+ffmpeg 内的 H.264/AAC 等编解码实现可能涉及专利许可；Aether 不就此作出专利
+授权，也不承担用户使用第三方工具产生的专利许可义务。YouTube 等平台的服务
+条款通常禁止未经授权的下载；录制直播/会议也可能涉及肖像权、隐私权和著作权。
+请自行取得授权。
 
 ## 4. 云盘与 OAuth
 

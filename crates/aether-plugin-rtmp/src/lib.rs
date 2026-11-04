@@ -40,12 +40,23 @@ impl RtmpPlugin {
         }
     }
 
-    fn ffmpeg(task: &aether_plugin_sdk::TaskSpec) -> String {
-        task.settings
-            .get("ffmpeg_path")
+    /// `ffmpeg_path` setting, then `AETHER_FFMPEG`, then the copy bundled in
+    /// the plugin package, then PATH. `None` for probe: no task settings.
+    fn ffmpeg(task: Option<&aether_plugin_sdk::TaskSpec>) -> String {
+        task.and_then(|task| task.settings.get("ffmpeg_path"))
             .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|path| !path.is_empty())
             .map(ToOwned::to_owned)
-            .or_else(|| std::env::var("AETHER_FFMPEG").ok())
+            .or_else(|| {
+                std::env::var("AETHER_FFMPEG")
+                    .ok()
+                    .filter(|path| !path.trim().is_empty())
+            })
+            .or_else(|| {
+                aether_plugin_sdk::tool::bundled("ffmpeg")
+                    .map(|path| path.to_string_lossy().into_owned())
+            })
             .unwrap_or_else(|| "ffmpeg".into())
     }
 }
@@ -82,7 +93,7 @@ impl Plugin for RtmpPlugin {
                 let supported = input.starts_with("rtmp://")
                     || input.starts_with("rtmps://")
                     || input.starts_with("rtsp://");
-                let executable = std::env::var("AETHER_FFMPEG").unwrap_or_else(|_| "ffmpeg".into());
+                let executable = Self::ffmpeg(None);
                 let available = Command::new(&executable)
                     .arg("-version")
                     .stdout(Stdio::null())
@@ -100,7 +111,7 @@ impl Plugin for RtmpPlugin {
                 })?;
             }
             HostCommand::Start { task, paths, .. } => {
-                let executable = Self::ffmpeg(&task);
+                let executable = Self::ffmpeg(Some(&task));
                 let task_id = task.task_id.clone();
                 let sender = ctx.sender();
                 let control = Arc::new(TaskControl::new());

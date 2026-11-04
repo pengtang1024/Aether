@@ -85,9 +85,11 @@ impl Plugin for FakePlugin {
                         task.url,
                         paths,
                         hold,
-                        fail,
-                        fail_always,
-                        retryable,
+                        FakeBehavior {
+                            fail,
+                            fail_always,
+                            retryable,
+                        },
                     ) {
                         eprintln!("aether-plugin-fake: task failed: {error}");
                     }
@@ -148,16 +150,26 @@ fn trace(message: String) {
     }
 }
 
+/// Failure knobs read from the task settings.
+struct FakeBehavior {
+    fail: bool,
+    fail_always: bool,
+    retryable: bool,
+}
+
 fn run_fake_task(
     sender: PluginSender,
     task_id: String,
     url: String,
     paths: TaskPaths,
     hold_ms: u64,
-    fail: bool,
-    fail_always: bool,
-    retryable: bool,
+    behavior: FakeBehavior,
 ) -> Result<(), SdkError> {
+    let FakeBehavior {
+        fail,
+        fail_always,
+        retryable,
+    } = behavior;
     trace(format!(
         "task {task_id}: hold={hold_ms} fail={fail} fail_always={fail_always} retryable={retryable}"
     ));

@@ -126,12 +126,7 @@ pub fn run<P: Plugin, R: Read>(
     ctx.init = Some(init);
     ctx.send(&PluginEvent::Ready { api: API_VERSION })?;
 
-    loop {
-        let command = match ipc::read_frame::<_, HostCommand>(&mut input)? {
-            Some(command) => command,
-            None => break,
-        };
-
+    while let Some(command) = ipc::read_frame::<_, HostCommand>(&mut input)? {
         match command {
             HostCommand::Ping { request_id } => {
                 ctx.send(&PluginEvent::Pong {

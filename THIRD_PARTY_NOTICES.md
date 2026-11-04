@@ -13,6 +13,7 @@ with their own license terms. See the scope table and details below.
 | Aether's own code (`src/**`, `crates/**`, Aether-authored `ui/*.slint`, `ui/pages/**`, scripts, docs) | MIT | Yes |
 | Slint Material 3 widgets vendored under `ui/material/**` | `GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0` | No |
 | Slint runtime and `slint-build` (Cargo dependencies) | Same three options | No |
+| Bundled ffmpeg in Linux `media`/`rtmp` plugin packages | GPL-2.0-or-later | No |
 | Brand logo and icons in `assets/` | Aether project, MIT | Yes |
 
 Aether selects the **Slint Royalty-free Desktop, Mobile, and Web Applications
@@ -42,6 +43,35 @@ The alternative upstream options are GPL-3.0-only and
 `LicenseRef-Slint-Software-3.0`; see <https://slint.dev> for the full terms.
 Redistributions must comply with the selected license.
 
+## Bundled ffmpeg (Linux plugin packages)
+
+Linux `.deb` and AppImage builds ship a minimal **ffmpeg 9.0.2** executable
+inside the `media` and `rtmp` plugin packages (`plugins/<id>/bin/ffmpeg`).
+It is built from the upstream source at <https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz>
+by [`scripts/build-ffmpeg.py`](scripts/build-ffmpeg.py) with `--enable-gpl`
+and without `--enable-version3`, so the binary is **GPL-2.0-or-later**. The
+build keeps the demuxers, muxers, protocols and bitstream filters needed for
+`-c copy` remuxing and RTMP capture, plus decoders for stream probing; it
+contains no encoders.
+
+The executable runs as a subprocess of the plugin, not linked into Aether.
+Aether's own code remains MIT-licensed; this is an aggregate distribution.
+The full GPL-2.0 text is in [`LICENSES/GPL-2.0.txt`](LICENSES/GPL-2.0.txt).
+
+**Corresponding source offer:** the exact source archive and the configure
+flags used are identified above and in `scripts/build-ffmpeg.py` (which
+verifies the source SHA-256). If you need a copy of the corresponding source
+from the maintainers, open an issue at
+<https://github.com/pengtang1024/Aether/issues>; we will provide it for at
+least three years from the date the binary was distributed.
+
+Windows and macOS packages do not bundle ffmpeg yet; those plugins use a
+user-installed ffmpeg from `PATH` or `AETHER_FFMPEG`.
+
+FFmpeg includes H.264/AAC and other codec implementations. Distributing it
+may require patent licenses in some jurisdictions; Aether makes no patent
+grant and accepts no liability for codec patent claims.
+
 ## Full license texts
 
 Every license family that can ship in a binary is reproduced under
@@ -65,6 +95,7 @@ Every license family that can ship in a binary is reproduced under
 | `QuickJS-LICENSE.txt` | QuickJS engine bundled by `rquickjs-sys` for PAC evaluation |
 | `moka-NOTICE.txt` | Moka's additional Apache-2.0 notice (frequency sketch / timer wheel) |
 | `SQLite-blessing.txt` | public-domain SQLite blessing (bundled `rusqlite`) |
+| `GPL-2.0.txt` | bundled ffmpeg executable in Linux plugin packages |
 
 `Cargo.lock` is the authoritative, version-pinned inventory of every Rust
 dependency; [`docs/THIRD_PARTY_INVENTORY.md`](docs/THIRD_PARTY_INVENTORY.md)
@@ -113,6 +144,8 @@ binaries, so their upstream composite licenses travel with the product:
   and binary distributions (`.deb`, AppImage, ZIP, installer, DMG).
 - Keep the upstream copyright/SPDX headers in `ui/material/**`.
 - Do not describe the whole repository or binary as "MIT only".
+- Keep `LICENSES/GPL-2.0.txt` and the corresponding-source offer with Linux
+  packages that bundle ffmpeg.
 - Do not remove the "Made with Slint" attribution from the download page until
   an in-app `AboutSlint` widget is shipped.
 

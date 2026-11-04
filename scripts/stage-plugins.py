@@ -71,6 +71,22 @@ def main() -> int:
         shutil.rmtree(out)
     out.mkdir(parents=True)
 
+    # media and rtmp shell out to ffmpeg. Linux packages ship a minimal
+    # build inside each package; other platforms keep using PATH.
+    ffmpeg_dir = root / "build" / "ffmpeg"
+    subprocess.run(
+        [
+            sys.executable,
+            str(root / "scripts" / "build-ffmpeg.py"),
+            "--platform-key",
+            key,
+            "--out",
+            str(ffmpeg_dir),
+        ],
+        check=True,
+    )
+    ffmpeg = ffmpeg_dir / key / "ffmpeg"
+
     staged = 0
     for manifest_rel, binary_name in PLUGINS:
         manifest_path = root / manifest_rel
@@ -103,6 +119,9 @@ def main() -> int:
         shutil.copy2(root / "THIRD_PARTY_NOTICES.md", package / "THIRD_PARTY_NOTICES.md")
         shutil.copy2(root / "THIRD_PARTY_LICENSES.md", package / "THIRD_PARTY_LICENSES.md")
         shutil.copytree(root / "LICENSES", package / "LICENSES")
+        if manifest["id"] in ("media", "rtmp") and ffmpeg.is_file():
+            shutil.copy2(ffmpeg, destination.parent / ffmpeg.name)
+            (destination.parent / ffmpeg.name).chmod(0o755)
         staged += 1
 
     print(f"staged {staged} plugins for {key} in {out}")

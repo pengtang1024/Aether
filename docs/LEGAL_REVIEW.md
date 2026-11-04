@@ -139,13 +139,15 @@ BT 会连接 tracker/DHT/peer 并暴露 IP；做种上传在部分辖区受版�
 
 ### 🟡 M5. 外部工具与平台 ToS 提示（已补文档）
 
-`extractor` 调 yt-dlp、`rtmp`/`media` 调 ffmpeg，但工具不随包分发。yt-dlp 是
-GPL-3.0-or-later；ffmpeg 的许可以构建选项而定；YouTube 等平台条款通常禁止未授权
-下载。Aether 不捆绑它们，规避了 GPL 传染与编解码器专利分发问题，但用户仍需自行
-取得并遵守。
+`extractor` 调用户安装的 yt-dlp（GPL-3.0-or-later）。`rtmp`/`media` 在
+Windows/macOS 调用户安装的 ffmpeg；Linux 发行包改为在插件内附带精简版 ffmpeg
+9.0.2（GPL-2.0-or-later，见 `scripts/build-ffmpeg.py`），以子进程运行、与
+Aether 的 MIT 代码仅为聚合分发。随包分发后仍需履行 GPL 源码提供义务，并正视
+ffmpeg 编解码器的专利风险；YouTube 等平台条款通常禁止未授权下载。
 
-**处理**：`docs/LEGAL_NOTICES.md` 明确外部工具、平台条款、录制/肖像权与编解码器
-专利责任；README 链接。
+**处理**：`docs/LEGAL_NOTICES.md` 明确分发范围、GPL 源码地址/索取方式、平台
+条款、录制/肖像权与编解码器专利责任；`THIRD_PARTY_NOTICES.md` 记录构建参数与
+对应源码；`LICENSES/GPL-2.0.txt` 随包分发。
 
 ### ✅ M6. Debian copyright（已闭环）
 

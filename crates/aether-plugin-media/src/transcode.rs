@@ -24,16 +24,24 @@ use aether_plugin_sdk::{
 const PROGRESS_INTERVAL: Duration = Duration::from_secs(1);
 
 /// ffmpeg binary for a task: the `ffmpeg_path` task setting wins, then the
-/// `AETHER_FFMPEG` environment, then plain `ffmpeg` on PATH — the same
-/// resolution order the rtmp plugin uses.
+/// `AETHER_FFMPEG` environment, then the copy bundled in the plugin package,
+/// then plain `ffmpeg` on PATH — the same order the rtmp plugin uses.
 pub fn executable(task: &TaskSpec) -> String {
     task.settings
         .get("ffmpeg_path")
         .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
         .map(ToOwned::to_owned)
-        .filter(|path| !path.trim().is_empty())
-        .or_else(|| std::env::var("AETHER_FFMPEG").ok())
-        .filter(|path| !path.trim().is_empty())
+        .or_else(|| {
+            std::env::var("AETHER_FFMPEG")
+                .ok()
+                .filter(|path| !path.trim().is_empty())
+        })
+        .or_else(|| {
+            aether_plugin_sdk::tool::bundled("ffmpeg")
+                .map(|path| path.to_string_lossy().into_owned())
+        })
         .unwrap_or_else(|| "ffmpeg".into())
 }
 
@@ -57,12 +65,12 @@ pub fn maybe_remux(
     task: &TaskSpec,
     staging: &Path,
     file: &FileInfo,
-    progress: &SharedProgress,
+    _progress: &SharedProgress,
 ) -> (FileInfo, Option<String>) {
     let Some(container) = target_container(task) else {
         return (file.clone(), None);
     };
-    match remux(sender, task, staging, file, &container, progress) {
+    match remux(sender, task, staging, file, &container, _progress) {
         Ok(remuxed) => (remuxed, None),
         Err(note) => (file.clone(), Some(note)),
     }
@@ -74,7 +82,7 @@ fn remux(
     staging: &Path,
     file: &FileInfo,
     container: &str,
-    progress: &SharedProgress,
+    _progress: &SharedProgress,
 ) -> Result<FileInfo, String> {
     let input = staging.join(&file.relative_path);
     let stem = Path::new(&file.relative_path)

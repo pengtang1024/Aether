@@ -34,11 +34,11 @@
 | ED2K / Kad | ed2k | Optional | P5+（未实现） | 需要 eDonkey 内核；当前不做 |
 | thunder:// / QQdl:// / FlashGet | decoder | Optional | **thunder 已实现** | 仅 URL 解码后走 HTTP；不提供私有加速/离线 |
 | IPFS / IPNS | ipfs | Optional | **已实现** | HTTP gateway；不内置完整 Kubo |
-| RTMP / RTSP | rtmp | Optional | **已实现** | 通过 ffmpeg 子进程；不写实时流核心 |
+| RTMP / RTSP | rtmp | Optional | **已实现** | 通过 ffmpeg 子进程；Linux 插件包自带 ffmpeg，Windows/macOS 用系统 ffmpeg |
 | Usenet / NNTP | — | Not planned | — | 不在路线图 |
 | TFTP / Gopher / SCP | — | Not planned | — | 不在路线图 |
 | WebSocket / 长连接消息 | — | Not planned | — | 不是文件下载协议 |
-| aria2 JSON-RPC 客户端 | aria2（服务插件） | Optional | **已实现（HTTP/WS）** | 与原生 RPC 共用 6800：POST/GET `/jsonrpc`、CORS、`token:` 鉴权、常用方法与 `system.multicall`；多 URI 作为镜像在开始前探测（不做下载中切换），`out` 会覆盖探测文件名；`list` 默认 100 条，aria2 查询请求 10,000 条；`addTorrent`/`addMetalink` 通过 daemon 的 `/aria2-blobs/` 持久化路由交给 BT/HTTP 插件（`addTorrent` 的 web seed 列表忽略；内联字节重启后仍有效，7 天后清理；blob URL 绑定当前 RPC 端口，改端口后旧排队任务需重新添加）；WebSocket `/jsonrpc` 支持调用与 `aria2.onDownload*` 通知；`changeOption` 的 `max-download-limit` 支持实时/排队限速（BT 拒绝），`changePosition` 支持等待队列重排；`saveSession` 导出 `<data>/aria2-session.txt`（恢复仍以 SQLite 为准）；`getPeers` 对 BT 返回真实 IP/端口/状态（peerId 与实时速度为占位），其他插件返回空数组 |
+| aria2 JSON-RPC 客户端 | aria2（服务插件） | Optional | **已实现（HTTP/WS）** | 与原生 RPC 共用 6800：POST/GET `/jsonrpc`、CORS、`token:` 鉴权、35 个兼容方法（`system.listMethods` 返回同一集合，均有自动化用例；`shutdown`/`forceShutdown` 另在真实进程上复核）与 `system.multicall`；多 URI 作为镜像在开始前探测（不做下载中切换），`out` 会覆盖探测文件名；`list` 默认 100 条，aria2 查询请求 10,000 条；`addTorrent`/`addMetalink` 通过 daemon 的 `/aria2-blobs/` 持久化路由交给 BT/HTTP 插件（`addTorrent` 的 web seed 列表忽略；内联字节重启后仍有效，7 天后清理；blob URL 绑定当前 RPC 端口，改端口后旧排队任务需重新添加）；WebSocket `/jsonrpc` 支持调用与 `aria2.onDownload*` 通知；`changeOption` 的 `max-download-limit` 支持实时/排队限速（BT 拒绝），`changePosition` 支持等待队列重排；`saveSession` 导出 `<data>/aria2-session.txt`（恢复仍以 SQLite 为准）；`getPeers` 对 BT 返回真实 IP/端口/状态（peerId 与实时速度为占位），其他插件返回空数组 |
 
 ## 3. 内容与来源
 
