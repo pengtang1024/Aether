@@ -295,6 +295,10 @@ fn unconfigured_channel_reports_honestly_and_setting_roundtrips() {
     let error = client.plugin_update_all().expect_err("no channel");
     assert!(error.to_string().contains("update_url"), "{error}");
 
+    // A pass that never started must leave the stats cell idle.
+    let stats = client.stats().unwrap();
+    assert_eq!(stats.plugin_progress["running"], json!(false), "{stats:?}");
+
     client.shutdown().unwrap();
     drop(daemon);
 }
@@ -423,6 +427,17 @@ fn update_all_installs_and_rejects_hostile_or_corrupt_archives() {
     let updated = value["updated"].as_array().unwrap();
     let failed = value["failed"].as_array().unwrap();
     assert_eq!(value["up_to_date"], json!(false));
+
+    // `stats` reports the finished pass: idle, with the failure surfaced.
+    let progress = client.stats().unwrap().plugin_progress;
+    assert_eq!(progress["running"], json!(false), "{progress}");
+    assert_eq!(progress["phase"], json!("done"), "{progress}");
+    assert_eq!(
+        progress["updated"].as_u64().unwrap() as usize,
+        updated.len(),
+        "{progress}"
+    );
+    assert!(progress.get("error").is_some(), "{progress}");
 
     // demo and fresh installed/updated; stable untouched (skipped).
     assert!(updated.contains(&json!("demo")), "{value}");

@@ -76,6 +76,9 @@ pub struct Stats {
     /// App-update status from the daemon's periodic check (`null` when no
     /// update source is configured).
     pub update: Option<Value>,
+    /// Plugin update/install progress (`{"running": false}` when idle).
+    #[serde(default)]
+    pub plugin_progress: Value,
 }
 
 impl Stats {
@@ -157,6 +160,12 @@ impl Stats {
                 .get("update")
                 .filter(|update| !update.is_null())
                 .cloned(),
+            // Older daemons have no `plugin_progress`; report idle instead of null.
+            plugin_progress: value
+                .get("plugin_progress")
+                .filter(|progress| !progress.is_null())
+                .cloned()
+                .unwrap_or_else(|| serde_json::json!({ "running": false })),
         }
     }
 }
