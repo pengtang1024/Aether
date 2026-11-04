@@ -3,6 +3,17 @@
 All notable changes to Aether are documented here. Versions follow semantic
 versioning; 0.x releases may still change structure.
 
+## [0.6.4] - 2026-11-04
+
+### Changed
+
+- Alignment release: the tag, the release branch head and the published
+  artifacts all point at the same commit, so nothing in the application
+  changes compared with 0.6.3.
+- `rust-toolchain.toml` pins 1.99.1 (it was already part of the 0.6.3 build)
+  and MSRV stays at 1.99. Feature work is unchanged from 0.6.3 and is not
+  repeated here.
+
 ## [0.6.3] - 2026-11-04
 
 ### Added
