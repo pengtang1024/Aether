@@ -1,0 +1,179 @@
+// Schedule and appearance settings panels.
+import { Switch, Slider, ComboBox, LineEdit, TextButton, IconButton } from "std-widgets.slint";
+import { Aether } from "../../theme.slint";
+import { AetherIcons } from "../../icons.slint";
+import { ProgressTrack, SectionCard, SettingRow } from "../../widgets.slint";
+import { SettingsFilter } from "../../settings-filter.slint";
+
+export component SchedulePanel inherits Rectangle {
+    // Daemon-backed schedule + UI-local notification preferences, mirrored
+    // by the window.
+    in-out property <bool> schedule-on: false;
+    in-out property <string> schedule-start: "";
+    in-out property <string> schedule-end: "";
+    in-out property <bool> notify-done-on: true;
+    in-out property <bool> notify-fail-on: true;
+    callback changed(string, string);
+
+    VerticalLayout {
+        width: 100%;
+        spacing: 16px;
+
+
+        SectionCard {
+            icon-source: AetherIcons.clock;
+            title: @tr("计划任务");
+            id: "schedule-plan";
+            subtitle: @tr("时段外自动暂停队列，到点自动恢复");
+
+            SettingRow {
+                id: "schedule-enabled";
+                icon-source: AetherIcons.play;
+                title: @tr("启用计划下载");
+                description: @tr("需要填好开始与结束时间");
+                Switch { checked <=> root.schedule-on; toggled => { root.changed("schedule-on", self.checked ? "true" : "false"); } }
+            }
+            SettingRow {
+                id: "schedule-start";
+                icon-source: AetherIcons.clock;
+                title: @tr("开始时间");
+                description: @tr("本机时间 HH:MM，例如 01:00");
+                LineEdit {
+                    text <=> root.schedule-start;
+                    placeholder-text: "01:00";
+                    min-width: Aether.field-xs;
+                    max-width: Aether.field-xs;
+                    accepted => { root.changed("schedule-start", self.text); }
+                    edited(text) => { if (text == "") { root.changed("schedule-start", text); } }
+                }
+            }
+            SettingRow {
+                id: "schedule-end";
+                icon-source: AetherIcons.pause;
+                title: @tr("结束时间");
+                description: @tr("早于开始时间表示跨午夜，例如 22:00 - 07:00");
+                divider: false;
+                LineEdit {
+                    text <=> root.schedule-end;
+                    placeholder-text: "07:00";
+                    min-width: Aether.field-xs;
+                    max-width: Aether.field-xs;
+                    accepted => { root.changed("schedule-end", self.text); }
+                    edited(text) => { if (text == "") { root.changed("schedule-end", text); } }
+                }
+            }
+        }
+
+        SectionCard {
+            icon-source: AetherIcons.info;
+            title: @tr("通知");
+            id: "schedule-notify";
+            subtitle: @tr("任务结束时的系统通知");
+
+            SettingRow {
+                id: "schedule-notify-done";
+                icon-source: AetherIcons.check;
+                title: @tr("下载完成");
+                description: @tr("完成后通过系统通知提醒（notify-send）");
+                Switch { checked <=> root.notify-done-on; toggled => { root.changed("notify-done", self.checked ? "true" : "false"); } }
+            }
+            SettingRow {
+                id: "schedule-notify-fail";
+                icon-source: AetherIcons.alert;
+                title: @tr("下载失败");
+                description: @tr("失败时提醒并附错误原因；手动取消不提醒");
+                divider: false;
+                Switch { checked <=> root.notify-fail-on; toggled => { root.changed("notify-fail", self.checked ? "true" : "false"); } }
+            }
+        }
+    }
+}
+
+export component AppearancePanel inherits Rectangle {
+    in-out property <int> theme-mode: 0;
+    // 0 = 简体中文（源语言，无需翻译文件）；1 = English (translations/en)
+    in-out property <int> language-index: 0;
+    // UI-local preferences, mirrored from the window.
+    in-out property <int> accent-index: 0;
+    in-out property <bool> motion-on: true;
+    in-out property <bool> flow-on: true;
+    callback changed(string, string);
+
+    VerticalLayout {
+        width: 100%;
+        spacing: 16px;
+
+
+        SectionCard {
+            icon-source: AetherIcons.moon;
+            title: @tr("主题");
+            id: "appearance-theme";
+            subtitle: @tr("Aurora ink 视觉语言");
+
+            SettingRow {
+                id: "appearance-language";
+                icon-source: AetherIcons.tune;
+                title: @tr("界面语言");
+                description: @tr("中文为内置源语言；切换立即生效");
+                ComboBox {
+                    model: ["简体中文", "English", "日本語", "繁體中文"];
+                    current-index <=> root.language-index;
+                    min-width: Aether.field-md;
+                    max-width: Aether.field-md;
+                    selected => { root.changed("language", self.current-value); }
+                }
+            }
+            SettingRow {
+                id: "appearance-theme-mode";
+                icon-source: AetherIcons.moon;
+                title: @tr("主题");
+                description: @tr("默认跟随系统，也可固定浅色或深色");
+                ComboBox {
+                    model: [@tr("跟随系统"), @tr("浅色"), @tr("深色")];
+                    current-index <=> root.theme-mode;
+                    min-width: Aether.field-md;
+                    max-width: Aether.field-md;
+                    selected => { root.changed("theme", self.current-index == 1 ? "浅色" : self.current-index == 2 ? "深色" : "跟随系统"); }
+                }
+            }
+            SettingRow {
+                id: "appearance-accent";
+                icon-source: AetherIcons.tune;
+                title: @tr("主色");
+                description: @tr("品牌强调色，按钮、进度与高亮同步换色");
+                divider: false;
+                ComboBox {
+                    model: [@tr("Aurora 紫"), @tr("靛蓝"), @tr("青碧"), @tr("苔绿"), @tr("琥珀"), @tr("蔷薇")];
+                    current-index <=> root.accent-index;
+                    min-width: Aether.field-md;
+                    max-width: Aether.field-md;
+                    selected => { root.changed("accent", self.current-index == 1 ? "靛蓝" : self.current-index == 2 ? "青碧" : self.current-index == 3 ? "苔绿" : self.current-index == 4 ? "琥珀" : self.current-index == 5 ? "蔷薇" : "Aurora 紫"); }
+                }
+            }
+        }
+
+        SectionCard {
+            icon-source: AetherIcons.layers;
+            title: @tr("界面");
+            id: "appearance-ui";
+            subtitle: @tr("背景与动效");
+
+            SettingRow {
+                id: "appearance-flow";
+                icon-source: AetherIcons.cloud;
+                title: @tr("背景流线");
+                description: @tr("窗口边缘的低对比度 Aurora 装饰");
+                Switch { checked <=> root.flow-on; toggled => { root.changed("flow-background", self.checked ? "true" : "false"); } }
+            }
+            SettingRow {
+                id: "appearance-motion";
+                icon-source: AetherIcons.play;
+                title: @tr("界面动效");
+                description: @tr("关闭后所有过渡立即完成（无障碍）");
+                divider: false;
+                Switch { checked <=> root.motion-on; toggled => { root.changed("motion", self.checked ? "true" : "false"); } }
+            }
+        }
+    }
+}
+

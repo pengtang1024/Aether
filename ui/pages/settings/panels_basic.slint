@@ -1,0 +1,290 @@
+// General, download and media settings panels.
+import { Switch, Slider, ComboBox, LineEdit, TextButton, IconButton } from "std-widgets.slint";
+import { Aether } from "../../theme.slint";
+import { AetherIcons } from "../../icons.slint";
+import { ProgressTrack, SectionCard, SettingRow } from "../../widgets.slint";
+import { ValueSlider } from "common.slint";
+
+// ---------------------------------------------------------------------------
+// Panels. Each panel is a vertical stack of grouped M3 cards.
+// ---------------------------------------------------------------------------
+export component GeneralPanel inherits Rectangle {
+    // Real paths from the daemon (read-only: set at daemon start).
+    in property <string> download-dir: "";
+    // Daemon-independent UI preference, mirrored from the window.
+    in-out property <int> start-page-index: 0;
+    // Clipboard link watch: off by default, and honestly unavailable when
+    // the session has no clipboard backend.
+    in-out property <bool> clipboard-on: false;
+    in-out property <bool> clipboard-available: true;
+    // OS-managed start-at-login state (mirrored from the window).
+    in-out property <bool> autostart-on: false;
+    callback changed(string, string);
+
+    VerticalLayout {
+        width: 100%;
+        spacing: 16px;
+
+
+        SectionCard {
+            icon-source: AetherIcons.info;
+            title: @tr("启动");
+            id: "general-start";
+            subtitle: @tr("启动位置与窗口行为");
+
+            SettingRow {
+                id: "general-start-page";
+                icon-source: AetherIcons.home;
+                title: @tr("启动页面");
+                description: @tr("每次打开 Aether 时显示的页面");
+                ComboBox {
+                    // Display labels are translated; the value stays the
+                    // canonical Chinese string the daemon-side mapping reads.
+                    model: [@tr("主页"), @tr("下载列表"), @tr("上次页面")];
+                    current-index <=> root.start-page-index;
+                    min-width: Aether.field-md;
+                    max-width: Aether.field-md;
+                    selected => { root.changed("start-page", self.current-index == 1 ? "下载列表" : self.current-index == 2 ? "上次页面" : "主页"); }
+                }
+            }
+
+            SettingRow {
+                id: "general-autostart";
+                icon-source: AetherIcons.play;
+                title: @tr("开机自启");
+                description: @tr("登录系统时静默启动 Aether（驻留托盘，不弹主窗口；由操作系统管理，删除自启项即关闭）");
+                Switch {
+                    checked <=> root.autostart-on;
+                    toggled => { root.changed("autostart", self.checked ? "true" : "false"); }
+                }
+            }
+
+            SettingRow {
+                id: "general-close-window";
+                icon-source: AetherIcons.close;
+                title: @tr("关闭窗口");
+                description: @tr("有系统托盘时收进托盘继续下载，从托盘菜单退出；没有托盘时直接退出");
+                divider: false;
+            }
+        }
+
+        SectionCard {
+            icon-source: AetherIcons.folder;
+            title: @tr("存储");
+            id: "general-storage";
+            subtitle: @tr("下载目录");
+
+            SettingRow {
+                id: "general-download-dir";
+                icon-source: AetherIcons.folder;
+                title: @tr("默认下载目录");
+                badge: @tr("只读");
+                description: @tr("daemon 启动参数决定，新任务默认保存到这里");
+                divider: false;
+                LineEdit {
+                    text: root.download-dir == "" ? @tr("未连接") : root.download-dir;
+                    read-only: true;
+                    show-clear-button: false;
+                    min-width: Aether.field-lg;
+                    max-width: Aether.field-lg;
+                }
+            }
+        }
+
+        SectionCard {
+            icon-source: AetherIcons.note;
+            title: @tr("剪贴板");
+            id: "general-clipboard";
+            subtitle: @tr("复制链接后提示一键下载");
+
+            SettingRow {
+                id: "general-clipboard-watch";
+                icon-source: AetherIcons.download;
+                title: @tr("检测下载链接");
+                description: root.clipboard-available
+                    ? @tr("剪贴板出现下载链接时弹出提示，点提示直接新建任务；仅在链接变化时检测，内容不离开本机")
+                    : @tr("当前会话没有可用的剪贴板后端（远程/无图形会话），此功能不可用");
+                divider: false;
+                Switch {
+                    checked <=> root.clipboard-on;
+                    enabled: root.clipboard-available;
+                    toggled => { root.changed("clipboard-watch", self.checked ? "true" : "false"); }
+                }
+            }
+        }
+    }
+}
+
+export component DownloadPanel inherits Rectangle {
+    // UI-local preference, mirrored from the window.
+    in-out property <int> after-done-index: 0;
+    // Scheduler limits mirrored from the window (set from the daemon), so
+    // the page shows what runs instead of the widget defaults: 3 concurrent
+    // tasks, 4 connections per task, 5 retries, 2048 KB/s global cap.
+    in-out property <int> max-tasks-index: 0;
+    in-out property <int> max-connections-index: 1;
+    in-out property <int> retry-index: 2;
+    in-out property <bool> global-limit-on: true;
+    in-out property <float> download-limit-kb: 2048;
+    callback changed(string, string);
+
+    VerticalLayout {
+        width: 100%;
+        spacing: 16px;
+
+
+        SectionCard {
+            icon-source: AetherIcons.split;
+            title: @tr("并发与分段");
+            id: "download-concurrency";
+            subtitle: @tr("决定下载速度和服务器压力");
+
+            SettingRow {
+                id: "download-max-tasks";
+                icon-source: AetherIcons.layers;
+                title: @tr("同时进行的下载数");
+                description: @tr("超出后任务进入等待队列");
+                ComboBox {
+                    model: ["3", "5", "10", "16"];
+                    current-index <=> root.max-tasks-index;
+                    min-width: Aether.field-md;
+                    max-width: Aether.field-md;
+                    selected => { root.changed("max-tasks", self.current-value); }
+                }
+            }
+            SettingRow {
+                id: "download-connections";
+                icon-source: AetherIcons.signal;
+                title: @tr("每任务连接数");
+                description: @tr("HTTP(S) 单任务并行连接数，上限 16");
+                ComboBox {
+                    model: ["2", "4", "8", "16"];
+                    current-index <=> root.max-connections-index;
+                    min-width: Aether.field-md;
+                    max-width: Aether.field-md;
+                    selected => { root.changed("max-connections", self.current-value); }
+                }
+            }
+            SettingRow {
+                id: "download-retries";
+                icon-source: AetherIcons.refresh;
+                title: @tr("失败重试次数");
+                description: @tr("网络抖动或超时后自动重试");
+                divider: false;
+                ComboBox {
+                    model: [@tr("不重试"), "3", "5", "10"];
+                    current-index <=> root.retry-index;
+                    min-width: Aether.field-md;
+                    max-width: Aether.field-md;
+                    selected => { root.changed("retry-count", self.current-index == 0 ? "不重试" : self.current-value); }
+                }
+            }
+        }
+
+        SectionCard {
+            icon-source: AetherIcons.gauge;
+            title: @tr("带宽");
+            id: "download-bandwidth";
+            subtitle: @tr("全局限速与智能调度");
+
+            SettingRow {
+                id: "download-limit-toggle";
+                icon-source: AetherIcons.gauge;
+                title: @tr("启用全局限速");
+                description: @tr("限制所有任务的合计带宽");
+                Switch { checked <=> root.global-limit-on; toggled => { root.changed("global-limit", self.checked ? "true" : "false"); } }
+            }
+            ValueSlider {
+                id: "download-limit";
+                icon-source: AetherIcons.download;
+                label: @tr("下载限速");
+                value <=> root.download-limit-kb;
+                minimum: 0;
+                maximum: 10240;
+                suffix: " KB/s";
+                divider: false;
+                changed(v) => { root.changed("download-limit", v); }
+            }
+        }
+
+        SectionCard {
+            icon-source: AetherIcons.drive;
+            title: @tr("任务");
+            id: "download-after";
+            subtitle: @tr("完成动作");
+
+            SettingRow {
+                id: "download-after-done";
+                icon-source: AetherIcons.folder;
+                title: @tr("完成后动作");
+                description: @tr("任务下载完成后的默认行为");
+                divider: false;
+                ComboBox {
+                    model: [@tr("不操作"), @tr("打开所在文件夹"), @tr("打开文件")];
+                    current-index <=> root.after-done-index;
+                    min-width: Aether.field-md;
+                    max-width: Aether.field-md;
+                    selected => { root.changed("after-done", self.current-index == 1 ? "打开所在文件夹" : self.current-index == 2 ? "打开文件" : "不操作"); }
+                }
+            }
+        }
+    }
+}
+
+export component MediaPanel inherits Rectangle {
+    // Daemon-backed ffmpeg path, shared by rtmp capture and the media
+    // remux step; edits go out on `changed` (commit on Enter).
+    in-out property <string> ffmpeg-value: "";
+    callback changed(string, string);
+
+    VerticalLayout {
+        width: 100%;
+        spacing: 16px;
+
+
+        SectionCard {
+            icon-source: AetherIcons.info;
+            title: @tr("媒体下载");
+            id: "media-capability";
+            subtitle: @tr("已实现的能力");
+
+            SettingRow {
+                id: "media-hls";
+                icon-source: AetherIcons.play;
+                title: @tr("HLS / DASH 直链");
+                description: @tr("粘贴 .m3u8 / .mpd 链接即可下载，AES 加密分段自动解密合并；下载完成后可按任务转封装容器（transcode_to，仅 -c copy 不重编码）");
+                divider: false;
+                Text {
+                    text: @tr("已支持");
+                    color: Aether.success;
+                    font-size: Aether.text-caption;
+                    font-weight: Aether.weight-medium;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        SectionCard {
+            icon-source: AetherIcons.tune;
+            title: "ffmpeg";
+            id: "media-ffmpeg";
+            subtitle: @tr("rtmp 直播录制与媒体转封装共用");
+
+            SettingRow {
+                id: "media-ffmpeg-path";
+                icon-source: AetherIcons.info;
+                title: @tr("ffmpeg 路径");
+                description: @tr("留空使用插件自带的 ffmpeg（Linux）或 PATH 里的 ffmpeg（或 AETHER_FFMPEG 环境变量）；对之后开始的任务生效");
+                LineEdit {
+                    text <=> root.ffmpeg-value;
+                    min-width: Aether.field-md;
+                    max-width: Aether.field-md;
+                    placeholder-text: "ffmpeg";
+                    accepted => { root.changed("ffmpeg-path", self.text); }
+                    edited(text) => { if (text == "") { root.changed("ffmpeg-path", text); } }
+                }
+            }
+        }
+    }
+}
+

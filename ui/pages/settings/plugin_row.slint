@@ -1,0 +1,152 @@
+// One installed plugin row in the settings catalogue.
+import { Switch, Slider, ComboBox, LineEdit, TextButton, IconButton } from "std-widgets.slint";
+import { Aether } from "../../theme.slint";
+import { AetherIcons } from "../../icons.slint";
+import { PluginGlyph, ProgressTrack, SectionCard, SettingRow } from "../../widgets.slint";
+import { StatusChip } from "common.slint";
+import { PluginRow } from "../../model.slint";
+import { PluginSettings } from "nav.slint";
+
+export component InstalledPlugin inherits Rectangle {
+    in property <PluginRow> plugin;
+    // First row in the unfiltered list: no rule above it.
+    in property <bool> first: false;
+    callback toggled(int, bool);
+    callback removed(int);
+    callback rolled-back(int);
+
+    height: Aether.plugin-row;
+    background: touch.has-hover ? Aether.on-surface.with-alpha(0.03) : transparent;
+
+    // Hover only: declared first so the controls stay on top and clickable.
+    touch := TouchArea {
+        width: 100%;
+        height: 100%;
+    }
+
+    if !root.first: Rectangle {
+        y: 0;
+        width: 100%;
+        height: 1px;
+        background: Aether.outline-variant.with-alpha(0.4);
+    }
+
+    HorizontalLayout {
+        padding-left: 2px;
+        padding-right: 2px;
+        spacing: Aether.space-sm;
+
+        Rectangle {
+            width: Aether.card-icon;
+            height: Aether.card-icon;
+            background: transparent;
+            cross-axis-self-alignment: center;
+
+            PluginGlyph {
+                icon: root.plugin.icon;
+                tone: root.plugin.tone;
+                width: Aether.card-icon;
+                height: Aether.card-icon;
+            }
+        }
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 2px;
+            alignment: center;
+
+            HorizontalLayout {
+                spacing: 6px;
+
+                Text {
+                    text: root.plugin.name;
+                    color: Aether.on-surface;
+                    font-size: Aether.text-body;
+                    font-weight: Aether.weight-medium;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+
+                Text {
+                    text: "v" + root.plugin.version;
+                    color: Aether.on-surface-muted;
+                    font-size: Aether.text-micro;
+                    vertical-alignment: center;
+                }
+
+                if root.plugin.service && root.plugin.running: StatusChip {
+                    text: @tr("运行中");
+                    tone: Aether.success;
+                }
+
+                if root.plugin.service && root.plugin.enabled && !root.plugin.running: StatusChip {
+                    text: @tr("未启动");
+                    tone: Aether.warning;
+                }
+            }
+
+            Text {
+                text: root.plugin.error != ""
+                    ? @tr("错误：") + root.plugin.error
+                    : root.plugin.description;
+                color: root.plugin.error != "" ? Aether.error : Aether.on-surface-muted;
+                font-size: Aether.text-caption;
+                overflow: elide;
+            }
+
+            // Declared capabilities, not marketing copy: the manifest is the
+            // contract and the host refuses undeclared runtime claims.
+            Text {
+                text: root.plugin.blocked
+                    ? @tr("权限：") + root.plugin.caps + @tr("（外部进程被设置阻止）")
+                    : @tr("权限：") + root.plugin.caps;
+                color: root.plugin.blocked ? Aether.warning : Aether.on-surface-muted;
+                font-size: Aether.text-micro;
+                overflow: elide;
+            }
+        }
+
+        if root.plugin.update: StatusChip {
+            text: @tr("可更新");
+            tone: Aether.warning;
+        }
+
+        if root.plugin.can-rollback: TextButton {
+            text: @tr("回滚");
+            cross-axis-self-alignment: center;
+            clicked => { root.rolled-back(root.plugin.id); }
+        }
+
+        // Slot is always reserved so rows with and without a schema keep the
+        // same action alignment; the button only exists when the daemon
+        // declared at least one field.
+        Rectangle {
+            width: Aether.control-md;
+            height: Aether.control-md;
+            background: transparent;
+            cross-axis-self-alignment: center;
+
+            if root.plugin.can-configure: IconButton {
+                width: 100%;
+                height: 100%;
+                icon: AetherIcons.tune;
+                accessible-label: @tr("插件设置");
+                clicked => { PluginSettings.configure(root.plugin.id); }
+            }
+        }
+
+        TextButton {
+            text: @tr("卸载");
+            text-color: Aether.on-surface-variant;
+            cross-axis-self-alignment: center;
+            clicked => { root.removed(root.plugin.id); }
+        }
+
+        Switch {
+            checked: root.plugin.enabled;
+            cross-axis-self-alignment: center;
+            toggled => { root.toggled(root.plugin.id, self.checked); }
+        }
+    }
+}
+

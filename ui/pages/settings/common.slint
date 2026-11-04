@@ -1,0 +1,192 @@
+// Shared settings primitives: value sliders, chips and section glyphs.
+import { Slider } from "std-widgets.slint";
+import { Aether } from "../../theme.slint";
+import { AetherIcons } from "../../icons.slint";
+import { SettingsFilter } from "../../settings-filter.slint";
+
+export component ValueSlider inherits Rectangle {
+    in property <image> icon-source;
+    // Search identity, same contract as SettingRow.
+    in property <string> id: "";
+    in property <string> label: "";
+    // Two-way with the caller: the page mirrors the daemon's value in, a
+    // drag writes it back out.
+    in-out property <float> value: 0;
+    in property <float> minimum: 0;
+    in property <float> maximum: 100;
+    in property <string> suffix: "";
+    in property <bool> divider: true;
+    callback changed(float);
+    /// Fires once when the drag ends; daemon-backed limits commit here so a
+    /// drag does not send one `set_settings` per pixel.
+    callback released(float);
+
+    height: SettingsFilter.shows-row(root.id) ? Aether.row-comfortable : 0px;
+    visible: SettingsFilter.shows-row(root.id);
+
+    HorizontalLayout {
+        spacing: Aether.space-sm;
+
+        Rectangle {
+            width: Aether.card-icon;
+            height: Aether.card-icon;
+            background: transparent;
+            cross-axis-self-alignment: center;
+
+            Image {
+                source: root.icon-source;
+                width: Aether.icon-md;
+                height: Aether.icon-md;
+                colorize: Aether.on-surface-muted;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+            }
+        }
+
+        Text {
+            text: root.label;
+            color: Aether.on-surface-variant;
+            font-size: Aether.text-body;
+            width: Aether.slider-label-w;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+
+        inner := Slider {
+            horizontal-stretch: 1;
+            value <=> root.value;
+            minimum: root.minimum;
+            maximum: root.maximum;
+            changed => { root.changed(self.value); }
+            released => { root.released(self.value); }
+        }
+
+        Rectangle {
+            height: Aether.value-chip-h;
+            width: Aether.value-chip-w;
+            border-radius: Aether.radius-sm;
+            background: Aether.surface-container-highest;
+            border-width: 1px;
+            border-color: Aether.outline-faint;
+            cross-axis-self-alignment: center;
+
+            Text {
+                text: root.value + root.suffix;
+                color: Aether.on-surface;
+                font-size: Aether.text-caption;
+                font-weight: Aether.weight-medium;
+                width: 100%;
+                height: 100%;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+
+    if root.divider: Rectangle {
+        y: parent.height - self.height;
+        width: 100%;
+        height: 1px;
+        background: Aether.outline-variant.with-alpha(0.45);
+    }
+}
+
+export component StatusChip inherits Rectangle {
+    in property <string> text: "";
+    in property <color> tone: Aether.on-surface-muted;
+
+    height: 18px;
+    border-radius: Aether.radius-full;
+    background: root.tone.with-alpha(0.10);
+    border-width: 1px;
+    border-color: root.tone.with-alpha(0.22);
+
+    HorizontalLayout {
+        padding-left: 7px;
+        padding-right: 7px;
+        Text {
+            text: root.text;
+            color: root.tone;
+            font-size: Aether.text-micro;
+            font-weight: Aether.weight-medium;
+            vertical-alignment: center;
+        }
+    }
+}
+
+export component NavGroupLabel inherits Rectangle {
+    in property <string> text: "";
+
+    height: 20px;
+    background: transparent;
+
+    HorizontalLayout {
+        // Same inset as a nav item's label: item padding + icon + gap.
+        padding-left: 8px + Aether.icon-md + 8px;
+
+        Text {
+            text: root.text;
+            horizontal-stretch: 1;
+            color: Aether.on-surface-muted;
+            font-size: Aether.text-micro;
+            font-weight: Aether.weight-medium;
+            letter-spacing: 0.4px;
+            vertical-alignment: bottom;
+        }
+    }
+}
+
+export component EmptyHint inherits Rectangle {
+    in property <string> title: "";
+    in property <string> hint: "";
+
+    height: 96px;
+    background: transparent;
+
+    VerticalLayout {
+        alignment: center;
+        spacing: 3px;
+        Text {
+            text: root.title;
+            color: Aether.on-surface-variant;
+            font-size: Aether.text-body;
+            font-weight: Aether.weight-medium;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: root.hint;
+            color: Aether.on-surface-muted;
+            font-size: Aether.text-caption;
+            horizontal-alignment: center;
+        }
+    }
+}
+
+// Section glyph for search hits: same iconography as the category rail.
+export component SectionGlyph inherits Rectangle {
+    in property <int> tab: 0;
+
+    width: Aether.card-icon;
+    height: Aether.card-icon;
+    border-radius: Aether.radius-sm;
+    background: Aether.primary.with-alpha(0.10);
+
+    Image {
+        source: root.tab == 0 ? AetherIcons.tune
+            : root.tab == 1 ? AetherIcons.download
+            : root.tab == 2 ? AetherIcons.signal
+            : root.tab == 3 ? AetherIcons.seed
+            : root.tab == 4 ? AetherIcons.play
+            : root.tab == 5 ? AetherIcons.layers
+            : root.tab == 6 ? AetherIcons.clock
+            : root.tab == 7 ? AetherIcons.moon
+            : root.tab == 8 ? AetherIcons.shield
+            : AetherIcons.info;
+        width: 14px;
+        height: 14px;
+        colorize: Aether.primary-bright;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+    }
+}
+

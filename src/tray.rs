@@ -85,7 +85,8 @@ pub(crate) fn present(ui: &crate::AppWindow) {
 
     if !wayland {
         // X11 and Windows un-minimize and focus synchronously.
-        let _ = raise_now(&window);
+        let _ = raise_now(window);
+        crate::wiring::resume();
         return;
     }
 
@@ -93,6 +94,8 @@ pub(crate) fn present(ui: &crate::AppWindow) {
     // may ignore a request sent before the new surface is mapped, so keep
     // asking until the window reports focus (bounded).
     present_attempt(ui.as_weak(), 0);
+    // The surface is mapped again: restart the clock and the poller now.
+    crate::wiring::resume();
 }
 
 /// One delayed show/focus attempt. The first lands after the recreate; later
@@ -109,7 +112,7 @@ fn present_attempt(window: slint::Weak<crate::AppWindow>, attempt: u8) {
                 };
                 let window = ui.window();
                 let _ = window.show();
-                let _ = raise_now(&window);
+                let _ = raise_now(window);
                 #[cfg(all(unix, not(target_os = "macos")))]
                 if attempt == 1 {
                     gnome_raise();

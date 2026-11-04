@@ -12,7 +12,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use aether_update::{canonical_manifest_bytes, verify_manifest_signature, verify_package_files};
 use base64::Engine;
-use ed25519_dalek::{Signer, SigningKey};
+use ed25519_dalek::SigningKey;
 use serde_json::Value;
 
 fn temp_package(label: &str) -> PathBuf {

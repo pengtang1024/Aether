@@ -155,6 +155,36 @@ fn verifies_downloads_and_applies_appimage() {
 }
 
 #[test]
+fn download_reports_progress_until_the_last_byte() {
+    let artifact = vec![7_u8; 200_000];
+    let server = start_server(|addr| routes(addr, &artifact, "0.2.0", false));
+    let root = temp_dir("progress");
+    let client = UpdateClient::new(
+        &format!("http://{}/update.json", server.addr),
+        &public_key(),
+        "0.1.0",
+        "linux-x86_64",
+        &root,
+    )
+    .unwrap();
+    let update = client.check().unwrap().expect("update available");
+    let asset = client.asset_for_platform(&update).unwrap();
+    let mut seen = Vec::new();
+    client
+        .download_with_progress(&update, asset, |written, total| {
+            seen.push((written, total));
+        })
+        .unwrap();
+    assert!(seen.len() > 1, "one report per chunk: {seen:?}");
+    assert!(seen.windows(2).all(|pair| pair[0].0 <= pair[1].0));
+    assert_eq!(
+        seen.last(),
+        Some(&(artifact.len() as u64, Some(artifact.len() as u64)))
+    );
+    fs::remove_dir_all(root).ok();
+}
+
+#[test]
 fn rejects_tampered_signature() {
     let artifact = b"x".to_vec();
     let server = start_server(|addr| routes(addr, &artifact, "0.2.0", true));

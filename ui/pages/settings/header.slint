@@ -1,0 +1,82 @@
+// Sticky settings header: the section icon/title/subtitle and search filter chip.
+import { TextButton } from "std-widgets.slint";
+import { Aether } from "../../theme.slint";
+import { AetherIcons } from "../../icons.slint";
+import { SettingsFilter } from "../../settings-filter.slint";
+import { PluginCatalog } from "../../plugins.slint";
+import { StatusChip } from "common.slint";
+import { PanelHeader } from "nav.slint";
+
+export component SettingsHeader inherits PanelHeader {
+    in property <int> tab: 0;
+    in property <string> search-query: "";
+    in property <bool> search-picked: false;
+    callback clear-search();
+
+                icon-source: root.search-query != "" && !root.search-picked
+                    ? AetherIcons.search
+                    : root.tab == 0 ? AetherIcons.tune
+                    : root.tab == 1 ? AetherIcons.download
+                    : root.tab == 2 ? AetherIcons.signal
+                    : root.tab == 3 ? AetherIcons.seed
+                    : root.tab == 4 ? AetherIcons.play
+                    : root.tab == 5 ? AetherIcons.layers
+                    : root.tab == 6 ? AetherIcons.clock
+                    : root.tab == 7 ? AetherIcons.moon
+                    : root.tab == 8 ? AetherIcons.shield
+                    : AetherIcons.info;
+
+                title: root.search-query != "" && !root.search-picked
+                    ? @tr("搜索结果")
+                    : root.tab == 0 ? @tr("常规")
+                    : root.tab == 1 ? @tr("下载")
+                    : root.tab == 2 ? @tr("网络")
+                    : root.tab == 3 ? "BT / PT"
+                    : root.tab == 4 ? @tr("媒体与浏览器")
+                    : root.tab == 5 ? @tr("插件")
+                    : root.tab == 6 ? @tr("计划与通知")
+                    : root.tab == 7 ? @tr("外观")
+                    : root.tab == 8 ? @tr("高级")
+                    : @tr("关于与支持");
+
+                subtitle: root.search-query != "" && !root.search-picked
+                    ? SettingsFilter.results.length + @tr(" 个匹配 · 标题、说明或术语")
+                    : root.tab == 0 ? @tr("启动与存储")
+                    : root.tab == 1 ? @tr("并发、分段、限速与磁盘策略")
+                    : root.tab == 2 ? @tr("代理、DNS、协议与请求头")
+                    : root.tab == 3 ? @tr("端口、节点发现与做种")
+                    : root.tab == 4 ? @tr("当前能力与边界")
+                    : root.tab == 5 ? PluginCatalog.total + @tr(" 个已安装 · ") + PluginCatalog.active + @tr(" 个已启用 · ") + PluginCatalog.updates + @tr(" 个可更新")
+                    : root.tab == 6 ? @tr("定时任务与桌面提醒")
+                    : root.tab == 7 ? @tr("主题、主色与动效")
+                    : root.tab == 8 ? @tr("路径与维护")
+                    : @tr("版本、更新、文档与社群");
+
+                tone: root.tab == 1 ? Aether.live
+                    : root.tab == 2 ? Aether.info
+                    : root.tab == 4 ? Aether.warning
+                    : root.tab == 5 ? Aether.info
+                    : root.tab == 6 ? Aether.live
+                    : root.tab == 8 ? Aether.error
+                    : Aether.primary-bright;
+
+                // Filter chip while a picked section is narrowed down.
+                if root.search-query != "" && root.search-picked: HorizontalLayout {
+                    spacing: 6px;
+                    alignment: center;
+
+                    StatusChip { text: @tr("筛选"); tone: Aether.primary-bright; }
+                    Text {
+                        text: root.search-query;
+                        color: Aether.on-surface-variant;
+                        font-size: Aether.text-caption;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+                    TextButton {
+                        text: @tr("清除");
+                        clicked => { root.clear-search(); }
+                    }
+                }
+
+}

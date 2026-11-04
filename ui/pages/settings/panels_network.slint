@@ -1,0 +1,237 @@
+// Network and BitTorrent settings panels.
+import { Switch, Slider, ComboBox, LineEdit, TextButton, IconButton } from "std-widgets.slint";
+import { Aether } from "../../theme.slint";
+import { AetherIcons } from "../../icons.slint";
+import { ProgressTrack, SectionCard, SettingRow } from "../../widgets.slint";
+import { ValueSlider } from "common.slint";
+
+export component NetworkPanel inherits Rectangle {
+    in property <string> app-version: "";
+    // Daemon-backed state, mirrored by the window; edits go out on
+    // `changed` (commit on Enter, or when the clear button empties the field).
+    in-out property <string> dns-value: "";
+    in-out property <string> user-agent-value: "";
+    in-out property <int> ip-mode-index: 0;
+    in-out property <int> proxy-mode-index: 0;
+    in-out property <string> proxy-url-value: "";
+    in-out property <string> headers-value: "";
+    in-out property <bool> ftp-passive-on: true;
+    callback changed(string, string);
+
+    VerticalLayout {
+        width: 100%;
+        spacing: 16px;
+
+
+        SectionCard {
+            icon-source: AetherIcons.link;
+            title: @tr("代理");
+            id: "network-proxy";
+            subtitle: @tr("让下载经过系统或自定义网络");
+
+            SettingRow {
+                id: "network-proxy-mode";
+                icon-source: AetherIcons.signal;
+                title: @tr("代理模式");
+                description: @tr("跟随系统或为 Aether 单独配置");
+                ComboBox {
+                    model: [@tr("跟随系统"), @tr("直连"), @tr("手动"), "PAC"];
+                    current-index <=> root.proxy-mode-index;
+                    min-width: Aether.field-md;
+                    max-width: Aether.field-md;
+                    selected => { root.changed("proxy-mode", self.current-index == 1 ? "直连" : self.current-index == 2 ? "手动" : self.current-index == 3 ? "PAC" : "跟随系统"); }
+                }
+            }
+            SettingRow {
+                id: "network-proxy-url";
+                icon-source: AetherIcons.link;
+                title: @tr("代理地址");
+                description: @tr("支持 HTTP / SOCKS5；切到手动模式后生效");
+                LineEdit {
+                    text <=> root.proxy-url-value;
+                    placeholder-text: "http://127.0.0.1:7890";
+                    min-width: Aether.field-md;
+                    max-width: Aether.field-md;
+                    edited => { root.changed("proxy-url", self.text); }
+                }
+            }
+            SettingRow {
+                id: "network-dns";
+                icon-source: AetherIcons.cloud;
+                title: @tr("DNS 服务器");
+                description: @tr("仅 HTTP(S) 生效；指定后失败即报错，不回退系统 DNS");
+                LineEdit {
+                    text <=> root.dns-value;
+                    min-width: Aether.field-md;
+                    max-width: Aether.field-md;
+                    accepted => { root.changed("dns", self.text); }
+                    // The clear button only fires `edited`; commit an empty
+                    // value so the displayed field never lies.
+                    edited(text) => { if (text == "") { root.changed("dns", text); } }
+                }
+            }
+            SettingRow {
+                id: "network-ip-mode";
+                icon-source: AetherIcons.layers;
+                title: @tr("IP 协议");
+                description: @tr("仅 HTTP(S) 下载生效；BT / FTP 不受影响");
+                divider: false;
+                ComboBox {
+                    model: [@tr("IPv4 + IPv6"), @tr("仅 IPv4"), @tr("仅 IPv6")];
+                    current-index <=> root.ip-mode-index;
+                    min-width: Aether.field-md;
+                    max-width: Aether.field-md;
+                    selected => { root.changed("ip-mode", self.current-index == 1 ? "仅 IPv4" : self.current-index == 2 ? "仅 IPv6" : "IPv4 + IPv6"); }
+                }
+            }
+        }
+
+        SectionCard {
+            icon-source: AetherIcons.shield;
+            title: @tr("协议与请求");
+            id: "network-protocol";
+            subtitle: @tr("兼容性与请求行为");
+
+            SettingRow {
+                id: "network-user-agent";
+                icon-source: AetherIcons.info;
+                title: "User-Agent";
+                description: @tr("留空使用 Aether 默认值；改动对空闲插件立即生效");
+                LineEdit {
+                    text <=> root.user-agent-value;
+                    min-width: Aether.field-md;
+                    max-width: Aether.field-md;
+                    accepted => { root.changed("user-agent", self.text); }
+                    edited(text) => { if (text == "") { root.changed("user-agent", text); } }
+                }
+            }
+            SettingRow {
+                id: "network-headers";
+                icon-source: AetherIcons.note;
+                title: @tr("自定义请求头");
+                description: @tr("Key: Value，多条用分号分隔；仅 HTTP 族插件，任务级同名头优先");
+                LineEdit {
+                    text <=> root.headers-value;
+                    placeholder-text: "Referer: https://example.com";
+                    min-width: Aether.field-md;
+                    max-width: Aether.field-md;
+                    accepted => { root.changed("headers", self.text); }
+                    edited(text) => { if (text == "") { root.changed("headers", text); } }
+                }
+            }
+            SettingRow {
+                id: "network-ftp-passive";
+                icon-source: AetherIcons.link;
+                title: @tr("FTP 被动模式");
+                description: @tr("兼容更多 FTP 服务器；关闭后使用主动模式");
+                divider: false;
+                Switch { checked <=> root.ftp-passive-on; toggled => { root.changed("ftp-passive", self.checked ? "true" : "false"); } }
+            }
+        }
+    }
+}
+
+export component BtPanel inherits Rectangle {
+    // Daemon-backed state, mirrored by the window; edits commit on Enter /
+    // switch toggle / slider release.
+    in-out property <string> bt-port-value: "51413";
+    in-out property <bool> bt-dht-on: true;
+    in-out property <float> bt-upload-kbps: 512;
+    in-out property <string> bt-blocklist-value: "";
+    in-out property <string> bt-trackers-value: "";
+    callback changed(string, string);
+
+    VerticalLayout {
+        width: 100%;
+        spacing: 16px;
+
+
+        SectionCard {
+            icon-source: AetherIcons.link;
+            title: @tr("连接");
+            id: "bt-connection";
+            subtitle: @tr("端口与节点发现");
+
+            SettingRow {
+                id: "bt-port";
+                icon-source: AetherIcons.link;
+                title: @tr("监听端口");
+                description: @tr("需要放行时在路由器中转发");
+                LineEdit {
+                    text <=> root.bt-port-value;
+                    min-width: Aether.field-xs;
+                    max-width: Aether.field-xs;
+                    accepted => { root.changed("bt-port", self.text); }
+                    edited(text) => { if (text == "") { root.changed("bt-port", text); } }
+                }
+            }
+            SettingRow {
+                id: "bt-dht";
+                icon-source: AetherIcons.seed;
+                title: "DHT";
+                description: @tr("通过分布式哈希表发现节点");
+                divider: false;
+                Switch { checked <=> root.bt-dht-on; toggled => { root.changed("bt-dht", self.checked ? "true" : "false"); } }
+            }
+        }
+
+        SectionCard {
+            icon-source: AetherIcons.upload;
+            title: @tr("做种");
+            id: "bt-seed";
+            subtitle: @tr("上传带宽，0 为不限速");
+
+            ValueSlider {
+                id: "bt-upload-limit";
+                icon-source: AetherIcons.upload;
+                label: @tr("上传限速");
+                value <=> root.bt-upload-kbps;
+                minimum: 0;
+                maximum: 4096;
+                suffix: " KB/s";
+                divider: false;
+                released(v) => { root.changed("bt-upload-limit", v); }
+            }
+        }
+
+        SectionCard {
+            icon-source: AetherIcons.shield;
+            title: @tr("过滤与 Tracker");
+            id: "bt-filter";
+            subtitle: @tr("屏蔽规则与私有 Tracker");
+
+            SettingRow {
+                id: "bt-blocklist";
+                icon-source: AetherIcons.drive;
+                title: @tr("屏蔽列表路径");
+                description: @tr("dat 格式黑名单文件或 URL；留空不启用");
+                divider: false;
+                LineEdit {
+                    text <=> root.bt-blocklist-value;
+                    show-clear-button: false;
+                    placeholder-text: "/path/to/blocklist.dat";
+                    min-width: Aether.field-md;
+                    max-width: Aether.field-md;
+                    accepted => { root.changed("bt-blocklist", self.text); }
+                    edited(text) => { if (text == "") { root.changed("bt-blocklist", text); } }
+                }
+            }
+            SettingRow {
+                id: "bt-trackers";
+                icon-source: AetherIcons.link;
+                title: @tr("Tracker 列表");
+                description: @tr("附加到所有种子；多条用分号分隔");
+                divider: false;
+                LineEdit {
+                    text <=> root.bt-trackers-value;
+                    placeholder-text: "udp://tracker.example:80/announce";
+                    min-width: Aether.field-md;
+                    max-width: Aether.field-md;
+                    accepted => { root.changed("bt-trackers", self.text); }
+                    edited(text) => { if (text == "") { root.changed("bt-trackers", text); } }
+                }
+            }
+        }
+    }
+}
+

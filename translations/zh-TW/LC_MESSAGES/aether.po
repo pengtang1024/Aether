@@ -279,8 +279,8 @@ msgstr "已支援"
 msgid "ffmpeg 路径"
 msgstr "ffmpeg 路徑"
 
-msgid "留空使用 PATH 里的 ffmpeg（或 AETHER_FFMPEG 环境变量）；对之后开始的任务生效"
-msgstr "留空使用 PATH 中的 ffmpeg（或 AETHER_FFMPEG 環境變數）；對之後開始的任務生效"
+msgid "留空使用插件自带的 ffmpeg（Linux）或 PATH 里的 ffmpeg（或 AETHER_FFMPEG 环境变量）；对之后开始的任务生效"
+msgstr "留空使用外掛內附的 ffmpeg（Linux）或 PATH 中的 ffmpeg（或 AETHER_FFMPEG 環境變數）；對之後開始的任務生效"
 
 msgid "可更新"
 msgstr "可更新"
@@ -738,8 +738,8 @@ msgstr "高"
 msgid " · 队列 "
 msgstr " · 佇列 "
 
-msgid " · 连接 "
-msgstr " · 連線 "
+msgid " · 每任务连接 "
+msgstr " · 每任務連線 "
 
 msgid " · 剩余 "
 msgstr " · 剩餘 "
@@ -1014,3 +1014,6 @@ msgstr "最大："
 
 msgid "可选："
 msgstr "可選："
+
+msgid "已保存"
+msgstr "已儲存"

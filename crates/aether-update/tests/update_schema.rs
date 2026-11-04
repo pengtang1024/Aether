@@ -6,7 +6,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use aether_update::{unpack_plugin_archive, UpdateClient, UpdateError, UpdateManifest};
+use aether_update::{unpack_plugin_archive, UpdateClient, UpdateManifest};
 
 fn temp_dir(label: &str) -> PathBuf {
     let nanos = SystemTime::now()

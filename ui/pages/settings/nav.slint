@@ -1,0 +1,274 @@
+// Settings navigation rail, page header and plugin settings dialog state.
+import { LineEdit, ScrollView } from "std-widgets.slint";
+import { Aether } from "../../theme.slint";
+import { AetherIcons } from "../../icons.slint";
+import { SettingsFilter } from "../../settings-filter.slint";
+import { SettingField } from "../../model.slint";
+import { NavGroupLabel, StatusChip } from "common.slint";
+
+export global PluginSettings {
+    in-out property <bool> open: false;
+    // Row index into `PluginCatalog.all` / the daemon's plugin list.
+    in-out property <int> row: -1;
+    in-out property <string> title: "";
+    // Flattened in schema order — the order the dialog renders and saves in.
+    in-out property <[SettingField]> fields: [];
+    // One text slot per field, same order as `fields`.
+    in-out property <[string]> values: [];
+
+    callback configure(int);
+    callback save() -> bool;
+}
+
+export component SettingsNav inherits Rectangle {
+    in property <image> icon-source;
+    in property <string> text: "";
+    in property <bool> active: false;
+    callback clicked;
+
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-checked: root.active;
+    accessible-action-default => { root.clicked(); }
+
+    height: Aether.settings-nav-row;
+    border-radius: Aether.radius-sm;
+    background: root.active ? Aether.primary-soft
+        : touch.has-hover ? Aether.on-surface.with-alpha(0.04)
+        : transparent;
+
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        spacing: 8px;
+        alignment: start;
+
+        Image {
+            source: root.icon-source;
+            width: Aether.icon-md;
+            height: Aether.icon-md;
+            colorize: root.active ? Aether.primary-bright : Aether.on-surface-muted;
+            cross-axis-self-alignment: center;
+        }
+
+        Text {
+            text: root.text;
+            color: root.active ? Aether.primary-bright : Aether.on-surface-variant;
+            font-size: Aether.text-label;
+            font-weight: root.active ? Aether.weight-medium : Aether.weight-regular;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component PanelHeader inherits Rectangle {
+    in property <image> icon-source;
+    in property <string> title: "";
+    in property <string> subtitle: "";
+    in property <color> tone: Aether.primary-bright;
+
+    height: Aether.panel-header;
+
+    HorizontalLayout {
+        spacing: 12px;
+
+        Rectangle {
+            width: Aether.control-sm;
+            height: Aether.control-sm;
+            border-radius: Aether.radius-md;
+            background: root.tone.with-alpha(0.14);
+            border-width: 1px;
+            border-color: root.tone.with-alpha(0.24);
+            cross-axis-self-alignment: center;
+
+            Image {
+                source: root.icon-source;
+                width: Aether.icon-lg;
+                height: Aether.icon-lg;
+                colorize: root.tone;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+            }
+        }
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 2px;
+            alignment: center;
+
+            Text {
+                text: root.title;
+                color: Aether.on-surface;
+                font-size: Aether.text-headline;
+                font-weight: Aether.weight-semibold;
+                letter-spacing: -0.2px;
+            }
+
+            Text {
+                text: root.subtitle;
+                color: Aether.on-surface-muted;
+                font-size: Aether.text-caption;
+            }
+        }
+
+        @children
+    }
+}
+
+export component PluginFilter inherits Rectangle {
+    in property <string> text: "";
+    in property <int> count: 0;
+    in property <bool> selected: false;
+    callback clicked;
+
+    height: 28px;
+    border-radius: Aether.radius-full;
+    border-width: 1px;
+    border-color: root.selected ? Aether.primary.with-alpha(0.32) : Aether.outline-faint;
+    background: root.selected ? Aether.primary-soft
+        : touch.has-hover ? Aether.on-surface.with-alpha(0.05)
+        : transparent;
+
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 9px;
+        spacing: 5px;
+        alignment: center;
+
+        Text {
+            text: root.text;
+            color: root.selected ? Aether.primary-bright : Aether.on-surface-variant;
+            font-size: Aether.text-caption;
+            vertical-alignment: center;
+        }
+
+        Text {
+            text: "" + root.count;
+            color: root.selected ? Aether.primary-bright : Aether.on-surface-muted;
+            font-size: Aether.text-micro;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => { root.clicked(); }
+    }
+}
+
+
+// Category rail: search field, grouped navigation and the pinned version.
+export component SettingsRail inherits FocusScope {
+    in property <int> tab: 0;
+    in-out property <string> search-query: "";
+    in property <string> app-version: "";
+
+    // The page owns the tab selection and the search state transitions.
+    callback pick(int);
+    callback pick-section(int);
+    callback clear-search();
+    callback search-edited(string);
+
+    width: Aether.settings-nav-width;
+    height: 100%;
+
+    // A FocusScope so Escape clears the search even while the field has
+    // focus (the LineEdit rejects the key, so it bubbles up here).
+    key-pressed(event) => {
+        if (event.text == Key.Escape && root.search-query != "") {
+            root.clear-search();
+            return accept;
+        }
+        return reject;
+    }
+
+    Rectangle {
+                width: 100%;
+                height: 100%;
+                border-radius: Aether.card-radius;
+                background: Aether.surface-container-low;
+                border-width: 1px;
+                border-color: Aether.outline-faint;
+
+                VerticalLayout {
+                    padding: Aether.card-padding;
+                    spacing: 2px;
+
+                    Text {
+                        text: @tr("设置中心");
+                        color: Aether.on-surface;
+                        font-size: Aether.text-heading;
+                        font-weight: Aether.weight-semibold;
+                    }
+
+                    Rectangle { height: 6px; background: transparent; }
+
+                    LineEdit {
+                        text <=> root.search-query;
+                        placeholder-text: @tr("搜索设置");
+                        horizontal-stretch: 1;
+                        edited(text) => {
+                            root.search-edited(text);
+                        }
+                        // Enter opens the first hit; the clear button (or editing)
+                        // returns to the full page.
+                        accepted => {
+                            if (SettingsFilter.results.length > 0) {
+                                root.pick-section(SettingsFilter.results[0].tab);
+                            }
+                        }
+                    }
+
+                    Rectangle { height: 6px; background: transparent; }
+
+                    // The list scrolls only on the smallest allowed window
+                    // (900x560); the version stays pinned at the bottom.
+                    ScrollView {
+                        vertical-stretch: 1;
+                        // Without these the scroll view reports its content
+                        // height and pushes the pinned version out of the card.
+                        min-height: 0px;
+                        preferred-height: 0px;
+
+                        VerticalLayout {
+                            width: 100%;
+                            spacing: 1px;
+
+                            NavGroupLabel { text: @tr("常用"); }
+                            SettingsNav { icon-source: AetherIcons.tune; text: @tr("常规"); active: root.tab == 0; clicked => { root.pick(0); } }
+                            SettingsNav { icon-source: AetherIcons.download; text: @tr("下载"); active: root.tab == 1; clicked => { root.pick(1); } }
+                            SettingsNav { icon-source: AetherIcons.signal; text: @tr("网络"); active: root.tab == 2; clicked => { root.pick(2); } }
+                            SettingsNav { icon-source: AetherIcons.seed; text: "BT / PT"; active: root.tab == 3; clicked => { root.pick(3); } }
+
+                            NavGroupLabel { text: @tr("应用"); }
+                            SettingsNav { icon-source: AetherIcons.play; text: @tr("媒体与浏览器"); active: root.tab == 4; clicked => { root.pick(4); } }
+                            SettingsNav { icon-source: AetherIcons.layers; text: @tr("插件"); active: root.tab == 5; clicked => { root.pick(5); } }
+                            SettingsNav { icon-source: AetherIcons.clock; text: @tr("计划与通知"); active: root.tab == 6; clicked => { root.pick(6); } }
+
+                            NavGroupLabel { text: @tr("系统"); }
+                            SettingsNav { icon-source: AetherIcons.moon; text: @tr("外观"); active: root.tab == 7; clicked => { root.pick(7); } }
+                            SettingsNav { icon-source: AetherIcons.shield; text: @tr("高级"); active: root.tab == 8; clicked => { root.pick(8); } }
+                            SettingsNav { icon-source: AetherIcons.info; text: @tr("关于与支持"); active: root.tab == 9; clicked => { root.pick(9); } }
+                        }
+                    }
+
+                    Rectangle { height: 4px; background: transparent; }
+
+                    Text {
+                        text: "Aether v" + root.app-version;
+                        color: Aether.on-surface-muted;
+                        font-size: Aether.text-micro;
+                        horizontal-alignment: center;
+                    }
+                }
+                }
+
+
+}

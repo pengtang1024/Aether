@@ -1,0 +1,197 @@
+// Modal dialog for one plugin's declared settings.
+import { Switch, Slider, ComboBox, LineEdit, ScrollView, TextButton, IconButton } from "std-widgets.slint";
+import { Aether } from "../../theme.slint";
+import { AetherIcons } from "../../icons.slint";
+import { SectionCard, SettingRow } from "../../widgets.slint";
+import { PluginSettings } from "nav.slint";
+import { PluginSettingField } from "plugin_field.slint";
+
+// Modal for one plugin's declared settings — the same scrim/card shell as
+// the new-download dialog. Rust owns the lifecycle: `configure` fills the
+// global with fresh fields + values and opens it; `save` returns false to
+// keep it open when a value cannot be parsed.
+export component PluginSettingsDialog inherits FocusScope {
+    in property <bool> open: false;
+
+    visible: root.open;
+    width: 100%;
+    height: 100%;
+
+    key-pressed(event) => {
+        if (event.text == Key.Escape) {
+            PluginSettings.open = false;
+            return accept;
+        }
+        return reject;
+    }
+
+    changed open => {
+        if (root.open) {
+            root.focus();
+        }
+    }
+
+    // ---- scrim -----------------------------------------------------------
+    Rectangle {
+        width: 100%;
+        height: 100%;
+        background: Aether.scrim;
+
+        TouchArea {
+            clicked => { PluginSettings.open = false; }
+        }
+    }
+
+    Rectangle {
+        width: 100%;
+        height: 100%;
+        background: @radial-gradient(circle, Aether.primary.with-alpha(0.06) 0%, transparent 58%);
+    }
+
+    // ---- dialog card -----------------------------------------------------
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: min(560px, parent.width - 48px);
+        // Height hugs the form: the body layout's own preferred height,
+        // capped only when it would outgrow the window — then the field
+        // list scrolls instead of the card keeping dead space.
+        property <length> cap: min(620px, parent.height - 48px);
+        height: min(self.cap, body.preferred-height);
+        border-radius: 24px;
+        background: @linear-gradient(160deg, Aether.dialog-top, Aether.dialog-bottom 100%);
+        border-width: 1px;
+        border-color: Aether.outline-variant;
+        drop-shadow-color: Aether.shadow-popup;
+        drop-shadow-blur: 38px;
+        drop-shadow-offset-y: 14px;
+        clip: true;
+
+        Rectangle {
+            x: 0;
+            y: 0;
+            width: 100%;
+            height: 1px;
+            background: @linear-gradient(90deg,
+                transparent,
+                Aether.primary.with-alpha(0.60) 24%,
+                Aether.live.with-alpha(0.34) 76%,
+                transparent);
+        }
+
+        Rectangle {
+            x: parent.width - 340px;
+            y: -220px;
+            width: 420px;
+            height: 380px;
+            background: @radial-gradient(circle, Aether.glow-primary 0%, transparent 68%);
+        }
+
+        TouchArea {}
+
+        body := VerticalLayout {
+            padding: 20px;
+            spacing: 12px;
+
+            // ---- header: accent icon + title + close --------------------
+            HorizontalLayout {
+                height: Aether.control-lg;
+                spacing: Aether.space-sm;
+
+                Rectangle {
+                    width: Aether.control-lg;
+                    height: Aether.control-lg;
+                    border-radius: Aether.radius-md;
+                    background: @linear-gradient(135deg, Aether.accent-top, Aether.accent-bottom);
+                    border-width: 1px;
+                    border-color: #FFFFFF.with-alpha(0.14);
+                    cross-axis-self-alignment: center;
+
+                    Image {
+                        source: AetherIcons.tune;
+                        width: 20px;
+                        height: 20px;
+                        colorize: Aether.on-primary;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                    }
+                }
+
+                Text {
+                    text: @tr("插件设置") + " · " + PluginSettings.title;
+                    color: Aether.on-surface;
+                    font-size: Aether.text-body;
+                    font-weight: Aether.weight-medium;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+
+                IconButton {
+                    icon: AetherIcons.close;
+                    accessible-label: @tr("取消");
+                    cross-axis-self-alignment: center;
+                    clicked => { PluginSettings.open = false; }
+                }
+            }
+
+            // ---- scrollable field list ----------------------------------
+            // Height hugs the fields' own preferred height: no cap here, the
+            // card's `cap` squeezes only this region (its stretch absorbs the
+            // whole deficit), so overflow scrolls and nothing else moves.
+            ScrollView {
+                vertical-stretch: 1;
+                min-height: 0px;
+                preferred-height: fields.preferred-height;
+
+                fields := VerticalLayout {
+                    width: 100%;
+                    spacing: 16px;
+                    // Fields keep their natural height; a stretched layout puts
+                    // the input at the bottom of a mostly empty card.
+                    alignment: start;
+
+                    // `index` must be the loop variable: naming it like the
+                    // component property would bind the property to itself.
+                    for field[field-index] in PluginSettings.fields: PluginSettingField {
+                        field: field;
+                        index: field-index;
+                        show-section: field.section != ""
+                            && (field-index == 0 ? true : PluginSettings.fields[field-index - 1].section != field.section);
+                        divider: field-index < PluginSettings.fields.length - 1;
+                    }
+                }
+            }
+
+            Rectangle {
+                height: 1px;
+                background: Aether.outline-variant.with-alpha(0.55);
+            }
+
+            // ---- footer --------------------------------------------------
+            // Sits directly under the last row: the card height hugs content,
+            // and stretch 0 keeps a capped card from eating into the buttons.
+            HorizontalLayout {
+                vertical-stretch: 0;
+                alignment: end;
+                spacing: 8px;
+
+                TextButton {
+                    text: @tr("取消");
+                    text-color: Aether.on-surface-variant;
+                    clicked => { PluginSettings.open = false; }
+                }
+
+                TextButton {
+                    text: @tr("保存");
+                    clicked => {
+                        if (PluginSettings.save()) {
+                            PluginSettings.open = false;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+

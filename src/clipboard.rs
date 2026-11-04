@@ -133,7 +133,7 @@ fn detectable_url(text: &str, schemes: &[String]) -> Option<String> {
     // A link copied as "https://a/b (from chat)" has trailing words; accept
     // a leading URL token but never embedded ones.
     let token = text.split_whitespace().next()?;
-    let trimmed = token.trim_end_matches(|ch: char| matches!(ch, ',' | ';' | '。' | '，'));
+    let trimmed = token.trim_end_matches([',', ';', '。', '，']);
     let (scheme, _) = trimmed.split_once(':')?;
     let scheme = scheme.to_ascii_lowercase();
     schemes

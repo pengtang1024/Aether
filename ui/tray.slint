@@ -9,7 +9,10 @@ export component Tray inherits SystemTrayIcon {
     in-out property <string> tray-tooltip: "Aether 下载管理器";
     in-out property <bool> resident: false;
 
-    icon: @image-url("../assets/logo-icon-64.png");
+    // Glyph only, cropped full-bleed: the plated app icon carries a 12% inset
+    // and a translucent background, which reads one size small in a 16px panel
+    // slot and washes out on a light panel.
+    icon: @image-url("../assets/tray-icon-64.png");
     tooltip: root.tray-tooltip;
     // macOS renders `title` as text next to the icon; the menu bar has no
     // room for the app name, so only the tooltip carries it.

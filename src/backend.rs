@@ -180,6 +180,19 @@ mod imp {
             (self.started.elapsed().as_secs_f32() * 0.22).sin()
         }
 
+        /// Only the app-update status the 5 Hz UI clock watches. Reading it
+        /// through `snapshot()` cloned every task, plugin and detail payload
+        /// twice a tick just to inspect `stats.update`.
+        pub fn update_status(&self) -> Option<Value> {
+            self.shared
+                .lock()
+                .unwrap()
+                .snapshot
+                .stats
+                .as_ref()
+                .and_then(|stats| stats.update.clone())
+        }
+
         pub fn apply_action(&self, id: i32, action: i32) {
             let _ = self.commands.send(Command::Action { id, action });
         }
@@ -1225,7 +1238,7 @@ mod imp {
             }));
             assert_eq!(worker.details["task-1"]["seeding"], json!(true));
             worker.forget("task-1");
-            assert!(worker.details.get("task-1").is_none());
+            assert!(!worker.details.contains_key("task-1"));
         }
 
         #[test]

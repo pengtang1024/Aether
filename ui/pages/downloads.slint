@@ -197,7 +197,9 @@ component TaskItem inherits Rectangle {
                 Text {
                     min-width: 32px;
                     max-width: 32px;
-                    text: Math.round(root.task.progress * 100) + "%";
+                    text: root.task.progress > 0 && Math.round(root.task.progress * 100) < 1
+                        ? "<1%"
+                        : Math.round(root.task.progress * 100) + "%";
                     color: Aether.on-surface-variant;
                     font-size: Aether.text-micro;
                     font-weight: Aether.weight-medium;

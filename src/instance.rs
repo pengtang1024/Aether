@@ -17,7 +17,7 @@ use fs2::FileExt;
 /// Outcome of the single-instance check.
 pub enum Acquired {
     /// This process owns the lock, held until the process exits.
-    Primary(Guard),
+    Primary { _guard: Guard },
     /// Another process owns it.
     AlreadyRunning,
     /// No lock could be prepared (no config dir, a filesystem without
@@ -39,17 +39,24 @@ pub fn acquire() -> Acquired {
 }
 
 fn lock_path() -> Option<PathBuf> {
-    let path = crate::theme_config_path()?.with_file_name("instance.lock");
+    let path = crate::prefs::theme_config_path()?.with_file_name("instance.lock");
     fs::create_dir_all(path.parent()?).ok()?;
     Some(path)
 }
 
 fn acquire_at(path: &Path) -> Acquired {
-    let Ok(file) = OpenOptions::new().create(true).write(true).open(path) else {
+    let Ok(file) = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(path)
+    else {
         return Acquired::Unlocked;
     };
     match file.try_lock_exclusive() {
-        Ok(()) => Acquired::Primary(Guard { _file: file }),
+        Ok(()) => Acquired::Primary {
+            _guard: Guard { _file: file },
+        },
         Err(error) if is_lock_conflict(&error) => Acquired::AlreadyRunning,
         // Anything else (e.g. a filesystem without locking support) must
         // not stop the app from starting.
@@ -77,7 +84,10 @@ mod tests {
         let path = dir.join("instance.lock");
 
         let first = acquire_at(&path);
-        assert!(matches!(&first, Acquired::Primary(_)), "first acquire wins");
+        assert!(
+            matches!(&first, Acquired::Primary { .. }),
+            "first acquire wins"
+        );
         let second = acquire_at(&path);
         assert!(
             matches!(&second, Acquired::AlreadyRunning),
@@ -87,7 +97,7 @@ mod tests {
         drop(first);
         let third = acquire_at(&path);
         assert!(
-            matches!(&third, Acquired::Primary(_)),
+            matches!(&third, Acquired::Primary { .. }),
             "dropping the guard releases the lock"
         );
 

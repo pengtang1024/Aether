@@ -1,0 +1,292 @@
+// Advanced and about settings panels.
+import { Switch, Slider, ComboBox, LineEdit, TextButton, IconButton } from "std-widgets.slint";
+import { Aether } from "../../theme.slint";
+import { AetherIcons } from "../../icons.slint";
+import { ProgressTrack, SectionCard, SettingRow } from "../../widgets.slint";
+import { SettingsFilter } from "../../settings-filter.slint";
+
+export component AdvancedPanel inherits Rectangle {
+    in property <string> plugins-dir: "";
+    in property <string> data-dir: "";
+    // Daemon-backed remote control (RPC): persisted config plus a live
+    // status line. The token is mirrored into a masked field so the random
+    // button has something to replace; the daemon generates the first one.
+    in property <string> rpc-listen: "";
+    in property <string> rpc-status: "";
+    in-out property <string> rpc-listen-value: "";
+    in-out property <string> rpc-secret-value: "";
+    callback changed(string, string);
+    callback rpc-apply(string, string);
+    callback rpc-clear-secret;
+    callback rpc-random-secret;
+
+    VerticalLayout {
+        width: 100%;
+        spacing: 16px;
+
+
+        SectionCard {
+            icon-source: AetherIcons.note;
+            title: @tr("路径");
+            id: "advanced-paths";
+            subtitle: @tr("daemon 的真实数据位置");
+
+            SettingRow {
+                id: "advanced-data-dir";
+                icon-source: AetherIcons.drive;
+                title: @tr("数据库路径");
+                description: @tr("任务、历史与插件元数据");
+                divider: false;
+                LineEdit {
+                    text: root.data-dir == "" ? @tr("未连接") : root.data-dir;
+                    read-only: true;
+                    show-clear-button: false;
+                    min-width: Aether.field-lg;
+                    max-width: Aether.field-lg;
+                }
+            }
+            SettingRow {
+                id: "advanced-plugins-dir";
+                icon-source: AetherIcons.folder;
+                title: @tr("插件目录");
+                description: @tr("第一方插件的安装位置");
+                divider: false;
+                LineEdit {
+                    text: root.plugins-dir == "" ? @tr("未连接") : root.plugins-dir;
+                    read-only: true;
+                    show-clear-button: false;
+                    min-width: Aether.field-lg;
+                    max-width: Aether.field-lg;
+                }
+            }
+        }
+
+        SectionCard {
+            icon-source: AetherIcons.signal;
+            title: @tr("远程控制（RPC）");
+            id: "advanced-rpc";
+            subtitle: @tr("CLI 与其他设备连接 daemon");
+
+            SettingRow {
+                id: "advanced-rpc-listen";
+                icon-source: AetherIcons.signal;
+                title: @tr("监听地址");
+                badge: @tr("重启后生效");
+                description: @tr("默认 127.0.0.1:6800；留空关闭；非回环地址必须设置令牌");
+                LineEdit {
+                    text <=> root.rpc-listen-value;
+                    placeholder-text: root.rpc-listen == "" ? @tr("未开启") : root.rpc-listen;
+                    min-width: Aether.field-md;
+                    max-width: Aether.field-md;
+                }
+            }
+            SettingRow {
+                id: "advanced-rpc-secret";
+                icon-source: AetherIcons.shield;
+                title: @tr("访问令牌");
+                description: @tr("默认自动生成；随机按钮换一个；留空表示不使用令牌（仅回环地址）；应用后立即生效");
+                HorizontalLayout {
+                    spacing: Aether.space-sm;
+                    LineEdit {
+                        text <=> root.rpc-secret-value;
+                        input-type: InputType.password;
+                        placeholder-text: @tr("留空表示不使用令牌");
+                        min-width: Aether.field-md;
+                        max-width: Aether.field-md;
+                    }
+                    TextButton { text: @tr("随机"); clicked => { root.rpc-random-secret(); } }
+                }
+            }
+            SettingRow {
+                id: "advanced-rpc-status";
+                icon-source: AetherIcons.info;
+                title: @tr("状态");
+                description: root.rpc-status;
+                divider: false;
+                HorizontalLayout {
+                    spacing: 8px;
+                    TextButton { text: @tr("清除令牌"); clicked => { root.rpc-clear-secret(); } }
+                    TextButton { text: @tr("应用"); clicked => { root.rpc-apply(root.rpc-listen-value, root.rpc-secret-value); } }
+                }
+            }
+        }
+
+        SectionCard {
+            icon-source: AetherIcons.alert;
+            title: @tr("维护");
+            id: "advanced-reset";
+            subtitle: @tr("恢复默认外观与偏好");
+
+            SettingRow {
+                id: "advanced-reset-prefs";
+                icon-source: AetherIcons.alert;
+                title: @tr("重置界面偏好");
+                description: @tr("恢复外观与完成动作的默认值，不影响 daemon 与任务");
+                divider: false;
+                TextButton { text: @tr("重置"); clicked => { root.changed("reset-settings", "clicked"); } }
+            }
+        }
+    }
+}
+
+export component AboutPanel inherits Rectangle {
+    in property <string> app-version: "";
+    // Live status of the daemon's update check, mirrored from `stats.update`.
+    in property <string> update-status: "";
+    // 0..1 while a release is downloading; `progress-visible` hides the track
+    // for the text-only states (idle / up to date / error).
+    in property <float> update-progress: 0;
+    in property <bool> progress-visible: false;
+    in property <float> drift: 0;
+    // Daemon-backed: download a found release in the background.
+    in-out property <bool> auto-update-on: true;
+    callback changed(string, string);
+    callback support-action(string);
+
+    VerticalLayout {
+        width: 100%;
+        spacing: 16px;
+
+
+        Rectangle {
+            height: Aether.about-hero;
+            // Decorative: hidden while a search filter is narrowing the page.
+            visible: !SettingsFilter.active;
+            border-radius: Aether.card-radius;
+            background: @linear-gradient(145deg, Aether.hero-top, Aether.hero-bottom);
+            border-width: 1px;
+            border-color: Aether.outline-faint;
+
+            HorizontalLayout {
+                padding-left: 18px;
+                padding-right: 18px;
+                spacing: 14px;
+
+                Image {
+                    source: @image-url("../../assets/logo-transparent-128.png");
+                    width: 44px;
+                    height: 44px;
+                    cross-axis-self-alignment: center;
+                }
+
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    spacing: 3px;
+                    alignment: center;
+
+                    Text {
+                        text: "Aether v" + root.app-version;
+                        color: Aether.on-surface;
+                        font-size: Aether.text-title;
+                        font-weight: Aether.weight-medium;
+                    }
+
+                    Text {
+                        text: @tr("Rust + Slint · Material 3 · 原生桌面，无 WebView");
+                        color: Aether.on-surface-muted;
+                        font-size: Aether.text-caption;
+                    }
+                }
+
+                TextButton {
+                    text: @tr("检查更新");
+                    clicked => { root.support-action("update"); }
+                }
+            }
+        }
+
+        SectionCard {
+            icon-source: AetherIcons.refresh;
+            title: @tr("更新");
+            id: "about-update";
+            subtitle: @tr("版本通道与自动更新");
+
+            SettingRow {
+                id: "about-update-source";
+                icon-source: AetherIcons.signal;
+                title: @tr("更新源");
+                description: @tr("由 daemon 启动配置决定（--update-url 与更新公钥），界面不可切换");
+                divider: false;
+            }
+            SettingRow {
+                id: "about-auto-update";
+                icon-source: AetherIcons.refresh;
+                title: @tr("自动下载更新");
+                description: @tr("在后台准备新版本；关闭后只报告发现新版本，不自动下载");
+                divider: false;
+                Switch {
+                    checked <=> root.auto-update-on;
+                    toggled => { root.changed("app-auto-update", self.checked ? "true" : "false"); }
+                }
+            }
+            SettingRow {
+                id: "about-changelog";
+                icon-source: AetherIcons.info;
+                title: @tr("版本说明");
+                description: @tr("查看变更、兼容性与已知问题");
+                divider: false;
+                TextButton { text: @tr("打开"); clicked => { root.support-action("changelog"); } }
+            }
+
+            Text {
+                text: root.update-status;
+                color: Aether.on-surface-muted;
+                font-size: Aether.text-caption;
+                wrap: word-wrap;
+                visible: root.update-status != "";
+            }
+            if root.progress-visible: VerticalLayout {
+                spacing: 6px;
+                ProgressTrack {
+                    value: root.update-progress;
+                    live: true;
+                    indeterminate: root.update-progress <= 0;
+                    pulse: root.drift;
+                }
+                Text {
+                    text: round(clamp(root.update-progress, 0, 1) * 100) + "%";
+                    color: Aether.on-surface-muted;
+                    font-size: Aether.text-micro;
+                }
+            }
+        }
+
+        SectionCard {
+            icon-source: AetherIcons.info;
+            title: @tr("支持");
+            id: "about-support";
+            subtitle: @tr("文档、社区、反馈与许可");
+
+            SettingRow {
+                id: "about-docs";
+                icon-source: AetherIcons.note;
+                title: @tr("文档");
+                description: @tr("安装、插件、RPC 与常见问题");
+                TextButton { text: @tr("打开"); clicked => { root.support-action("docs"); } }
+            }
+            SettingRow {
+                id: "about-community";
+                icon-source: AetherIcons.signal;
+                title: @tr("社区");
+                description: @tr("讨论、分享配置与插件");
+                TextButton { text: @tr("打开"); clicked => { root.support-action("community"); } }
+            }
+            SettingRow {
+                id: "about-feedback";
+                icon-source: AetherIcons.alert;
+                title: @tr("反馈问题");
+                description: @tr("报告 Bug 或提出功能建议");
+                TextButton { text: @tr("打开"); clicked => { root.support-action("feedback"); } }
+            }
+            SettingRow {
+                id: "about-license";
+                icon-source: AetherIcons.shield;
+                title: @tr("许可");
+                description: "MIT · Slint Royalty-free / GPL-3.0";
+                divider: false;
+                TextButton { text: @tr("查看"); clicked => { root.support-action("license"); } }
+            }
+        }
+    }
+}
+

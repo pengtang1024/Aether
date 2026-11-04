@@ -1,0 +1,227 @@
+// Plugin catalogue panel with filters and per-plugin settings entry points.
+import { Switch, Slider, ComboBox, LineEdit, TextButton, IconButton } from "std-widgets.slint";
+import { Aether } from "../../theme.slint";
+import { AetherIcons } from "../../icons.slint";
+import { PluginGlyph, ProgressTrack, SectionCard, SettingRow } from "../../widgets.slint";
+import { PluginCatalog } from "../../plugins.slint";
+import { EmptyHint, StatusChip } from "common.slint";
+import { PluginFilter, PluginSettings } from "nav.slint";
+import { InstalledPlugin } from "plugin_row.slint";
+
+export component PluginPanel inherits Rectangle {
+    in-out property <int> plugin-filter: 0;
+    in property <string> plugins-dir: "";
+    // Daemon-backed: auto-install outdated plugins on the update cycle.
+    in-out property <bool> auto-update-on: false;
+    // Daemon-backed version pins: "id=version; id=version".
+    in-out property <string> plugin-pins: "";
+    // Host policy gate for plugins that declare `external-process`.
+    in-out property <bool> external-process-on: true;
+    // Update/install pass mirrored from `stats.plugin_progress`.
+    in property <float> plugin-progress: 0;
+    in property <bool> plugin-progress-visible: false;
+    in property <string> plugin-progress-text: "";
+    in property <float> drift: 0;
+    // Draft path of the package to install (UI-local until the button
+    // fires `plugin-install`).
+    in-out property <string> install-path: "";
+    callback changed(string, string);
+    callback plugin-toggled(int, bool);
+    callback plugin-remove(int);
+    callback plugin-rollback(int);
+    callback plugin-action(string);
+
+    // How many rows the current filter keeps; the empty state keys off it.
+    property <int> visible-count:
+        root.plugin-filter == 0 ? PluginCatalog.total
+        : root.plugin-filter == 1 ? PluginCatalog.builtin
+        : root.plugin-filter == 2 ? PluginCatalog.active
+        : PluginCatalog.updates;
+
+    VerticalLayout {
+        width: 100%;
+        spacing: 16px;
+
+
+        SectionCard {
+            icon-source: AetherIcons.list;
+            title: @tr("插件库");
+            id: "plugin-catalog";
+            subtitle: PluginCatalog.builtin + @tr(" 个内置 · ") + PluginCatalog.community + @tr(" 个社区 · 独立进程运行");
+
+            HorizontalLayout {
+                height: Aether.control-md;
+                spacing: 6px;
+                cross-axis-alignment: center;
+
+                PluginFilter { text: @tr("全部"); count: PluginCatalog.total; selected: root.plugin-filter == 0; clicked => { root.plugin-filter = 0; } }
+                PluginFilter { text: @tr("内置"); count: PluginCatalog.builtin; selected: root.plugin-filter == 1; clicked => { root.plugin-filter = 1; } }
+                PluginFilter { text: @tr("已启用"); count: PluginCatalog.active; selected: root.plugin-filter == 2; clicked => { root.plugin-filter = 2; } }
+                PluginFilter { text: @tr("可更新"); count: PluginCatalog.updates; selected: root.plugin-filter == 3; clicked => { root.plugin-filter = 3; } }
+
+                Rectangle { horizontal-stretch: 1; background: transparent; }
+
+                TextButton {
+                    text: @tr("更新全部");
+                    enabled: PluginCatalog.updates > 0;
+                    clicked => { root.plugin-action("update-all"); }
+                }
+            }
+
+            if root.plugin-progress-visible: VerticalLayout {
+                spacing: 6px;
+                ProgressTrack {
+                    value: root.plugin-progress;
+                    live: true;
+                    indeterminate: root.plugin-progress <= 0;
+                    pulse: root.drift;
+                }
+                Text {
+                    text: root.plugin-progress-text;
+                    color: Aether.on-surface-muted;
+                    font-size: Aether.text-micro;
+                    overflow: elide;
+                }
+            }
+
+            if root.visible-count == 0: EmptyHint {
+                title: @tr("没有符合条件的插件");
+                hint: @tr("换一个筛选条件，或在插件目录中加入新的插件");
+            }
+
+            for plugin in PluginCatalog.all: InstalledPlugin {
+                plugin: plugin;
+                first: plugin.id == 0;
+                visible: root.plugin-filter == 0
+                    || (root.plugin-filter == 1 && plugin.kind == 0)
+                    || (root.plugin-filter == 2 && plugin.enabled)
+                    || (root.plugin-filter == 3 && plugin.update);
+                toggled(id, enabled) => { root.plugin-toggled(id, enabled); }
+                removed(id) => { root.plugin-remove(id); }
+                rolled-back(id) => { root.plugin-rollback(id); }
+            }
+        }
+
+        SectionCard {
+            icon-source: AetherIcons.layers;
+            title: @tr("插件引擎");
+            id: "plugin-engine";
+            subtitle: @tr("插件目录、来源与更新");
+
+            SettingRow {
+                id: "plugin-auto-update";
+                icon-source: AetherIcons.refresh;
+                title: @tr("自动更新插件");
+                description: @tr("daemon 每 6 小时按更新清单安装插件新版；需配置更新清单与签名公钥");
+                Switch {
+                    checked <=> root.auto-update-on;
+                    toggled => { root.changed("plugin-auto-update", self.checked ? "true" : "false"); }
+                }
+            }
+            SettingRow {
+                id: "plugin-external-process";
+                icon-source: AetherIcons.shield;
+                title: @tr("允许外部进程");
+                description: @tr("关闭后，声明 external-process 的插件（yt-dlp/ffmpeg）不会启动；运行中的任务跑完当前进程");
+                Switch {
+                    checked <=> root.external-process-on;
+                    toggled => { root.changed("plugin-external-process", self.checked ? "true" : "false"); }
+                }
+            }
+            SettingRow {
+                id: "plugin-pins";
+                icon-source: AetherIcons.tune;
+                title: @tr("固定插件版本");
+                description: @tr("id=版本，多条用分号分隔；固定后自动/手动检查更新都会跳过该插件（仍可手动安装）");
+                HorizontalLayout {
+                    spacing: 6px;
+                    LineEdit {
+                        text <=> root.plugin-pins;
+                        placeholder-text: "http=0.2.0; bt=0.2.0";
+                        horizontal-stretch: 1;
+                        accepted => { root.changed("plugin-pins", self.text); }
+                    }
+                    TextButton {
+                        text: @tr("保存");
+                        clicked => { root.changed("plugin-pins", root.plugin-pins); }
+                    }
+                }
+            }
+            Rectangle {
+                height: 1px;
+                background: Aether.outline-variant.with-alpha(0.45);
+            }
+
+            Rectangle { height: 2px; background: transparent; }
+
+            Text {
+                text: @tr("出于安全考虑，不支持加载插件目录之外、未验签的文件；请用上面的「安装插件」，它会验签后复制进插件目录。");
+                color: Aether.on-surface-muted;
+                font-size: Aether.text-micro;
+                wrap: word-wrap;
+            }
+            SettingRow {
+                id: "plugin-dir";
+                icon-source: AetherIcons.folder;
+                title: @tr("插件目录");
+                description: @tr("本地插件的安装位置");
+                LineEdit {
+                    text: root.plugins-dir == "" ? @tr("未连接") : root.plugins-dir;
+                    read-only: true;
+                    show-clear-button: false;
+                    min-width: Aether.field-lg;
+                    max-width: Aether.field-lg;
+                }
+            }
+            SettingRow {
+                id: "plugin-install";
+                icon-source: AetherIcons.download;
+                title: @tr("安装插件");
+                description: @tr("插件包目录的绝对路径（含 plugin.json）；daemon 校验 manifest 签名与文件哈希后复制进插件目录");
+                divider: false;
+                HorizontalLayout {
+                    spacing: 6px;
+                    LineEdit {
+                        text <=> root.install-path;
+                        placeholder-text: "/path/to/plugin-package";
+                        horizontal-stretch: 1;
+                        accepted => { root.changed("plugin-install", self.text); }
+                    }
+                    TextButton {
+                        text: @tr("安装");
+                        clicked => { root.changed("plugin-install", root.install-path); }
+                    }
+                }
+            }
+        }
+
+        SectionCard {
+            icon-source: AetherIcons.note;
+            title: @tr("开发");
+            id: "plugin-dev";
+            subtitle: @tr("调试与重新加载");
+
+            SettingRow {
+                id: "plugin-reload";
+                icon-source: AetherIcons.refresh;
+                title: @tr("重新加载插件");
+                description: @tr("不重启应用刷新本地插件");
+                divider: false;
+                TextButton {
+                    text: @tr("重新加载");
+                    clicked => { root.plugin-action("reload"); }
+                }
+            }
+
+            Rectangle { height: 2px; background: transparent; }
+
+            Text {
+                text: @tr("开发者模式尚未实现：每任务日志已经出现在任务详情里。");
+                color: Aether.on-surface-muted;
+                font-size: Aether.text-micro;
+                wrap: word-wrap;
+            }
+        }
+    }
+}
+

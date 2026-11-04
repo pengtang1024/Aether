@@ -438,6 +438,17 @@ export component HomePage inherits Rectangle {
     in-out property <int> speed-limit-mode: 0;
     callback limit-picked(int);
 
+    // Integer share for the status rows: a nonzero count must not read 0%.
+    pure function share(part: int, total: int) -> string {
+        if total <= 0 {
+            return "0%";
+        }
+        if part > 0 && round(100.0 * part / total) < 1 {
+            return "<1%";
+        }
+        return round(100.0 * part / total) + "%";
+    }
+
     callback open-downloads(int);
     callback open-plugins();
     callback open-download-settings();
@@ -492,7 +503,7 @@ export component HomePage inherits Rectangle {
                         }
 
                         Text {
-                            text: @tr("活跃 ") + root.count-active + @tr(" · 队列 ") + root.count-paused + @tr(" · 连接 ") + root.connections;
+                            text: @tr("活跃 ") + root.count-active + @tr(" · 队列 ") + root.count-paused + @tr(" · 每任务连接 ") + root.connections;
                             color: Aether.on-surface-muted;
                             font-size: Aether.text-micro;
                         }
@@ -611,9 +622,7 @@ export component HomePage inherits Rectangle {
                     progress: root.count-all > 0
                         ? 1.0 * root.count-active / root.count-all
                         : 0;
-                    label: (root.count-all > 0
-                        ? round(100.0 * root.count-active / root.count-all)
-                        : 0) + "%";
+                    label: root.share(root.count-active, root.count-all);
                     tone: Aether.primary-bright;
                     size: Aether.viz-ring;
                 }
@@ -679,7 +688,7 @@ export component HomePage inherits Rectangle {
                 dot: Aether.success;
                 label: @tr("已完成");
                 count: "" + root.count-done;
-                percent: (root.count-all > 0 ? round(100.0 * root.count-done / root.count-all) : 0) + "%";
+                percent: root.share(root.count-done, root.count-all);
                 clicked => { root.open-downloads(2); }
             }
             TaskStatusRow {
@@ -687,7 +696,7 @@ export component HomePage inherits Rectangle {
                 dot: Aether.warning;
                 label: @tr("暂停");
                 count: "" + root.count-paused;
-                percent: (root.count-all > 0 ? round(100.0 * root.count-paused / root.count-all) : 0) + "%";
+                percent: root.share(root.count-paused, root.count-all);
                 clicked => { root.open-downloads(3); }
             }
             TaskStatusRow {
@@ -695,7 +704,7 @@ export component HomePage inherits Rectangle {
                 dot: Aether.error;
                 label: @tr("失败");
                 count: "" + root.count-failed;
-                percent: (root.count-all > 0 ? round(100.0 * root.count-failed / root.count-all) : 0) + "%";
+                percent: root.share(root.count-failed, root.count-all);
                 clicked => { root.open-downloads(4); }
             }
             TaskStatusRow {
@@ -703,7 +712,7 @@ export component HomePage inherits Rectangle {
                 dot: Aether.info;
                 label: @tr("种子");
                 count: "" + root.count-seed;
-                percent: (root.count-all > 0 ? round(100.0 * root.count-seed / root.count-all) : 0) + "%";
+                percent: root.share(root.count-seed, root.count-all);
                 clicked => { root.open-downloads(5); }
             }
         }

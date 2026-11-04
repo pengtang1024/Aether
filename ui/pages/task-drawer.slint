@@ -1,8 +1,8 @@
-// Aether — icon-only task inspector.
+// Aether — task inspector.
 //
 // Resting state: file glyph, status dot, progress line, icon actions, metric
-// glyphs, chart, chunk grid and info glyphs. Every label or value is a hover
-// tip; there is no persistent text.
+// glyphs, chart, chunk grid and info glyphs. Hover tips explain the glyph
+// actions; the schema-driven metric rows keep their label/value text visible.
 
 import { IconButton, ScrollView } from "std-widgets.slint";
 import { Aether, StatusColor } from "theme.slint";
@@ -57,8 +57,8 @@ component MetricIcon inherits Rectangle {
 
     Image {
         source: root.icon-source;
-        width: 17px;
-        height: 17px;
+        width: 16px;
+        height: 16px;
         colorize: root.tone;
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
@@ -87,8 +87,8 @@ component InfoIcon inherits Rectangle {
 
     Image {
         source: root.icon-source;
-        width: 15px;
-        height: 15px;
+        width: 16px;
+        height: 16px;
         colorize: Aether.on-surface-muted;
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;

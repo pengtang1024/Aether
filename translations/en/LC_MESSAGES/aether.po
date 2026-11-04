@@ -282,8 +282,8 @@ msgstr "Supported"
 msgid "ffmpeg 路径"
 msgstr "ffmpeg path"
 
-msgid "留空使用 PATH 里的 ffmpeg（或 AETHER_FFMPEG 环境变量）；对之后开始的任务生效"
-msgstr "Leave empty to use ffmpeg from PATH (or AETHER_FFMPEG); applies to tasks started afterwards"
+msgid "留空使用插件自带的 ffmpeg（Linux）或 PATH 里的 ffmpeg（或 AETHER_FFMPEG 环境变量）；对之后开始的任务生效"
+msgstr "Leave empty to use the ffmpeg bundled with the plugin (Linux), otherwise ffmpeg from PATH (or AETHER_FFMPEG); applies to tasks started afterwards"
 
 msgid "可更新"
 msgstr "Updates available"
@@ -741,8 +741,8 @@ msgstr "High"
 msgid " · 队列 "
 msgstr " · queued "
 
-msgid " · 连接 "
-msgstr " · connections "
+msgid " · 每任务连接 "
+msgstr " · connections per task "
 
 msgid " · 剩余 "
 msgstr " · left "
@@ -1014,3 +1014,6 @@ msgstr "Max: "
 
 msgid "可选："
 msgstr "Options: "
+
+msgid "已保存"
+msgstr "Saved"

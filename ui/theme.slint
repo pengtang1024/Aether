@@ -39,7 +39,9 @@ export global Aether {
     // ---- Content ---------------------------------------------------------
     out property <color> on-surface: dark ? #EDE7F0 : #1D1825;
     out property <color> on-surface-variant: dark ? #CBC2D6 : #4F465A;
-    out property <color> on-surface-muted: dark ? #9A92A8 : #7A7185;
+    // Muted copy is used down to 10px: dark #A39BB1 and light #5E5568 both
+    // clear 4.5:1 on every surface token (light also on highest containers).
+    out property <color> on-surface-muted: dark ? #A39BB1 : #5E5568;
 
     // ---- Brand -----------------------------------------------------------
     // Accent slots are `in-out`: the appearance settings re-tint them from

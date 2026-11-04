@@ -92,6 +92,11 @@ export component AppWindow inherits Window {
     // status text (both mirrored from the daemon).
     in-out property <bool> settings-app-auto-update: true;
     in property <string> settings-update-status: "";
+    in property <float> settings-update-progress: 0;
+    in property <bool> settings-update-progress-visible: false;
+    in property <float> settings-plugin-progress: 0;
+    in property <bool> settings-plugin-progress-visible: false;
+    in property <string> settings-plugin-progress-text: "";
     // Daemon-backed RPC config (Advanced panel).
     in property <string> settings-rpc-listen: "";
     in property <string> settings-rpc-status: "";
@@ -559,6 +564,12 @@ export component AppWindow inherits Window {
                         plugin-external-process <=> root.settings-plugin-external-process;
                         app-auto-update <=> root.settings-app-auto-update;
                         update-status: root.settings-update-status;
+                        update-progress: root.settings-update-progress;
+                        update-progress-visible: root.settings-update-progress-visible;
+                        plugin-progress: root.settings-plugin-progress;
+                        plugin-progress-visible: root.settings-plugin-progress-visible;
+                        plugin-progress-text: root.settings-plugin-progress-text;
+                        drift: root.drift;
                         rpc-listen: root.settings-rpc-listen;
                         rpc-status: root.settings-rpc-status;
                         rpc-listen-value <=> root.settings-rpc-listen-value;

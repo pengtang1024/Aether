@@ -213,18 +213,30 @@ impl UpdateClient {
         manifest: &UpdateManifest,
         asset: &UpdateAsset,
     ) -> Result<PathBuf, UpdateError> {
+        self.download_with_progress(manifest, asset, |_, _| {})
+    }
+
+    /// Same as [`Self::download`], reporting `(written, total)` after every
+    /// chunk so a caller can drive a progress bar.
+    pub fn download_with_progress(
+        &self,
+        manifest: &UpdateManifest,
+        asset: &UpdateAsset,
+        mut on_progress: impl FnMut(u64, Option<u64>),
+    ) -> Result<PathBuf, UpdateError> {
         let directory = self
             .state_path
             .parent()
             .unwrap_or(Path::new("."))
             .join("artifacts")
             .join(&manifest.version);
-        let target = self.download_artifact(
+        let target = self.download_artifact_with_progress(
             &asset.url,
             &asset.sha256,
             asset.size,
             &directory,
             "aether-update",
+            &mut on_progress,
         )?;
         self.save_state(&UpdateState {
             last_check: now_ms(),
@@ -248,6 +260,26 @@ impl UpdateClient {
         directory: &Path,
         filename_hint: &str,
     ) -> Result<PathBuf, UpdateError> {
+        self.download_artifact_with_progress(
+            url,
+            sha256,
+            size,
+            directory,
+            filename_hint,
+            &mut |_, _| {},
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn download_artifact_with_progress(
+        &self,
+        url: &str,
+        sha256: &str,
+        size: Option<u64>,
+        directory: &Path,
+        filename_hint: &str,
+        on_progress: &mut dyn FnMut(u64, Option<u64>),
+    ) -> Result<PathBuf, UpdateError> {
         fs::create_dir_all(directory)?;
         let filename = url
             .rsplit('/')
@@ -270,6 +302,7 @@ impl UpdateClient {
             file.write_all(&buffer[..read])?;
             digest.update(&buffer[..read]);
             written += read as u64;
+            on_progress(written, size);
         }
         file.sync_all()?;
 
@@ -604,8 +637,8 @@ mod rollout_tests {
         assert_eq!(first, rollout_bucket("1.2.3"), "same version, same bucket");
         assert!(first < 100);
         // The bucket comparison must agree with the boundary semantics.
-        assert_eq!(in_rollout("1.2.3", first + 1), true);
-        assert_eq!(in_rollout("1.2.3", first), false);
+        assert!(in_rollout("1.2.3", first + 1));
+        assert!(!in_rollout("1.2.3", first));
     }
 
     #[test]

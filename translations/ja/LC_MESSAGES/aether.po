@@ -279,8 +279,8 @@ msgstr "対応済み"
 msgid "ffmpeg 路径"
 msgstr "ffmpeg のパス"
 
-msgid "留空使用 PATH 里的 ffmpeg（或 AETHER_FFMPEG 环境变量）；对之后开始的任务生效"
-msgstr "空欄で PATH の ffmpeg（または AETHER_FFMPEG）。以降のタスクに適用"
+msgid "留空使用插件自带的 ffmpeg（Linux）或 PATH 里的 ffmpeg（或 AETHER_FFMPEG 环境变量）；对之后开始的任务生效"
+msgstr "空欄でプラグイン同梱の ffmpeg（Linux）、または PATH の ffmpeg（または AETHER_FFMPEG）。以降のタスクに適用"
 
 msgid "可更新"
 msgstr "更新あり"
@@ -738,8 +738,8 @@ msgstr "高"
 msgid " · 队列 "
 msgstr " · 待機 "
 
-msgid " · 连接 "
-msgstr " · 接続 "
+msgid " · 每任务连接 "
+msgstr " · タスクあたり接続 "
 
 msgid " · 剩余 "
 msgstr " · 残り "
@@ -1014,3 +1014,6 @@ msgstr "最大："
 
 msgid "可选："
 msgstr "選択肢："
+
+msgid "已保存"
+msgstr "保存済み"

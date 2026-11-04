@@ -254,6 +254,9 @@ export component ProgressTrack inherits Rectangle {
     in property <bool> live: false;
     /// Slow oscillation in -1..1, driven from Rust at 5 Hz.
     in property <float> pulse: 0;
+    /// Work with no measurable fraction (a manifest check): sweep the sheen
+    /// across the empty track instead of growing the bar.
+    in property <bool> indeterminate: false;
 
     accessible-role: progress-indicator;
     accessible-value: "" + round(clamp(root.value, 0, 1) * 100) + "%";
@@ -276,7 +279,7 @@ export component ProgressTrack inherits Rectangle {
         animate width { duration: Aether.motion-long; easing: ease-out; }
     }
 
-    if root.live && root.value > 0 && root.value < 1: Rectangle {
+    if (root.live && root.value > 0 && root.value < 1) || root.indeterminate: Rectangle {
         width: 38px;
         height: 100%;
         x: (parent.width - self.width) * clamp(root.pulse * 0.5 + 0.5, 0, 1);

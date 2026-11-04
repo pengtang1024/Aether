@@ -748,15 +748,32 @@ mod tests {
         search(query).hits.into_iter().map(|hit| hit.id).collect()
     }
 
+    /// The whole settings page source: the page file plus every component it
+    /// was split into under `ui/pages/settings/`.
+    fn ui_source() -> String {
+        let mut source = String::from(include_str!("../ui/pages/settings.slint"));
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("ui/pages/settings");
+        let mut entries: Vec<_> = std::fs::read_dir(dir)
+            .expect("settings component directory")
+            .map(|entry| entry.expect("readable entry").path())
+            .filter(|path| path.extension().is_some_and(|ext| ext == "slint"))
+            .collect();
+        entries.sort();
+        for path in entries {
+            source.push_str(&std::fs::read_to_string(&path).expect("readable slint file"));
+        }
+        source
+    }
+
     #[test]
     fn card_ids_are_unique_and_present_in_the_ui() {
-        let source = include_str!("../ui/pages/settings.slint");
+        let source = ui_source();
         let mut seen = std::collections::HashSet::new();
         for card in CARDS {
             assert!(seen.insert(card.id), "duplicate card id {}", card.id);
             assert!(
                 source.contains(&format!("\n            id: \"{}\"", card.id)),
-                "{} is not a SectionCard id in settings.slint",
+                "{} is not a SectionCard id in the settings page",
                 card.id
             );
         }
@@ -765,7 +782,7 @@ mod tests {
 
     #[test]
     fn row_ids_are_unique_and_present_in_the_ui() {
-        let source = include_str!("../ui/pages/settings.slint");
+        let source = ui_source();
         let mut seen = std::collections::HashSet::new();
         for row in ROWS {
             assert!(seen.insert(row.id), "duplicate row id {}", row.id);
@@ -842,7 +859,7 @@ mod tests {
             (before.as_str(), hit.as_str(), after.as_str()),
             ("Access ", "token", " list")
         );
-        let (before, hit, _) = highlight("访问令牌", &vec!["令牌".to_string()]);
+        let (before, hit, _) = highlight("访问令牌", &["令牌".to_string()]);
         assert_eq!((before.as_str(), hit.as_str()), ("访问", "令牌"));
     }
 }

@@ -1,0 +1,182 @@
+// Settings search hit rows and their result list.
+import { Aether } from "../../theme.slint";
+import { AetherIcons } from "../../icons.slint";
+import { SettingsFilter, SettingsHit } from "../../settings-filter.slint";
+import { EmptyHint, SectionGlyph } from "common.slint";
+
+export component SearchHitRow inherits Rectangle {
+    in property <SettingsHit> hit;
+    callback picked;
+
+    height: 54px;
+    clip: true;
+    background: touch.has-hover ? Aether.on-surface.with-alpha(0.04) : transparent;
+
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        spacing: 10px;
+
+        SectionGlyph {
+            tab: root.hit.tab;
+            cross-axis-self-alignment: center;
+        }
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 1px;
+            alignment: center;
+
+            // The matched term is rendered as its own Text so it can be
+            // highlighted; Slint text has no inline spans.
+            HorizontalLayout {
+                spacing: 0;
+                alignment: start;
+
+                Text {
+                    text: root.hit.title-before;
+                    color: Aether.on-surface;
+                    font-size: Aether.text-body;
+                    font-weight: Aether.weight-medium;
+                    vertical-alignment: center;
+                }
+
+                if root.hit.title-hit != "": Text {
+                    text: root.hit.title-hit;
+                    color: Aether.primary-bright;
+                    font-size: Aether.text-body;
+                    font-weight: Aether.weight-semibold;
+                    vertical-alignment: center;
+                }
+
+                Text {
+                    text: root.hit.title-after;
+                    color: Aether.on-surface;
+                    font-size: Aether.text-body;
+                    font-weight: Aether.weight-medium;
+                    vertical-alignment: center;
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 0;
+                alignment: start;
+
+                Text {
+                    text: root.hit.subtitle-before;
+                    color: Aether.on-surface-muted;
+                    font-size: Aether.text-caption;
+                    vertical-alignment: center;
+                }
+
+                if root.hit.subtitle-hit != "": Text {
+                    text: root.hit.subtitle-hit;
+                    color: Aether.on-surface-variant;
+                    font-size: Aether.text-caption;
+                    font-weight: Aether.weight-medium;
+                    vertical-alignment: center;
+                }
+
+                Text {
+                    text: root.hit.subtitle-after;
+                    color: Aether.on-surface-muted;
+                    font-size: Aether.text-caption;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        Image {
+            source: AetherIcons.chevron-right;
+            width: 14px;
+            height: 14px;
+            colorize: Aether.on-surface-muted;
+            cross-axis-self-alignment: center;
+        }
+    }
+
+    Rectangle {
+        y: parent.height - self.height;
+        width: 100%;
+        height: 1px;
+        background: Aether.outline-variant.with-alpha(0.35);
+    }
+
+    touch := TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => { root.picked(); }
+    }
+}
+
+export component SearchResults inherits Rectangle {
+    in property <[SettingsHit]> hits;
+    callback picked(int);
+
+    background: transparent;
+
+    VerticalLayout {
+        spacing: 10px;
+
+        if root.hits.length == 0: Rectangle {
+            height: 132px;
+            border-radius: Aether.card-radius;
+            background: Aether.surface-container-low;
+            border-width: 1px;
+            border-color: Aether.outline-faint;
+
+            EmptyHint {
+                width: 100%;
+                title: @tr("没有匹配的设置");
+                hint: @tr("试试「代理」「限速」「插件」这类关键词");
+            }
+        }
+
+        if root.hits.length > 0: Rectangle {
+            border-radius: Aether.card-radius;
+            background: @linear-gradient(155deg, Aether.card-top, Aether.card-bottom);
+            border-width: 1px;
+            border-color: Aether.outline-faint;
+            drop-shadow-color: Aether.shadow-card;
+            drop-shadow-blur: 18px;
+            drop-shadow-offset-y: 5px;
+
+            VerticalLayout {
+                padding: Aether.card-padding;
+                spacing: 0;
+
+                for hit in root.hits: VerticalLayout {
+                    spacing: 0;
+
+                    // "Network · 2" before the first hit of each section.
+                    if hit.heading != "": Rectangle {
+                        height: 26px;
+                        background: transparent;
+                        Text {
+                            text: hit.heading;
+                            width: 100%;
+                            horizontal-alignment: left;
+                            color: Aether.on-surface-muted;
+                            font-size: Aether.text-micro;
+                            font-weight: Aether.weight-medium;
+                            letter-spacing: 0.4px;
+                            vertical-alignment: bottom;
+                        }
+                    }
+
+                    SearchHitRow {
+                        hit: hit;
+                        picked => { root.picked(hit.tab); }
+                    }
+                }
+            }
+        }
+
+        Text {
+            text: @tr("输入关键词筛出相关设置；点击结果跳到对应分区并保持筛选。");
+            color: Aether.on-surface-muted;
+            font-size: Aether.text-micro;
+        }
+    }
+}
+

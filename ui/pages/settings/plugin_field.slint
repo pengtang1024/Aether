@@ -1,0 +1,151 @@
+// One declared plugin setting inside the configuration dialog.
+import { Switch, Slider, ComboBox, LineEdit, TextButton, IconButton } from "std-widgets.slint";
+import { Aether } from "../../theme.slint";
+import { AetherIcons } from "../../icons.slint";
+import { SectionCard, SettingRow } from "../../widgets.slint";
+import { SettingField } from "../../model.slint";
+import { PluginSettings } from "nav.slint";
+
+// One declared setting inside the dialog: a two-column row in the shape of
+// SettingRow — the schema key over its schema hint on the left, the control
+// in a fixed right column — with a divider under it. Rust pre-fills `value`
+// from storage, so a free-text field still matching it shows 已保存.
+export component PluginSettingField inherits Rectangle {
+    in property <SettingField> field;
+    in property <int> index: 0;
+    // True above the first field of each section so titles group the form.
+    in property <bool> show-section: false;
+    // Off on the last row: the footer's own divider follows it.
+    in property <bool> divider: true;
+    // Two-column grid inside the 560px card: 200px key column + field-md
+    // (240px) control column — SettingRow's proportions.
+    property <length> label-w: 200px;
+
+    property <string> hint-default: root.field.default == ""
+        ? ""
+        : @tr("默认：") + root.field.default;
+    property <string> hint-range:
+          root.field.has-min && root.field.has-max ? @tr("范围：") + root.field.min + " – " + root.field.max
+        : root.field.has-min ? @tr("最小：") + root.field.min
+        : root.field.has-max ? @tr("最大：") + root.field.max
+        : "";
+    property <string> hint-options: root.field.options-text == ""
+        ? ""
+        : @tr("可选：") + root.field.options-text;
+    property <string> hint: root.hint-join(root.hint-default, root.hint-range, root.hint-options);
+    // Bools and selects always render a concrete state (Rust falls back to
+    // the default / first option), so only a stored free-text value — still
+    // unedited — can honestly be called saved.
+    property <bool> saved: root.field.kind != "bool"
+        && root.field.kind != "select"
+        && root.field.value != ""
+        && PluginSettings.values[root.index] == root.field.value;
+
+    function hint-join(a: string, b: string, c: string) -> string {
+        a
+        + (b == "" ? "" : (a == "" ? "" : " · ") + b)
+        + (c == "" ? "" : ((a == "" && b == "") ? "" : " · ") + c)
+    }
+
+    VerticalLayout {
+        padding-top: 8px;
+        padding-bottom: 8px;
+        spacing: 4px;
+        alignment: start;
+
+        if root.show-section: Rectangle {
+            height: 14px;
+            background: transparent;
+
+            Text {
+                text: root.field.section;
+                color: Aether.primary-bright;
+                font-size: Aether.text-label;
+                font-weight: Aether.weight-medium;
+                // An implicitly-sized text gets centred in its parent by the
+                // compiler; pin the width so the title reads left.
+                width: parent.width;
+                horizontal-alignment: left;
+                vertical-alignment: bottom;
+            }
+        }
+
+        // Key and control share one line (SettingRow's title treatment), so
+        // both columns start from a common baseline.
+        HorizontalLayout {
+            spacing: Aether.space-sm;
+
+            Text {
+                text: root.field.key;
+                color: Aether.on-surface;
+                font-size: Aether.text-body;
+                font-weight: Aether.weight-medium;
+                width: root.label-w;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+
+            if root.saved: Text {
+                text: @tr("已保存");
+                color: Aether.on-surface-muted;
+                font-size: Aether.text-micro;
+                vertical-alignment: center;
+            }
+
+            Rectangle {
+                horizontal-stretch: 1;
+                background: transparent;
+            }
+
+            // Fixed control column, controls flush right inside it.
+            Rectangle {
+                horizontal-stretch: 0;
+                width: Aether.field-md;
+
+                HorizontalLayout {
+                    alignment: end;
+                    cross-axis-alignment: center;
+
+                    if root.field.kind == "bool": Switch {
+                        checked: PluginSettings.values[root.index] == "true";
+                        toggled => { PluginSettings.values[root.index] = self.checked ? "true" : "false"; }
+                    }
+
+                    if root.field.kind == "select" && root.field.options.length > 0: ComboBox {
+                        model: root.field.options;
+                        current-index: root.field.options.index-of(PluginSettings.values[root.index]);
+                        min-width: Aether.field-md;
+                        max-width: Aether.field-md;
+                        selected => { PluginSettings.values[root.index] = self.current-value; }
+                    }
+
+                    if root.field.kind != "bool" && !(root.field.kind == "select" && root.field.options.length > 0): LineEdit {
+                        text: PluginSettings.values[root.index];
+                        placeholder-text: root.field.default;
+                        input-type: root.field.kind == "secret" ? InputType.password : InputType.text;
+                        min-width: Aether.field-md;
+                        max-width: Aether.field-md;
+                        edited => { PluginSettings.values[root.index] = self.text; }
+                    }
+                }
+            }
+        }
+
+        // The hint stays under the key column, never under the control.
+        if root.hint != "": Text {
+            text: root.hint;
+            color: Aether.on-surface-muted;
+            font-size: Aether.text-micro;
+            width: root.label-w;
+            overflow: elide;
+        }
+    }
+
+    if root.divider: Rectangle {
+        y: parent.height - self.height;
+        width: 100%;
+        height: 1px;
+        background: Aether.outline-variant.with-alpha(0.45);
+    }
+}
+
