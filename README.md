@@ -164,7 +164,7 @@ AETHER_THEME=light ./scripts/shot.sh /tmp/light.png
 | 数据源 | `AETHER_SOCKET=/tmp/aether-shots/daemon.sock` 指向独立的 demo daemon，下载目录 `/tmp/aether-shots/downloads` |
 | 示例数据 | 8 条任务：2 条下载中（2 GB，分别 8 / 4 连接）、4 条已完成（18 MB / 6 GB / 320 MB / 1.4 GB）、1 条暂停、1 条失败 |
 | 主题 | 深色（默认）；`home-light` / `settings-light` 用 `AETHER_THEME=light` |
-| 版本 | 页脚 / 系统卡读取构建产物 `CARGO_PKG_VERSION`，本轮为 0.6.2 |
+| 版本 | 页脚 / 系统卡读取构建产物 `CARGO_PKG_VERSION`，本轮为 0.6.3 |
 | 等待 | 8–10 秒，等首个快照、统计与插件更新检查完成后再抓图 |
 
 demo daemon 使用构建产物的插件目录，并以空 `AETHER_UPDATE_URL` 关闭联网更新检查、

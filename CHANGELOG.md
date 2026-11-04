@@ -3,6 +3,51 @@
 All notable changes to Aether are documented here. Versions follow semantic
 versioning; 0.x releases may still change structure.
 
+## [0.6.3] - 2026-11-04
+
+### Added
+
+- Settings are preset-first: the ten daily controls are dropdowns, sliders or
+  switches (concurrency 3/5/10/16, per-task connections 2/4/8/16, retries
+  0/3/5/10, global and BT upload sliders, proxy mode, IP protocol,
+  theme/language/accent, schedule and notifications). Low-frequency options
+  moved into a collapsed Advanced card, and the proxy address only appears in
+  manual mode.
+- A value outside a preset ladder stays visible: a hand-edited settings value
+  shows an explicit unknown-option entry in its dropdown instead of being
+  snapped to a neighbouring preset.
+- Every remaining text field carries a format example, validates inline on
+  submit, and shows the error under the field instead of dropping the input.
+
+### Changed
+
+- MSRV goes from 1.92 to 1.99 (repository and CI pin 1.99.1): compiling from
+  source now needs a newer toolchain. Dev builds keep line tables but strip
+  debuginfo, down from 157 MB artifacts with ten `.debug_*` sections.
+- The window does no work while it is idle or hidden: the tick compares the
+  snapshot before repainting, and the clock and daemon poller park while the
+  window is minimized, painting the last snapshot immediately on restore.
+- The space check for a new task aggregates reserved bytes with one SQL query
+  instead of reading and parsing the settings JSON of every queued or paused
+  task.
+- Clock lifecycle split into separate modules (tick body and tests) and the
+  dashboard statistics moved out of `rows/stats.rs`.
+- Event subscribers now have a bounded queue of 256 events; a client that stops
+  reading has events dropped to a counter instead of growing the daemon heap.
+- Pruned unreferenced translation keys and reworded the preset hint; refreshed
+  module paths, capability boundaries and the nine baseline screenshots.
+
+### Fixed
+
+- A disk-full failure is persisted even when SQLite itself cannot write: the
+  failure is queued and replayed by the health tick, so a task no longer sits
+  in `running` forever on a full disk.
+- A permanent (`retryable = false`) failure is no longer retried after its
+  backoff, and its staging directory is removed so the partial file cannot
+  occupy the quota after the failure is reported.
+- `set_settings` rejects a non-loopback `rpc_listen` without a secret and
+  validates the value inline.
+
 ## [0.6.2] - 2026-11-04
 
 ### Added

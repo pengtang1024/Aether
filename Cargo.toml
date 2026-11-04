@@ -1,5 +1,5 @@
 [workspace.package]
-version = "0.6.2"
+version = "0.6.3"
 edition = "2021"
 rust-version = "1.99"
 license = "MIT"
@@ -36,7 +36,7 @@ resolver = "2"
 
 [package]
 name = "aether"
-version = "0.6.2"
+version = "0.6.3"
 edition = "2021"
 rust-version = "1.99"
 description = "Aether — a native Material 3 download manager (Rust + Slint, no WebView)"
