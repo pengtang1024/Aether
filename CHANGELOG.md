@@ -3,6 +3,68 @@
 All notable changes to Aether are documented here. Versions follow semantic
 versioning; 0.x releases may still change structure.
 
+## [0.6.2] - 2026-11-04
+
+### Added
+
+- Linux `media`/`rtmp` plugin packages now ship a minimal ffmpeg 9.0.2
+  (`<plugin>/bin/ffmpeg`, ~13 MB each) built from source by
+  `scripts/build-ffmpeg.py`; installing the plugin is enough for remuxing and
+  RTMP capture. Windows/macOS still use a user-installed ffmpeg.
+- Plugin SDK `tool::bundled` locates helpers shipped beside a plugin
+  executable; ffmpeg resolution is now task setting → `AETHER_FFMPEG` →
+  bundled copy → `PATH`.
+- App-update downloads report progress: the daemon writes
+  `{"status":"downloading","downloaded":…,"total":…}` into the update state
+  and the About panel draws a bar with a percentage.
+- Plugin passes report progress too: `stats.plugin_progress` carries
+  `{"running","phase","plugin","done","total","downloaded","size"}` from
+  `plugin_update_all` and `install_plugin`; the plugin card shows a bar and
+  `正在更新 <id> · 1/3`.
+- `ProgressTrack` gained an `indeterminate` mode (sweeping sheen) for work
+  without a fraction, used while an update or manifest check runs.
+- `aether-update` exposes `download_with_progress` and
+  `download_artifact_with_progress` (64 KB callbacks); the old entry points
+  delegate to them.
+
+### Changed
+
+- The global speed limit is now split across running tasks as a fair share and
+  recomputed live when tasks start, finish, or either limit changes; a task's
+  own `max_speed_bps` is capped at its share instead of exceeding the global
+  cap. Changing the global `connections` default also reaches running HTTP
+  tasks immediately.
+- `docs/LEGAL_NOTICES.md`, `THIRD_PARTY_NOTICES.md` and the plugin package
+  license bundle document the bundled GPL-2.0-or-later ffmpeg and its
+  corresponding-source offer.
+- The plugin-settings dialog is a two-column form: a 200px label column with
+  its hint underneath, a 240px control column flush right, dividers between
+  rows, left-aligned section headers and a stored-value `已保存` badge. The
+  card hugs its content instead of reserving a fixed height, so a
+  single-field plugin no longer opens an empty panel.
+- The tray icon uses a dedicated full-bleed glyph (`assets/tray-icon-*.png`)
+  instead of the plated app icon, which carried a 12% inset and a translucent
+  background and read one size small in a 16px panel slot.
+- The host binary, the daemon server and the settings page are split into
+  modules (`src/{app,rows,wiring,…}.rs`, `crates/aether-daemon/src/server/`,
+  `ui/pages/settings/`); behavior is unchanged.
+
+### Fixed
+
+- aria2 `changeGlobalOption` failed every call with
+  `protocol error: set_settings needs an object`: the daemon merges extra
+  request fields at the top level, so the patch is now sent nested under
+  `settings` again.
+- aria2 `getOption` returned an empty `dir` for tasks added through the CLI or
+  aria2 itself; it now falls back to the global download directory.
+- aria2 `shutdown`/`forceShutdown` replies arrived truncated (`transfer closed
+  with N bytes remaining`): the daemon exited inside the plugin call before
+  the HTTP body was written. The `OK` response is now flushed before the
+  shutdown is dispatched, including when the call sits inside
+  `system.multicall` or arrives over the WebSocket transport.
+- Plugin rows whose manifest declares no settings keep their action column
+  aligned instead of shifting their badges left.
+
 ## [0.6.1] - 2026-11-03
 
 **Auto-updates now work out of the box: the daemon carries the release manifest
