@@ -5,8 +5,10 @@
 > 避免再出现点了没反应或显示假值的控件。
 >
 > 最后核对：2026-10-30（main @ `1c6ed4a` 之上，设置页更新波次）。
-> 控件清单位于 `ui/pages/settings.slint`，处理器位于 `src/main.rs`
-> 的 `on_settings_changed` / `on_support_action` / `on_plugin_action`。
+> 控件清单位于 `ui/pages/settings.slint`（页面壳）与 `ui/pages/settings/panels_*.slint`
+> （各分类面板），处理器位于 `src/wiring/settings.rs` 的 `on_settings_changed`、
+> `src/wiring/support.rs` 的 `on_support_action` 与 `src/wiring/plugins.rs` 的
+> `on_plugin_action`。
 
 状态图例：
 
@@ -14,11 +16,36 @@
 - **只读**：值来自 daemon 或操作系统，界面只展示，不提供假编辑。
 - **外部**：功能真实，但依赖启动配置或系统能力；不满足时界面明确说明。
 
+## 0. 交互约定（2026-11-04 起）
+
+设置页按「零配置可跑」组织，避免把实现细节暴露成输入框：
+
+1. **默认即推荐**：不打开设置也能正常下载。数量类一律给档位下拉
+   （同时下载数 3/5/10/16、每任务连接 2/4/8/16、重试 0/3/5/10），
+   带宽类给滑杆（全局 0–10240 KB/s、BT 上传 0–4096 KB/s，0 为不限速）。
+2. **输入框只出现在高级区**：`SectionCard` 的 `collapsible` / `expanded`
+   属性把低频项收进默认收起的「高级」卡片（网络 DNS/UA/请求头、BT 端口/
+   屏蔽列表/Tracker、ffmpeg 路径、插件来源策略/固定版本/安装、高级页的
+   RPC 与只读路径）。搜索命中时卡片自动展开，收起不影响可发现性。
+3. **代理地址按需出现**：只有代理模式选「手动」时才显示地址输入框。
+4. **文本输入必须写清格式**：保留的文本框都有 placeholder 示例；提交时
+   由 `src/wiring/settings.rs` 的 `validate_text` 做格式校验，错误经
+   `SettingsValidation` 全局显示在字段下方（不是静默丢弃），合法值才下发
+   daemon。
+5. **持久化不变**：仍只写 `settings.json` 既有 key 与 `UiPrefs`，不新增
+   键、不改 daemon 读取路径；折叠状态纯 UI 属性，不入盘。
+6. **档位外取值以自定义项原样呈现**：旧配置（如 `connections=6`、
+   `retry_max=7`，或不在预设内的语言/主题/代理模式）不会让下拉框空白，
+   而是在档位后追加一个 `自定义（6）` 行并自动选中；该行只回显真实值，
+   选中它不写回配置，只有用户主动选择档位才下发。值回到档位内时该行消失；
+   若原值本身越界（如并发 0、连接 >16），在字段下方给出内联提示但不修正。
+   实现见 `src/settings_presets.rs`，插件 schema 的 `select` 越界值同样保留。
+
 ## 1. 常规（General）
 
 | 控件 | 落点 | 状态 |
 | --- | --- | --- |
-| 启动页面 | `src/main.rs` `start-page` → `UiPrefs.start_page`，启动时 `page = match prefs.start_page` | 真实 |
+| 启动页面 | `src/app.rs` `start-page` → `src/prefs.rs` 的 `UiPrefs.start_page`（写入在 `src/wiring/settings/prefs.rs`），启动时 `page = match prefs.start_page` | 真实 |
 | 开机自启 | `autostart::set_enabled`（XDG / HKCU Run / LaunchAgent，条目带 `--silent`，启动时 `refresh()` 自愈）；OS 拒绝时开关回弹并提示；无托盘时静默启动回退为显示窗口 | 真实 |
 | 关闭窗口行为 | 固定行为说明：有托盘收进托盘，无托盘退出（`tray` 模块决定） | 只读（说明卡） |
 | 默认下载目录 | daemon 的 `stats.download_dir`，由 daemon 启动参数 `--dir` 决定 | 只读 |
@@ -60,8 +87,8 @@
 | 屏蔽列表 | `set_settings {"bt_blocklist"}` | 真实（空闲重启） |
 | Tracker | `set_settings {"bt_trackers"}`，附加到之后的任务 | 真实 |
 
-BT 键由 `aether-plugin-bt` 消费（`src/plugin.rs`/`src/bt.rs` 的
-`NetworkConfig` 字段），不是仅存盘的占位值。
+BT 键由 `aether-plugin-bt` 消费（`crates/aether-plugin-bt/src/plugin.rs` 与
+`.../bt.rs` 的 `NetworkConfig` 字段），不是仅存盘的占位值。
 
 ## 5. 媒体与浏览器（Media）
 

@@ -29,20 +29,11 @@ pub(super) fn apply(ui: &AppWindow, state: &Rc<RefCell<State>>, snapshot: &Snaps
                     .to_string()
                     .into(),
             );
-            ui.set_settings_ip_mode(match settings["ip_mode"].as_str() {
-                Some("ipv4_only") => 1,
-                Some("ipv6_only") => 2,
-                _ => 0,
-            });
+            crate::settings_presets::mirror_ip_mode(ui, settings["ip_mode"].as_str());
             // Proxy: show the daemon's real mode and address instead of
             // guessing (pac has no user-editable URL, so it is display-only).
             let proxy = &settings["proxy"];
-            ui.set_settings_proxy_mode(match proxy["mode"].as_str() {
-                Some("none") => 1,
-                Some("custom") => 2,
-                Some("pac") => 3,
-                _ => 0,
-            });
+            crate::settings_presets::mirror_proxy_mode(ui, proxy["mode"].as_str());
             ui.set_settings_proxy_url(proxy["url"].as_str().unwrap_or("").into());
             // Network extras: default headers, FTP mode, BT knobs.
             ui.set_settings_headers(settings["default_headers"].as_str().unwrap_or("").into());
@@ -106,23 +97,54 @@ pub(super) fn apply(ui: &AppWindow, state: &Rc<RefCell<State>>, snapshot: &Snaps
 
             // Scheduler limits: report what the daemon is running with, so
             // the download page shows the truth instead of widget defaults.
-            // A value outside a combo box's model maps to -1 (no selection),
-            // which reads as "set from outside this list".
-            let index_of = |value: Option<u64>, model: &[u64]| {
-                value
-                    .and_then(|value| model.iter().position(|entry| *entry == value))
-                    .map(|index| index as i32)
-                    .unwrap_or(-1)
-            };
-            ui.set_settings_max_tasks(index_of(
-                settings["max_concurrent"].as_u64(),
-                &[3, 5, 10, 16],
-            ));
-            ui.set_settings_max_connections(index_of(
-                settings["connections"].as_u64(),
-                &[2, 4, 8, 16],
-            ));
-            ui.set_settings_retry(index_of(settings["retry_max"].as_u64(), &[0, 3, 5, 10]));
+            // A value outside the presets stays visible as a custom row
+            // instead of leaving the combo blank.
+            let limit = |key: &str, fallback: u64| settings[key].as_u64().unwrap_or(fallback);
+            let tasks = limit("max_concurrent", 3);
+            let (model, index) = crate::settings_presets::selection(
+                &ui.get_settings_max_tasks_model(),
+                4,
+                crate::settings_presets::number_choice(&[3, 5, 10, 16], tasks),
+            );
+            ui.set_settings_max_tasks_model(model);
+            ui.set_settings_max_tasks(index);
+            ui.set_settings_max_tasks_warning(
+                if tasks == 0 {
+                    crate::i18n::tr("并发数至少为 1", "Keep at least one download active")
+                } else {
+                    String::new()
+                }
+                .into(),
+            );
+
+            let connections = settings["connections"].as_u64().unwrap_or(4);
+            let (model, index) = crate::settings_presets::selection(
+                &ui.get_settings_max_connections_model(),
+                4,
+                crate::settings_presets::number_choice(&[2, 4, 8, 16], connections),
+            );
+            ui.set_settings_max_connections_model(model);
+            ui.set_settings_max_connections(index);
+            ui.set_settings_max_connections_warning(
+                if (1..=16).contains(&connections) {
+                    String::new()
+                } else {
+                    crate::i18n::tr(
+                        "每任务连接数需要 1-16 的数字",
+                        "Connections per task must be between 1 and 16",
+                    )
+                }
+                .into(),
+            );
+
+            let retry = settings["retry_max"].as_u64().unwrap_or(5);
+            let (model, index) = crate::settings_presets::selection(
+                &ui.get_settings_retry_model(),
+                4,
+                crate::settings_presets::number_choice(&[0, 3, 5, 10], retry),
+            );
+            ui.set_settings_retry_model(model);
+            ui.set_settings_retry(index);
             let speed = settings["max_speed_bps"].as_u64().unwrap_or(0);
             st.global_limit = speed > 0;
             ui.set_settings_global_limit(st.global_limit);

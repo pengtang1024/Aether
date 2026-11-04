@@ -52,7 +52,7 @@ pub(crate) fn plugin_settings_form(info: &PluginInfo) -> (Vec<SettingField>, Vec
                 .and_then(serde_json::Value::as_str)
                 .unwrap_or("string");
             let default = field.get("default").map(json_text).unwrap_or_default();
-            let options: Vec<String> = field
+            let mut options: Vec<String> = field
                 .get("options")
                 .and_then(serde_json::Value::as_array)
                 .map(|list| {
@@ -76,13 +76,21 @@ pub(crate) fn plugin_settings_form(info: &PluginInfo) -> (Vec<SettingField>, Vec
                     .to_string(),
                 "select" => {
                     let in_options = |choice: &str| options.iter().any(|option| option == choice);
-                    stored_value
-                        .and_then(serde_json::Value::as_str)
-                        .filter(|choice| in_options(choice))
-                        .map(str::to_string)
+                    // A stored value always wins, even when the plugin offers
+                    // no option for it: falling back to the default would
+                    // display a setting the plugin is not actually using.
+                    // The extra value is appended as one more option so the
+                    // combo can show it instead of sitting blank.
+                    let chosen = stored_value
+                        .map(json_text)
+                        .filter(|choice| !choice.is_empty())
                         .or_else(|| in_options(&default).then(|| default.clone()))
                         .or_else(|| options.first().cloned())
-                        .unwrap_or_default()
+                        .unwrap_or_default();
+                    if !chosen.is_empty() && !in_options(&chosen) {
+                        options.push(chosen.clone());
+                    }
+                    chosen
                 }
                 _ => stored_value.map(json_text).unwrap_or_default(),
             };

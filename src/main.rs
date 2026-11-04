@@ -22,6 +22,7 @@ mod plugin_settings;
 mod plugins;
 mod prefs;
 mod rows;
+mod settings_presets;
 mod settings_search;
 mod state;
 mod status_text;

@@ -11,8 +11,10 @@ import { PluginCatalog } from "../plugins.slint";
 import { NavGroupLabel, StatusChip } from "settings/common.slint";
 import { PanelHeader, PluginSettings, SettingsNav, SettingsRail } from "settings/nav.slint";
 import { SettingsHeader } from "settings/header.slint";
-import { GeneralPanel, DownloadPanel, MediaPanel } from "settings/panels_basic.slint";
-import { NetworkPanel, BtPanel } from "settings/panels_network.slint";
+import { GeneralPanel, MediaPanel } from "settings/panels_basic.slint";
+import { DownloadPanel } from "settings/panels_download.slint";
+import { NetworkPanel } from "settings/panels_network.slint";
+import { BtPanel } from "settings/panels_bt.slint";
 import { SchedulePanel, AppearancePanel } from "settings/panels_system.slint";
 import { AdvancedPanel, AboutPanel } from "settings/panels_advanced.slint";
 import { PluginPanel } from "settings/plugin_panel.slint";
@@ -39,7 +41,9 @@ export component SettingsPage inherits Rectangle {
     in-out property <bool> network-ftp-passive: true;
     in-out property <string> bt-port: "51413";
     in-out property <bool> bt-dht: true;
-    in-out property <float> bt-upload-kbps: 512;
+    // 0 matches the daemon default: seeding upload is unlimited until the
+    // user picks a cap.
+    in-out property <float> bt-upload-kbps: 0;
     in-out property <string> bt-blocklist: "";
     in-out property <string> bt-trackers: "";
     // Daemon-backed ffmpeg path (rtmp capture + media remux).
@@ -82,12 +86,28 @@ export component SettingsPage inherits Rectangle {
     in-out property <bool> schedule-on: false;
     in-out property <string> schedule-start: "";
     in-out property <string> schedule-end: "";
-    // Daemon-backed scheduler limits (mirrored by the window).
+    // Daemon-backed scheduler limits (mirrored by the window). The daemon
+    // boots unlimited (max_speed_bps = 0), so the switch starts off; the
+    // slider keeps 2048 KB/s as the recommended value once enabled.
     in-out property <int> settings-max-tasks: 0;
     in-out property <int> settings-max-connections: 1;
     in-out property <int> settings-retry: 2;
-    in-out property <bool> settings-global-limit: true;
+    in-out property <bool> settings-global-limit: false;
     in-out property <float> settings-download-limit-kb: 2048;
+    // Preset dropdown models: fixed labels plus an optional display-only
+    // "自定义（value）" row rebuilt by Rust when a stored value is not a preset.
+    in-out property <[string]> start-page-model: [@tr("主页"), @tr("下载列表"), @tr("上次页面")];
+    in-out property <[string]> after-done-model: [@tr("不操作"), @tr("打开所在文件夹"), @tr("打开文件")];
+    in-out property <[string]> language-model: ["简体中文", "English", "日本語", "繁體中文"];
+    in-out property <[string]> theme-model: [@tr("跟随系统"), @tr("浅色"), @tr("深色")];
+    in-out property <[string]> accent-model: [@tr("Aurora 紫"), @tr("靛蓝"), @tr("青碧"), @tr("苔绿"), @tr("琥珀"), @tr("蔷薇")];
+    in-out property <[string]> proxy-mode-model: [@tr("跟随系统"), @tr("直连"), @tr("手动"), "PAC"];
+    in-out property <[string]> ip-mode-model: [@tr("IPv4 + IPv6"), @tr("仅 IPv4"), @tr("仅 IPv6")];
+    in-out property <[string]> max-tasks-model: ["3", "5", "10", "16"];
+    in-out property <[string]> max-connections-model: ["2", "4", "8", "16"];
+    in-out property <[string]> retry-model: [@tr("不重试"), "3", "5", "10"];
+    in-out property <string> max-tasks-warning: "";
+    in-out property <string> max-connections-warning: "";
     callback settings-changed(string, string);
     callback support-action(string);
     callback rpc-apply(string, string);
@@ -183,6 +203,7 @@ export component SettingsPage inherits Rectangle {
                     if root.tab == 0: GeneralPanel {
                         download-dir: root.download-dir;
                         start-page-index <=> root.start-page;
+                        start-page-model: root.start-page-model;
                         clipboard-on <=> root.clipboard-on;
                         clipboard-available <=> root.clipboard-available;
                         autostart-on <=> root.autostart-on;
@@ -190,9 +211,15 @@ export component SettingsPage inherits Rectangle {
                     }
                     if root.tab == 1: DownloadPanel {
                         after-done-index <=> root.after-done;
+                        after-done-model: root.after-done-model;
                         max-tasks-index <=> root.settings-max-tasks;
+                        max-tasks-model: root.max-tasks-model;
                         max-connections-index <=> root.settings-max-connections;
+                        max-connections-model: root.max-connections-model;
                         retry-index <=> root.settings-retry;
+                        retry-model: root.retry-model;
+                        max-tasks-warning: root.max-tasks-warning;
+                        max-connections-warning: root.max-connections-warning;
                         global-limit-on <=> root.settings-global-limit;
                         download-limit-kb <=> root.settings-download-limit-kb;
                         changed(k, v) => { root.settings-changed(k, v); }
@@ -202,7 +229,9 @@ export component SettingsPage inherits Rectangle {
                         dns-value <=> root.network-dns;
                         user-agent-value <=> root.network-user-agent;
                         ip-mode-index <=> root.network-ip-mode;
+                        ip-mode-model: root.ip-mode-model;
                         proxy-mode-index <=> root.network-proxy-mode;
+                        proxy-mode-model: root.proxy-mode-model;
                         proxy-url-value <=> root.network-proxy-url;
                         headers-value <=> root.network-headers;
                         ftp-passive-on <=> root.network-ftp-passive;
@@ -245,8 +274,11 @@ export component SettingsPage inherits Rectangle {
                     }
                     if root.tab == 7: AppearancePanel {
                         language-index <=> root.language-index;
+                        language-model: root.language-model;
                         theme-mode <=> root.theme-mode;
+                        theme-model: root.theme-model;
                         accent-index <=> root.accent-index;
+                        accent-model: root.accent-model;
                         motion-on <=> root.motion-on;
                         flow-on <=> root.flow-on;
                         changed(k, v) => { root.settings-changed(k, v); }

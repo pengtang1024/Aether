@@ -1,0 +1,123 @@
+// BitTorrent settings panel: connection, seeding and advanced plumbing.
+import { Switch, LineEdit } from "std-widgets.slint";
+import { Aether } from "../../theme.slint";
+import { AetherIcons } from "../../icons.slint";
+import { SectionCard, SettingRow } from "../../widgets.slint";
+import { ValueSlider, SettingsValidation } from "common.slint";
+
+export component BtPanel inherits Rectangle {
+    // Daemon-backed state, mirrored by the window; edits commit on Enter /
+    // switch toggle / slider release. `0` (not 512) is the daemon's default:
+    // seeding upload is unlimited until the user picks a cap.
+    in-out property <string> bt-port-value: "51413";
+    in-out property <bool> bt-dht-on: true;
+    in-out property <float> bt-upload-kbps: 0;
+    in-out property <string> bt-blocklist-value: "";
+    in-out property <string> bt-trackers-value: "";
+    callback changed(string, string);
+
+    VerticalLayout {
+        width: 100%;
+        spacing: 16px;
+
+        SectionCard {
+            icon-source: AetherIcons.link;
+            title: @tr("连接");
+            id: "bt-connection";
+            subtitle: @tr("节点发现");
+
+            SettingRow {
+                id: "bt-dht";
+                icon-source: AetherIcons.seed;
+                title: "DHT";
+                description: @tr("通过分布式哈希表发现节点");
+                divider: false;
+                Switch { checked <=> root.bt-dht-on; toggled => { root.changed("bt-dht", self.checked ? "true" : "false"); } }
+            }
+        }
+
+        SectionCard {
+            icon-source: AetherIcons.upload;
+            title: @tr("做种");
+            id: "bt-seed";
+            subtitle: @tr("上传带宽，0 为不限速");
+
+            ValueSlider {
+                id: "bt-upload-limit";
+                icon-source: AetherIcons.upload;
+                label: @tr("上传限速");
+                value <=> root.bt-upload-kbps;
+                minimum: 0;
+                maximum: 4096;
+                suffix: " KB/s";
+                divider: false;
+                released(v) => { root.changed("bt-upload-limit", v); }
+            }
+        }
+
+        // ---- advanced: port, filtering and tracker plumbing.
+        SectionCard {
+            icon-source: AetherIcons.shield;
+            title: @tr("高级 BT 选项");
+            id: "bt-advanced";
+            subtitle: @tr("端口转发、屏蔽规则与私有 Tracker");
+            collapsible: true;
+            expanded: false;
+
+            SettingRow {
+                id: "bt-port";
+                icon-source: AetherIcons.link;
+                title: @tr("监听端口");
+                description: @tr("默认 51413；需要放行时在路由器中转发");
+                VerticalLayout {
+                    spacing: 2px;
+                    LineEdit {
+                        text <=> root.bt-port-value;
+                        placeholder-text: "51413";
+                        min-width: Aether.field-xs;
+                        max-width: Aether.field-xs;
+                        accepted => { root.changed("bt-port", self.text); }
+                        edited(text) => { if (text == "") { root.changed("bt-port", text); } }
+                    }
+                    if SettingsValidation.error("bt-port") != "": Text {
+                        text: SettingsValidation.error("bt-port");
+                        color: Aether.error;
+                        font-size: Aether.text-micro;
+                        width: Aether.field-xs;
+                        horizontal-alignment: right;
+                    }
+                }
+            }
+            SettingRow {
+                id: "bt-blocklist";
+                icon-source: AetherIcons.drive;
+                title: @tr("屏蔽列表路径");
+                description: @tr("dat 格式黑名单文件或 URL；留空不启用");
+                LineEdit {
+                    text <=> root.bt-blocklist-value;
+                    show-clear-button: false;
+                    placeholder-text: "/path/to/blocklist.dat";
+                    min-width: Aether.field-md;
+                    max-width: Aether.field-md;
+                    accepted => { root.changed("bt-blocklist", self.text); }
+                    edited(text) => { if (text == "") { root.changed("bt-blocklist", text); } }
+                }
+            }
+            SettingRow {
+                id: "bt-trackers";
+                icon-source: AetherIcons.link;
+                title: @tr("Tracker 列表");
+                description: @tr("附加到所有种子；多条用分号分隔");
+                divider: false;
+                LineEdit {
+                    text <=> root.bt-trackers-value;
+                    placeholder-text: "udp://tracker.example:80/announce";
+                    min-width: Aether.field-md;
+                    max-width: Aether.field-md;
+                    accepted => { root.changed("bt-trackers", self.text); }
+                    edited(text) => { if (text == "") { root.changed("bt-trackers", text); } }
+                }
+            }
+        }
+    }
+}

@@ -16,9 +16,10 @@ import { NewDownloadDialog } from "pages/new-download.slint";
 import { TaskDrawer } from "pages/task-drawer.slint";
 import { PluginCatalog } from "plugins.slint";
 import { SettingsFilter, SettingsHit } from "settings-filter.slint";
+import { SettingsValidation } from "pages/settings/common.slint";
 import { Tray } from "tray.slint";
 
-export { PluginCatalog, SettingsFilter, SettingsHit, Tray }
+export { PluginCatalog, SettingsFilter, SettingsHit, SettingsValidation, Tray }
 // Per-plugin settings dialog: Rust fills it on configure and saves on demand.
 export { PluginSettings } from "pages/settings.slint";
 
@@ -118,6 +119,23 @@ export component AppWindow inherits Window {
     in-out property <int> settings-retry: 2;            // index into 不重试/3/5/10
     in-out property <bool> settings-global-limit: true;
     in-out property <float> settings-download-limit-kb: 2048;
+    // Preset dropdown models. Rust rebuilds them from the fixed presets and
+    // appends one display-only "自定义（value）" row when the stored value sits
+    // outside the presets, so an old config never shows a blank combo.
+    in-out property <[string]> settings-start-page-model: [@tr("主页"), @tr("下载列表"), @tr("上次页面")];
+    in-out property <[string]> settings-after-done-model: [@tr("不操作"), @tr("打开所在文件夹"), @tr("打开文件")];
+    in-out property <[string]> settings-language-model: ["简体中文", "English", "日本語", "繁體中文"];
+    in-out property <[string]> settings-theme-model: [@tr("跟随系统"), @tr("浅色"), @tr("深色")];
+    in-out property <[string]> settings-accent-model: [@tr("Aurora 紫"), @tr("靛蓝"), @tr("青碧"), @tr("苔绿"), @tr("琥珀"), @tr("蔷薇")];
+    in-out property <[string]> settings-proxy-mode-model: [@tr("跟随系统"), @tr("直连"), @tr("手动"), "PAC"];
+    in-out property <[string]> settings-ip-mode-model: [@tr("IPv4 + IPv6"), @tr("仅 IPv4"), @tr("仅 IPv6")];
+    in-out property <[string]> settings-max-tasks-model: ["3", "5", "10", "16"];
+    in-out property <[string]> settings-max-connections-model: ["2", "4", "8", "16"];
+    in-out property <[string]> settings-retry-model: [@tr("不重试"), "3", "5", "10"];
+    // Set when a custom (non-preset) value itself falls outside the daemon's
+    // accepted range; shown under the combo instead of quietly clamping it.
+    in-out property <string> settings-max-tasks-warning: "";
+    in-out property <string> settings-max-connections-warning: "";
 
     // Apply accent preset / motion / flow in one place; called at init and
     // whenever the corresponding settings property changes.
@@ -593,6 +611,18 @@ export component AppWindow inherits Window {
                         settings-retry <=> root.settings-retry;
                         settings-global-limit <=> root.settings-global-limit;
                         settings-download-limit-kb <=> root.settings-download-limit-kb;
+                        start-page-model <=> root.settings-start-page-model;
+                        after-done-model <=> root.settings-after-done-model;
+                        language-model <=> root.settings-language-model;
+                        theme-model <=> root.settings-theme-model;
+                        accent-model <=> root.settings-accent-model;
+                        proxy-mode-model <=> root.settings-proxy-mode-model;
+                        ip-mode-model <=> root.settings-ip-mode-model;
+                        max-tasks-model <=> root.settings-max-tasks-model;
+                        max-connections-model <=> root.settings-max-connections-model;
+                        retry-model <=> root.settings-retry-model;
+                        max-tasks-warning <=> root.settings-max-tasks-warning;
+                        max-connections-warning <=> root.settings-max-connections-warning;
                         search-changed(q) => { root.settings-search-changed(q); }
                         settings-changed(k, v) => { root.settings-changed(k, v); }
                         support-action(action) => { root.support-action(action); }

@@ -198,9 +198,6 @@ msgstr "跟隨系統或為 Aether 單獨設定"
 msgid "代理地址"
 msgstr "代理位址"
 
-msgid "支持 HTTP / SOCKS5；切到手动模式后生效"
-msgstr "支援 HTTP / SOCKS5；切到手動模式後生效"
-
 msgid "DNS 服务器"
 msgstr "DNS 伺服器"
 
@@ -237,9 +234,6 @@ msgstr "連線"
 msgid "监听端口"
 msgstr "監聽連接埠"
 
-msgid "需要放行时在路由器中转发"
-msgstr "需要放行時在路由器中轉發"
-
 msgid "通过分布式哈希表发现节点"
 msgstr "透過分散式雜湊表發現節點"
 
@@ -248,9 +242,6 @@ msgstr "做種"
 
 msgid "上传限速"
 msgstr "上傳限速"
-
-msgid "过滤与 Tracker"
-msgstr "篩選與 Tracker"
 
 msgid "屏蔽列表路径"
 msgstr "封鎖清單路徑"
@@ -399,6 +390,9 @@ msgstr "色彩強調"
 msgid "品牌强调色，按钮、进度与高亮同步换色"
 msgstr "品牌強調色，按鈕、進度與高亮同步換色"
 
+msgid "当前取值不在预设档位，按原样显示；选择其他档位才会写入"
+msgstr "目前取值不在預設檔位，依原樣顯示；選擇其他檔位才會寫入"
+
 msgid "界面"
 msgstr "介面"
 
@@ -513,14 +507,8 @@ msgstr "讓下載經過系統或自訂網路"
 msgid "兼容性与请求行为"
 msgstr "相容性與請求行為"
 
-msgid "端口与节点发现"
-msgstr "連接埠與節點發現"
-
 msgid "上传带宽，0 为不限速"
 msgstr "上傳頻寬，0 為不限速"
-
-msgid "屏蔽规则与私有 Tracker"
-msgstr "封鎖規則與私有 Tracker"
 
 msgid "已实现的能力"
 msgstr "已具備的能力"
@@ -1017,3 +1005,39 @@ msgstr "可選："
 
 msgid "已保存"
 msgstr "已儲存"
+
+msgid "高级网络选项"
+msgstr "進階網路選項"
+
+msgid "留空即用推荐值，通常无需修改"
+msgstr "留空即使用建議值，通常無需修改"
+
+msgid "高级 BT 选项"
+msgstr "進階 BT 選項"
+
+msgid "端口转发、屏蔽规则与私有 Tracker"
+msgstr "連接埠轉送、封鎖規則與私有 Tracker"
+
+msgid "高级插件选项"
+msgstr "進階外掛選項"
+
+msgid "来源策略、版本固定与手动安装"
+msgstr "來源策略、版本固定與手動安裝"
+
+msgid "收起高级选项"
+msgstr "收合進階選項"
+
+msgid "展开高级选项"
+msgstr "展開進階選項"
+
+msgid "支持 HTTP / SOCKS5；手动模式下生效"
+msgstr "支援 HTTP / SOCKS5；手動模式下生效"
+
+msgid "节点发现"
+msgstr "節點探索"
+
+msgid "默认 127.0.0.1:6800；留空关闭；非回环地址必须设置令牌"
+msgstr "預設 127.0.0.1:6800；留空關閉；非回環位址必須設定權杖"
+
+msgid "默认 51413；需要放行时在路由器中转发"
+msgstr "預設 51413；需要放行時在路由器中轉送"

@@ -4,7 +4,7 @@ import { Aether } from "../../theme.slint";
 import { AetherIcons } from "../../icons.slint";
 import { PluginGlyph, ProgressTrack, SectionCard, SettingRow } from "../../widgets.slint";
 import { PluginCatalog } from "../../plugins.slint";
-import { EmptyHint, StatusChip } from "common.slint";
+import { EmptyHint, SettingsValidation, StatusChip } from "common.slint";
 import { PluginFilter, PluginSettings } from "nav.slint";
 import { InstalledPlugin } from "plugin_row.slint";
 
@@ -113,11 +113,24 @@ export component PluginPanel inherits Rectangle {
                 icon-source: AetherIcons.refresh;
                 title: @tr("自动更新插件");
                 description: @tr("daemon 每 6 小时按更新清单安装插件新版；需配置更新清单与签名公钥");
+                divider: false;
                 Switch {
                     checked <=> root.auto-update-on;
                     toggled => { root.changed("plugin-auto-update", self.checked ? "true" : "false"); }
                 }
             }
+        }
+
+        // ---- advanced: source policy, pins and manual install. These are
+        // operator-level knobs, not everyday choices.
+        SectionCard {
+            icon-source: AetherIcons.shield;
+            title: @tr("高级插件选项");
+            id: "plugin-advanced";
+            subtitle: @tr("来源策略、版本固定与手动安装");
+            collapsible: true;
+            expanded: false;
+
             SettingRow {
                 id: "plugin-external-process";
                 icon-source: AetherIcons.shield;
@@ -133,18 +146,41 @@ export component PluginPanel inherits Rectangle {
                 icon-source: AetherIcons.tune;
                 title: @tr("固定插件版本");
                 description: @tr("id=版本，多条用分号分隔；固定后自动/手动检查更新都会跳过该插件（仍可手动安装）");
-                HorizontalLayout {
-                    spacing: 6px;
-                    LineEdit {
-                        text <=> root.plugin-pins;
-                        placeholder-text: "http=0.2.0; bt=0.2.0";
-                        horizontal-stretch: 1;
-                        accepted => { root.changed("plugin-pins", self.text); }
+                VerticalLayout {
+                    spacing: 2px;
+                    HorizontalLayout {
+                        spacing: 6px;
+                        LineEdit {
+                            text <=> root.plugin-pins;
+                            placeholder-text: "http=0.2.0; bt=0.2.0";
+                            horizontal-stretch: 1;
+                            accepted => { root.changed("plugin-pins", self.text); }
+                            edited(text) => { if (text == "") { root.changed("plugin-pins", text); } }
+                        }
+                        TextButton {
+                            text: @tr("保存");
+                            clicked => { root.changed("plugin-pins", root.plugin-pins); }
+                        }
                     }
-                    TextButton {
-                        text: @tr("保存");
-                        clicked => { root.changed("plugin-pins", root.plugin-pins); }
+                    if SettingsValidation.error("plugin-pins") != "": Text {
+                        text: SettingsValidation.error("plugin-pins");
+                        color: Aether.error;
+                        font-size: Aether.text-micro;
+                        horizontal-alignment: right;
                     }
+                }
+            }
+            SettingRow {
+                id: "plugin-dir";
+                icon-source: AetherIcons.folder;
+                title: @tr("插件目录");
+                description: @tr("本地插件的安装位置");
+                LineEdit {
+                    text: root.plugins-dir == "" ? @tr("未连接") : root.plugins-dir;
+                    read-only: true;
+                    show-clear-button: false;
+                    min-width: Aether.field-lg;
+                    max-width: Aether.field-lg;
                 }
             }
             Rectangle {
@@ -161,35 +197,31 @@ export component PluginPanel inherits Rectangle {
                 wrap: word-wrap;
             }
             SettingRow {
-                id: "plugin-dir";
-                icon-source: AetherIcons.folder;
-                title: @tr("插件目录");
-                description: @tr("本地插件的安装位置");
-                LineEdit {
-                    text: root.plugins-dir == "" ? @tr("未连接") : root.plugins-dir;
-                    read-only: true;
-                    show-clear-button: false;
-                    min-width: Aether.field-lg;
-                    max-width: Aether.field-lg;
-                }
-            }
-            SettingRow {
                 id: "plugin-install";
                 icon-source: AetherIcons.download;
                 title: @tr("安装插件");
                 description: @tr("插件包目录的绝对路径（含 plugin.json）；daemon 校验 manifest 签名与文件哈希后复制进插件目录");
                 divider: false;
-                HorizontalLayout {
-                    spacing: 6px;
-                    LineEdit {
-                        text <=> root.install-path;
-                        placeholder-text: "/path/to/plugin-package";
-                        horizontal-stretch: 1;
-                        accepted => { root.changed("plugin-install", self.text); }
+                VerticalLayout {
+                    spacing: 2px;
+                    HorizontalLayout {
+                        spacing: 6px;
+                        LineEdit {
+                            text <=> root.install-path;
+                            placeholder-text: "/path/to/plugin-package";
+                            horizontal-stretch: 1;
+                            accepted => { root.changed("plugin-install", self.text); }
+                        }
+                        TextButton {
+                            text: @tr("安装");
+                            clicked => { root.changed("plugin-install", root.install-path); }
+                        }
                     }
-                    TextButton {
-                        text: @tr("安装");
-                        clicked => { root.changed("plugin-install", root.install-path); }
+                    if SettingsValidation.error("plugin-install") != "": Text {
+                        text: SettingsValidation.error("plugin-install");
+                        color: Aether.error;
+                        font-size: Aether.text-micro;
+                        horizontal-alignment: right;
                     }
                 }
             }

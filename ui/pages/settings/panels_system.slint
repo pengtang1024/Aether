@@ -1,9 +1,9 @@
 // Schedule and appearance settings panels.
-import { Switch, Slider, ComboBox, LineEdit, TextButton, IconButton } from "std-widgets.slint";
+import { Switch, ComboBox, LineEdit } from "std-widgets.slint";
 import { Aether } from "../../theme.slint";
 import { AetherIcons } from "../../icons.slint";
-import { ProgressTrack, SectionCard, SettingRow } from "../../widgets.slint";
-import { SettingsFilter } from "../../settings-filter.slint";
+import { SectionCard, SettingRow } from "../../widgets.slint";
+import { PresetCustomHint, SettingsValidation } from "common.slint";
 
 export component SchedulePanel inherits Rectangle {
     // Daemon-backed schedule + UI-local notification preferences, mirrored
@@ -38,13 +38,23 @@ export component SchedulePanel inherits Rectangle {
                 icon-source: AetherIcons.clock;
                 title: @tr("开始时间");
                 description: @tr("本机时间 HH:MM，例如 01:00");
-                LineEdit {
-                    text <=> root.schedule-start;
-                    placeholder-text: "01:00";
-                    min-width: Aether.field-xs;
-                    max-width: Aether.field-xs;
-                    accepted => { root.changed("schedule-start", self.text); }
-                    edited(text) => { if (text == "") { root.changed("schedule-start", text); } }
+                VerticalLayout {
+                    spacing: 2px;
+                    LineEdit {
+                        text <=> root.schedule-start;
+                        placeholder-text: "01:00";
+                        min-width: Aether.field-xs;
+                        max-width: Aether.field-xs;
+                        accepted => { root.changed("schedule-start", self.text); }
+                        edited(text) => { if (text == "") { root.changed("schedule-start", text); } }
+                    }
+                    if SettingsValidation.error("schedule-start") != "": Text {
+                        text: SettingsValidation.error("schedule-start");
+                        color: Aether.error;
+                        font-size: Aether.text-micro;
+                        width: Aether.field-xs;
+                        horizontal-alignment: right;
+                    }
                 }
             }
             SettingRow {
@@ -53,13 +63,23 @@ export component SchedulePanel inherits Rectangle {
                 title: @tr("结束时间");
                 description: @tr("早于开始时间表示跨午夜，例如 22:00 - 07:00");
                 divider: false;
-                LineEdit {
-                    text <=> root.schedule-end;
-                    placeholder-text: "07:00";
-                    min-width: Aether.field-xs;
-                    max-width: Aether.field-xs;
-                    accepted => { root.changed("schedule-end", self.text); }
-                    edited(text) => { if (text == "") { root.changed("schedule-end", text); } }
+                VerticalLayout {
+                    spacing: 2px;
+                    LineEdit {
+                        text <=> root.schedule-end;
+                        placeholder-text: "07:00";
+                        min-width: Aether.field-xs;
+                        max-width: Aether.field-xs;
+                        accepted => { root.changed("schedule-end", self.text); }
+                        edited(text) => { if (text == "") { root.changed("schedule-end", text); } }
+                    }
+                    if SettingsValidation.error("schedule-end") != "": Text {
+                        text: SettingsValidation.error("schedule-end");
+                        color: Aether.error;
+                        font-size: Aether.text-micro;
+                        width: Aether.field-xs;
+                        horizontal-alignment: right;
+                    }
                 }
             }
         }
@@ -95,6 +115,10 @@ export component AppearancePanel inherits Rectangle {
     in-out property <int> language-index: 0;
     // UI-local preferences, mirrored from the window.
     in-out property <int> accent-index: 0;
+    // Preset labels plus a display-only custom row for an out-of-preset value.
+    in property <[string]> accent-model: [@tr("Aurora 紫"), @tr("靛蓝"), @tr("青碧"), @tr("苔绿"), @tr("琥珀"), @tr("蔷薇")];
+    in property <[string]> theme-model: [@tr("跟随系统"), @tr("浅色"), @tr("深色")];
+    in property <[string]> language-model: ["简体中文", "English", "日本語", "繁體中文"];
     in-out property <bool> motion-on: true;
     in-out property <bool> flow-on: true;
     callback changed(string, string);
@@ -116,26 +140,30 @@ export component AppearancePanel inherits Rectangle {
                 title: @tr("界面语言");
                 description: @tr("中文为内置源语言；切换立即生效");
                 ComboBox {
-                    model: ["简体中文", "English", "日本語", "繁體中文"];
+                    model: root.language-model;
                     current-index <=> root.language-index;
                     min-width: Aether.field-md;
                     max-width: Aether.field-md;
-                    selected => { root.changed("language", self.current-value); }
+                    // Index 4 is the appended custom row; it only echoes a
+                    // stored language code and must not be written back.
+                    selected => { if (self.current-index < 4) { root.changed("language", self.current-value); } }
                 }
             }
+            if root.language-index == 4: PresetCustomHint { }
             SettingRow {
                 id: "appearance-theme-mode";
                 icon-source: AetherIcons.moon;
                 title: @tr("主题");
                 description: @tr("默认跟随系统，也可固定浅色或深色");
                 ComboBox {
-                    model: [@tr("跟随系统"), @tr("浅色"), @tr("深色")];
+                    model: root.theme-model;
                     current-index <=> root.theme-mode;
                     min-width: Aether.field-md;
                     max-width: Aether.field-md;
-                    selected => { root.changed("theme", self.current-index == 1 ? "浅色" : self.current-index == 2 ? "深色" : "跟随系统"); }
+                    selected => { if (self.current-index < 3) { root.changed("theme", self.current-index == 1 ? "浅色" : self.current-index == 2 ? "深色" : "跟随系统"); } }
                 }
             }
+            if root.theme-mode == 3: PresetCustomHint { }
             SettingRow {
                 id: "appearance-accent";
                 icon-source: AetherIcons.tune;
@@ -143,13 +171,16 @@ export component AppearancePanel inherits Rectangle {
                 description: @tr("品牌强调色，按钮、进度与高亮同步换色");
                 divider: false;
                 ComboBox {
-                    model: [@tr("Aurora 紫"), @tr("靛蓝"), @tr("青碧"), @tr("苔绿"), @tr("琥珀"), @tr("蔷薇")];
+                    model: root.accent-model;
                     current-index <=> root.accent-index;
                     min-width: Aether.field-md;
                     max-width: Aether.field-md;
-                    selected => { root.changed("accent", self.current-index == 1 ? "靛蓝" : self.current-index == 2 ? "青碧" : self.current-index == 3 ? "苔绿" : self.current-index == 4 ? "琥珀" : self.current-index == 5 ? "蔷薇" : "Aurora 紫"); }
+                    // Index 6 is the appended custom row; it only echoes a
+                    // stored accent index and must not be written back.
+                    selected => { if (self.current-index < 6) { root.changed("accent", self.current-index == 1 ? "靛蓝" : self.current-index == 2 ? "青碧" : self.current-index == 3 ? "苔绿" : self.current-index == 4 ? "琥珀" : self.current-index == 5 ? "蔷薇" : "Aurora 紫"); } }
                 }
             }
+            if root.accent-index == 6: PresetCustomHint { }
         }
 
         SectionCard {

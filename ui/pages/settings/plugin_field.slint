@@ -33,6 +33,14 @@ export component PluginSettingField inherits Rectangle {
         ? ""
         : @tr("可选：") + root.field.options-text;
     property <string> hint: root.hint-join(root.hint-default, root.hint-range, root.hint-options);
+    // Show a legal example in empty inputs: a concrete path for path fields,
+    // the declared range for numbers, and a masked prompt for credentials.
+    property <string> placeholder-text:
+          root.field.kind == "secret" ? "••••••"
+        : root.field.kind == "path" ? "/path/to/executable"
+        : (root.field.kind == "int" || root.field.kind == "float") && root.field.default == ""
+            ? root.hint-range
+        : root.field.default;
     // Bools and selects always render a concrete state (Rust falls back to
     // the default / first option), so only a stored free-text value — still
     // unedited — can honestly be called saved.
@@ -121,7 +129,7 @@ export component PluginSettingField inherits Rectangle {
 
                     if root.field.kind != "bool" && !(root.field.kind == "select" && root.field.options.length > 0): LineEdit {
                         text: PluginSettings.values[root.index];
-                        placeholder-text: root.field.default;
+                        placeholder-text: root.placeholder-text;
                         input-type: root.field.kind == "secret" ? InputType.password : InputType.text;
                         min-width: Aether.field-md;
                         max-width: Aether.field-md;

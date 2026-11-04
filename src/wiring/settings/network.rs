@@ -38,6 +38,10 @@ pub(super) fn apply(
                             _ => 0,
                         };
                         ui.set_settings_proxy_mode(index);
+                        ui.set_settings_proxy_mode_model(crate::settings_presets::preset_only(
+                            &ui.get_settings_proxy_mode_model(),
+                            4,
+                        ));
                     }
                     hint = Some(
                         i18n::tr("PAC 由启动配置（AETHER_PAC_URL）决定，请用启动参数切换", "PAC comes from the launch configuration (AETHER_PAC_URL); switch it with launch options"),
@@ -52,6 +56,13 @@ pub(super) fn apply(
                 _ => {
                     let url = st.proxy_url.clone();
                     st.backend.set_proxy(&st.proxy_mode, &url);
+                    if let Some(ui) = ui {
+                        // A real preset replaced any custom row.
+                        ui.set_settings_proxy_mode_model(crate::settings_presets::preset_only(
+                            &ui.get_settings_proxy_mode_model(),
+                            4,
+                        ));
+                    }
                 }
             }
         }
@@ -78,6 +89,12 @@ pub(super) fn apply(
                 _ => json!({"ip_mode": null}),
             };
             st.backend.set_setting(patch);
+            if let Some(ui) = ui {
+                ui.set_settings_ip_mode_model(crate::settings_presets::preset_only(
+                    &ui.get_settings_ip_mode_model(),
+                    3,
+                ));
+            }
             hint = Some(i18n::tr(
                 "IP 协议已保存：空闲插件重启后生效",
                 "IP protocol saved; idle plugins pick it up after a restart",

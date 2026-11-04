@@ -35,6 +35,12 @@ pub(super) fn apply(
             }
             if let Some(ui) = ui {
                 ui.set_settings_language(i18n::index_of(code) as i32);
+                // A preset was chosen: drop any custom row left from a code
+                // that is no longer offered.
+                ui.set_settings_language_model(crate::settings_presets::preset_only(
+                    &ui.get_settings_language_model(),
+                    i18n::LANGUAGES.len(),
+                ));
             }
             hint = Some(if code == "zh" {
                 "界面语言已切回简体中文".into()
@@ -61,6 +67,10 @@ pub(super) fn apply(
             st.prefs.save();
             if let Some(ui) = ui {
                 ui.set_settings_accent(index);
+                ui.set_settings_accent_model(crate::settings_presets::preset_only(
+                    &ui.get_settings_accent_model(),
+                    6,
+                ));
             }
         }
         "motion" | "flow-background" => {
@@ -87,6 +97,10 @@ pub(super) fn apply(
             st.prefs.save();
             if let Some(ui) = ui {
                 ui.set_settings_start_page(st.prefs.start_page);
+                ui.set_settings_start_page_model(crate::settings_presets::preset_only(
+                    &ui.get_settings_start_page_model(),
+                    3,
+                ));
             }
         }
         "after-done" => {
@@ -98,6 +112,10 @@ pub(super) fn apply(
             st.prefs.save();
             if let Some(ui) = ui {
                 ui.set_settings_after_done(st.prefs.after_done);
+                ui.set_settings_after_done_model(crate::settings_presets::preset_only(
+                    &ui.get_settings_after_done_model(),
+                    3,
+                ));
             }
         }
         "notify-done" | "notify-fail" => {
@@ -190,15 +208,12 @@ pub(super) fn apply(
             }
             save_theme_mode(0);
             if let Some(ui) = ui {
-                ui.set_settings_accent(0);
+                crate::settings_presets::mirror_ui_prefs(ui, &st.prefs);
+                crate::settings_presets::mirror_theme(ui, 0);
                 ui.set_settings_motion(true);
                 ui.set_settings_flow(true);
-                ui.set_settings_start_page(0);
-                ui.set_settings_after_done(0);
                 ui.set_settings_notify_done(true);
                 ui.set_settings_notify_fail(true);
-                ui.set_settings_language(0);
-                ui.set_theme_mode(0);
             }
             hint = Some(i18n::tr(
                 "界面偏好已恢复默认（含语言与主题）",

@@ -201,9 +201,6 @@ msgstr "Follow the system, or configure Aether separately"
 msgid "代理地址"
 msgstr "Proxy address"
 
-msgid "支持 HTTP / SOCKS5；切到手动模式后生效"
-msgstr "HTTP / SOCKS5; applied after switching to manual mode"
-
 msgid "DNS 服务器"
 msgstr "DNS servers"
 
@@ -240,9 +237,6 @@ msgstr "Connection"
 msgid "监听端口"
 msgstr "Listen port"
 
-msgid "需要放行时在路由器中转发"
-msgstr "Forward it on your router when needed"
-
 msgid "通过分布式哈希表发现节点"
 msgstr "Discover peers through the distributed hash table"
 
@@ -251,9 +245,6 @@ msgstr "Seeding"
 
 msgid "上传限速"
 msgstr "Upload limit"
-
-msgid "过滤与 Tracker"
-msgstr "Filters & trackers"
 
 msgid "屏蔽列表路径"
 msgstr "Blocklist path"
@@ -402,6 +393,9 @@ msgstr "Accent color"
 msgid "品牌强调色，按钮、进度与高亮同步换色"
 msgstr "Brand accent; buttons, progress and highlights follow"
 
+msgid "当前取值不在预设档位，按原样显示；选择其他档位才会写入"
+msgstr "This value is outside the presets and is shown as-is; only choosing another preset writes a new value"
+
 msgid "界面"
 msgstr "Interface"
 
@@ -517,14 +511,8 @@ msgstr "Route downloads through the system or a custom network"
 msgid "兼容性与请求行为"
 msgstr "Compatibility and request behavior"
 
-msgid "端口与节点发现"
-msgstr "Ports and peer discovery"
-
 msgid "上传带宽，0 为不限速"
 msgstr "Upload bandwidth; 0 means unlimited"
-
-msgid "屏蔽规则与私有 Tracker"
-msgstr "Block rules and private trackers"
 
 msgid "已实现的能力"
 msgstr "Available capabilities"
@@ -1017,3 +1005,39 @@ msgstr "Options: "
 
 msgid "已保存"
 msgstr "Saved"
+
+msgid "高级网络选项"
+msgstr "Advanced network options"
+
+msgid "留空即用推荐值，通常无需修改"
+msgstr "Leave empty to use the recommended value"
+
+msgid "高级 BT 选项"
+msgstr "Advanced BT options"
+
+msgid "端口转发、屏蔽规则与私有 Tracker"
+msgstr "Port forwarding, blocklists and private trackers"
+
+msgid "高级插件选项"
+msgstr "Advanced plugin options"
+
+msgid "来源策略、版本固定与手动安装"
+msgstr "Source policy, version pins and manual install"
+
+msgid "收起高级选项"
+msgstr "Collapse advanced options"
+
+msgid "展开高级选项"
+msgstr "Expand advanced options"
+
+msgid "支持 HTTP / SOCKS5；手动模式下生效"
+msgstr "Supports HTTP / SOCKS5; used in manual mode"
+
+msgid "节点发现"
+msgstr "Peer discovery"
+
+msgid "默认 127.0.0.1:6800；留空关闭；非回环地址必须设置令牌"
+msgstr "Default 127.0.0.1:6800; empty disables it; non-loopback addresses require a token"
+
+msgid "默认 51413；需要放行时在路由器中转发"
+msgstr "Default 51413; forward it on your router when needed"

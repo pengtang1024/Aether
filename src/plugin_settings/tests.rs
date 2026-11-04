@@ -101,3 +101,43 @@ fn rejects_unparseable_numbers_with_their_field() {
         Err(FormError::Number { key, .. }) if key == "ratio"
     ));
 }
+
+fn select_plugin(stored: &str) -> PluginInfo {
+    serde_json::from_value(json!({
+        "id": "demo",
+        "name": "Demo",
+        "version": "1.0.0",
+        "settings_schema": {
+            "sections": [{
+                "title": "Mode",
+                "fields": [{
+                    "key": "mode",
+                    "type": "select",
+                    "default": "fast",
+                    "options": ["fast", "slow"]
+                }]
+            }]
+        },
+        "settings": {"mode": stored},
+    }))
+    .expect("plugin info decodes")
+}
+
+#[test]
+fn select_shows_a_stored_value_outside_the_options() {
+    let (fields, values) = plugin_settings_form(&select_plugin("turbo"));
+    assert_eq!(fields.len(), 1);
+    let options: Vec<String> = fields[0].options.iter().map(|o| o.to_string()).collect();
+    // The stored value is appended instead of being filtered away, and it
+    // is the one selected in the form.
+    assert_eq!(options, ["fast", "slow", "turbo"]);
+    assert_eq!(values[0], "turbo");
+}
+
+#[test]
+fn select_inside_the_options_adds_no_extra_row() {
+    let (fields, values) = plugin_settings_form(&select_plugin("slow"));
+    let options: Vec<String> = fields[0].options.iter().map(|o| o.to_string()).collect();
+    assert_eq!(options, ["fast", "slow"]);
+    assert_eq!(values[0], "slow");
+}

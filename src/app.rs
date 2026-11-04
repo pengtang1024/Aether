@@ -79,19 +79,20 @@ pub(crate) fn run() -> Result<(), slint::PlatformError> {
     if let Some(mode) = env_theme.or_else(read_theme_mode) {
         ui.set_theme_mode(mode);
     }
+    // Keep an unknown stored theme index visible as a custom row instead of
+    // an empty combo.
+    crate::settings_presets::mirror_theme(&ui, ui.get_theme_mode());
     // Rust-side strings follow UiPrefs.lang; must precede any translated
     // push (extension status, refresh labels) below.
     i18n::set_language(state.borrow().prefs.lang.as_str());
 
-    // UI-local preferences: push into the window (which applies accent /
-    // motion / flow through apply-appearance) and pick the start page.
+    // UI-local preferences: push into the window (the mirror also appends
+    // custom rows for values outside each preset) and pick the start page.
     {
         let prefs = state.borrow().prefs.clone();
-        ui.set_settings_accent(prefs.accent);
+        crate::settings_presets::mirror_ui_prefs(&ui, &prefs);
         ui.set_settings_motion(prefs.motion);
         ui.set_settings_flow(prefs.flow);
-        ui.set_settings_start_page(prefs.start_page);
-        ui.set_settings_after_done(prefs.after_done);
         ui.set_settings_notify_done(prefs.notify_done);
         ui.set_settings_notify_fail(prefs.notify_fail);
         ui.set_settings_clipboard(prefs.clipboard_watch);
@@ -114,7 +115,6 @@ pub(crate) fn run() -> Result<(), slint::PlatformError> {
         {
             eprintln!("aether: language selection failed: {error:?}");
         }
-        ui.set_settings_language(i18n::index_of(&prefs.lang) as i32);
     }
 
     // Initial data.

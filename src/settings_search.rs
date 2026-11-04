@@ -88,10 +88,17 @@ pub const CARDS: &[Card] = &[
         keywords: "协议 protocol 请求 request 兼容 compatibility",
     },
     Card {
+        id: "network-advanced",
+        tab: 2,
+        title: ("高级网络选项", "Advanced network"),
+        subtitle: ("DNS、User-Agent 与请求头", "DNS, user agent and headers"),
+        keywords: "高级 advanced 网络 network 请求头 headers dns ua 认证 auth",
+    },
+    Card {
         id: "bt-connection",
         tab: 3,
         title: ("连接", "Connection"),
-        subtitle: ("端口与节点发现", "Port and peer discovery"),
+        subtitle: ("节点发现", "Peer discovery"),
         keywords: "bt pt 连接 connection 节点 peer 磁力",
     },
     Card {
@@ -102,11 +109,14 @@ pub const CARDS: &[Card] = &[
         keywords: "做种 seeding ratio 分享率",
     },
     Card {
-        id: "bt-filter",
+        id: "bt-advanced",
         tab: 3,
-        title: ("过滤与 Tracker", "Filtering & trackers"),
-        subtitle: ("屏蔽规则与私有 Tracker", "Blocklists and private trackers"),
-        keywords: "屏蔽 blocklist tracker 私有",
+        title: ("高级 BT 选项", "Advanced BT"),
+        subtitle: (
+            "端口转发、屏蔽规则与私有 Tracker",
+            "Port forwarding, blocklists and private trackers",
+        ),
+        keywords: "高级 advanced 屏蔽 blocklist tracker 私有 端口 port",
     },
     Card {
         id: "media-capability",
@@ -136,11 +146,18 @@ pub const CARDS: &[Card] = &[
         id: "plugin-engine",
         tab: 5,
         title: ("插件引擎", "Plugin engine"),
-        subtitle: (
-            "插件目录、来源与更新",
-            "Plugin directory, sources and updates",
-        ),
+        subtitle: ("自动更新插件", "Plugin auto-updates"),
         keywords: "插件 plugin 引擎 engine 来源 source 更新",
+    },
+    Card {
+        id: "plugin-advanced",
+        tab: 5,
+        title: ("高级插件选项", "Advanced plugins"),
+        subtitle: (
+            "来源策略、版本固定与手动安装",
+            "Source policy, version pins and manual install",
+        ),
+        keywords: "高级 advanced 插件 plugin 安装 install 版本 version 固定 pin",
     },
     Card {
         id: "plugin-dev",
@@ -322,25 +339,25 @@ pub const ROWS: &[Row] = &[
     },
     Row {
         id: "network-dns",
-        card: "network-proxy",
+        card: "network-advanced",
         title: ("DNS 服务器", "DNS servers"),
         keywords: "dns 服务器 解析 resolver",
     },
     Row {
         id: "network-ip-mode",
-        card: "network-proxy",
+        card: "network-protocol",
         title: ("IP 协议", "IP protocol"),
         keywords: "ip 协议 ipv4 ipv6 protocol",
     },
     Row {
         id: "network-user-agent",
-        card: "network-protocol",
+        card: "network-advanced",
         title: ("User-Agent", "User-Agent"),
         keywords: "user-agent ua 请求头 header",
     },
     Row {
         id: "network-headers",
-        card: "network-protocol",
+        card: "network-advanced",
         title: ("自定义请求头", "Custom headers"),
         keywords: "请求头 自定义 header referer cookie",
     },
@@ -352,7 +369,7 @@ pub const ROWS: &[Row] = &[
     },
     Row {
         id: "bt-port",
-        card: "bt-connection",
+        card: "bt-advanced",
         title: ("监听端口", "Listen port"),
         keywords: "监听端口 port 转发 listen",
     },
@@ -370,13 +387,13 @@ pub const ROWS: &[Row] = &[
     },
     Row {
         id: "bt-blocklist",
-        card: "bt-filter",
+        card: "bt-advanced",
         title: ("屏蔽列表路径", "Blocklist path"),
         keywords: "屏蔽 黑名单 blocklist dat 过滤",
     },
     Row {
         id: "bt-trackers",
-        card: "bt-filter",
+        card: "bt-advanced",
         title: ("Tracker 列表", "Tracker list"),
         keywords: "tracker 列表 announce 私有",
     },
@@ -400,25 +417,25 @@ pub const ROWS: &[Row] = &[
     },
     Row {
         id: "plugin-external-process",
-        card: "plugin-engine",
+        card: "plugin-advanced",
         title: ("允许外部进程", "Allow external processes"),
         keywords: "外部进程 external process yt-dlp ffmpeg",
     },
     Row {
         id: "plugin-pins",
-        card: "plugin-engine",
+        card: "plugin-advanced",
         title: ("固定插件版本", "Pin plugin versions"),
         keywords: "固定版本 pin 插件版本",
     },
     Row {
         id: "plugin-dir",
-        card: "plugin-engine",
+        card: "plugin-advanced",
         title: ("插件目录", "Plugin directory"),
         keywords: "插件目录 安装位置 directory plugins",
     },
     Row {
         id: "plugin-install",
-        card: "plugin-engine",
+        card: "plugin-advanced",
         title: ("安装插件", "Install plugin"),
         keywords: "安装插件 插件包 install package",
     },
@@ -820,8 +837,25 @@ mod tests {
         assert_eq!(ids("令牌"), vec!["advanced-rpc-secret"]);
         assert_eq!(ids("socks5"), vec!["network-proxy-url"]);
         assert_eq!(ids("数据库"), vec!["advanced-data-dir"]);
-        // BT's subtitle is literally about ports, so the whole card matches.
-        assert_eq!(ids("端口"), vec!["bt-connection", "advanced-rpc-listen"]);
+        // BT's advanced card is about ports, so the whole card matches.
+        assert_eq!(ids("端口"), vec!["bt-advanced", "advanced-rpc-listen"]);
+    }
+
+    #[test]
+    fn advanced_cards_stay_searchable_while_collapsed() {
+        // "dns" is in the advanced-network card: the hit must be the card and
+        // its row, so the page can open the collapsed group and show it.
+        let results = search("dns");
+        assert_eq!(results.cards, "|network-advanced|");
+        assert!(results.rows.contains("|network-dns|"));
+        // Blocklists live in the collapsed BT group.
+        let results = search("blocklist");
+        assert_eq!(results.cards, "|bt-advanced|");
+        assert!(results.rows.contains("|bt-blocklist|"));
+        // Manual install is folded into the advanced plugin card.
+        let results = search("install");
+        assert!(results.cards.contains("|plugin-advanced|"));
+        assert!(results.rows.contains("|plugin-install|"));
     }
 
     #[test]

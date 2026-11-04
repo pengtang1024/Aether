@@ -63,6 +63,15 @@ pub(super) fn apply(
         "max-tasks" => match value.trim().parse::<u64>() {
             Ok(number) => {
                 st.backend.set_setting(json!({"max_concurrent": number}));
+                if let Some(ui) = ui {
+                    // A preset was chosen: remove any custom row left over
+                    // from the stored out-of-preset value.
+                    ui.set_settings_max_tasks_model(crate::settings_presets::preset_only(
+                        &ui.get_settings_max_tasks_model(),
+                        4,
+                    ));
+                    ui.set_settings_max_tasks_warning("".into());
+                }
                 hint = Some(i18n::tr(
                     "并发上限已保存：排队任务按新上限启动",
                     "Concurrency cap saved; queued tasks start under the new cap",
@@ -78,6 +87,13 @@ pub(super) fn apply(
         "max-connections" => match value.trim().parse::<u64>() {
             Ok(number) => {
                 st.backend.set_setting(json!({"connections": number}));
+                if let Some(ui) = ui {
+                    ui.set_settings_max_connections_model(crate::settings_presets::preset_only(
+                        &ui.get_settings_max_connections_model(),
+                        4,
+                    ));
+                    ui.set_settings_max_connections_warning("".into());
+                }
                 hint = Some(i18n::tr(
                     "每任务连接数已保存：新任务生效（HTTP 上限 16）",
                     "Connections per task saved; applies to new tasks (HTTP capped at 16)",
@@ -98,6 +114,12 @@ pub(super) fn apply(
             match retries {
                 Some(number) => {
                     st.backend.set_setting(json!({"retry_max": number}));
+                    if let Some(ui) = ui {
+                        ui.set_settings_retry_model(crate::settings_presets::preset_only(
+                            &ui.get_settings_retry_model(),
+                            4,
+                        ));
+                    }
                     hint = Some(if number == 0 {
                         i18n::tr("已关闭自动重试", "Automatic retries are off")
                     } else {

@@ -3,7 +3,7 @@
 // Everything here is built on the vendored Material 3 widget library so the
 // ripple, shape and motion behaviour matches the upstream M3 implementation.
 
-import { StateLayer } from "std-widgets.slint";
+import { IconButton, StateLayer } from "std-widgets.slint";
 import { Aether, FileTone, PluginTone } from "theme.slint";
 import { AetherIcons } from "icons.slint";
 import { SettingsFilter } from "settings-filter.slint";
@@ -300,6 +300,11 @@ export component SectionCard inherits Rectangle {
     // current query hits this card. Empty ids are never filtered.
     in property <string> id: "";
     in property <bool> filterable: true;
+    // Collapsible cards host low-frequency ("advanced") settings. The state
+    // is a two-way property so a panel can keep it collapsed by default while
+    // the header toggle flips it.
+    in property <bool> collapsible: false;
+    in-out property <bool> expanded: true;
 
     visible: root.filterable
         ? SettingsFilter.shows(root.id)
@@ -330,6 +335,11 @@ export component SectionCard inherits Rectangle {
 
         Rectangle {
             height: Aether.card-header-tall;
+
+            header-touch := TouchArea {
+                enabled: root.collapsible;
+                clicked => { root.expanded = !root.expanded; }
+            }
 
             HorizontalLayout {
                 spacing: Aether.space-sm;
@@ -393,6 +403,13 @@ export component SectionCard inherits Rectangle {
                         }
                     }
                 }
+
+                if root.collapsible: IconButton {
+                    icon: root.expanded ? AetherIcons.chevron-down : AetherIcons.chevron-right;
+                    accessible-label: root.expanded ? @tr("收起高级选项") : @tr("展开高级选项");
+                    cross-axis-self-alignment: center;
+                    clicked => { root.expanded = !root.expanded; }
+                }
             }
         }
 
@@ -401,9 +418,13 @@ export component SectionCard inherits Rectangle {
             background: Aether.outline-variant.with-alpha(0.5);
         }
 
-        Rectangle {
+        // A search always opens the card: hits inside a collapsed "advanced"
+        // group must still be reachable.
+        content := Rectangle {
             horizontal-stretch: 1;
             background: transparent;
+            visible: root.expanded || SettingsFilter.active;
+            height: self.visible ? self.preferred-height : 0px;
 
             VerticalLayout {
                 spacing: 0;

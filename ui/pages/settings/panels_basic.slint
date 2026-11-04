@@ -1,9 +1,9 @@
-// General, download and media settings panels.
-import { Switch, Slider, ComboBox, LineEdit, TextButton, IconButton } from "std-widgets.slint";
+// General and media settings panels.
+import { Switch, ComboBox, LineEdit } from "std-widgets.slint";
 import { Aether } from "../../theme.slint";
 import { AetherIcons } from "../../icons.slint";
-import { ProgressTrack, SectionCard, SettingRow } from "../../widgets.slint";
-import { ValueSlider } from "common.slint";
+import { SectionCard, SettingRow } from "../../widgets.slint";
+import { PresetCustomHint } from "common.slint";
 
 // ---------------------------------------------------------------------------
 // Panels. Each panel is a vertical stack of grouped M3 cards.
@@ -13,6 +13,8 @@ export component GeneralPanel inherits Rectangle {
     in property <string> download-dir: "";
     // Daemon-independent UI preference, mirrored from the window.
     in-out property <int> start-page-index: 0;
+    // Preset labels plus a display-only custom row for an out-of-preset value.
+    in property <[string]> start-page-model: [@tr("主页"), @tr("下载列表"), @tr("上次页面")];
     // Clipboard link watch: off by default, and honestly unavailable when
     // the session has no clipboard backend.
     in-out property <bool> clipboard-on: false;
@@ -40,13 +42,15 @@ export component GeneralPanel inherits Rectangle {
                 ComboBox {
                     // Display labels are translated; the value stays the
                     // canonical Chinese string the daemon-side mapping reads.
-                    model: [@tr("主页"), @tr("下载列表"), @tr("上次页面")];
+                    model: root.start-page-model;
                     current-index <=> root.start-page-index;
                     min-width: Aether.field-md;
                     max-width: Aether.field-md;
-                    selected => { root.changed("start-page", self.current-index == 1 ? "下载列表" : self.current-index == 2 ? "上次页面" : "主页"); }
+                    // The appended custom row only echoes a stored value.
+                    selected => { if (self.current-index < 3) { root.changed("start-page", self.current-index == 1 ? "下载列表" : self.current-index == 2 ? "上次页面" : "主页"); } }
                 }
             }
+            if root.start-page-index == 3: PresetCustomHint { }
 
             SettingRow {
                 id: "general-autostart";
@@ -115,122 +119,6 @@ export component GeneralPanel inherits Rectangle {
     }
 }
 
-export component DownloadPanel inherits Rectangle {
-    // UI-local preference, mirrored from the window.
-    in-out property <int> after-done-index: 0;
-    // Scheduler limits mirrored from the window (set from the daemon), so
-    // the page shows what runs instead of the widget defaults: 3 concurrent
-    // tasks, 4 connections per task, 5 retries, 2048 KB/s global cap.
-    in-out property <int> max-tasks-index: 0;
-    in-out property <int> max-connections-index: 1;
-    in-out property <int> retry-index: 2;
-    in-out property <bool> global-limit-on: true;
-    in-out property <float> download-limit-kb: 2048;
-    callback changed(string, string);
-
-    VerticalLayout {
-        width: 100%;
-        spacing: 16px;
-
-
-        SectionCard {
-            icon-source: AetherIcons.split;
-            title: @tr("并发与分段");
-            id: "download-concurrency";
-            subtitle: @tr("决定下载速度和服务器压力");
-
-            SettingRow {
-                id: "download-max-tasks";
-                icon-source: AetherIcons.layers;
-                title: @tr("同时进行的下载数");
-                description: @tr("超出后任务进入等待队列");
-                ComboBox {
-                    model: ["3", "5", "10", "16"];
-                    current-index <=> root.max-tasks-index;
-                    min-width: Aether.field-md;
-                    max-width: Aether.field-md;
-                    selected => { root.changed("max-tasks", self.current-value); }
-                }
-            }
-            SettingRow {
-                id: "download-connections";
-                icon-source: AetherIcons.signal;
-                title: @tr("每任务连接数");
-                description: @tr("HTTP(S) 单任务并行连接数，上限 16");
-                ComboBox {
-                    model: ["2", "4", "8", "16"];
-                    current-index <=> root.max-connections-index;
-                    min-width: Aether.field-md;
-                    max-width: Aether.field-md;
-                    selected => { root.changed("max-connections", self.current-value); }
-                }
-            }
-            SettingRow {
-                id: "download-retries";
-                icon-source: AetherIcons.refresh;
-                title: @tr("失败重试次数");
-                description: @tr("网络抖动或超时后自动重试");
-                divider: false;
-                ComboBox {
-                    model: [@tr("不重试"), "3", "5", "10"];
-                    current-index <=> root.retry-index;
-                    min-width: Aether.field-md;
-                    max-width: Aether.field-md;
-                    selected => { root.changed("retry-count", self.current-index == 0 ? "不重试" : self.current-value); }
-                }
-            }
-        }
-
-        SectionCard {
-            icon-source: AetherIcons.gauge;
-            title: @tr("带宽");
-            id: "download-bandwidth";
-            subtitle: @tr("全局限速与智能调度");
-
-            SettingRow {
-                id: "download-limit-toggle";
-                icon-source: AetherIcons.gauge;
-                title: @tr("启用全局限速");
-                description: @tr("限制所有任务的合计带宽");
-                Switch { checked <=> root.global-limit-on; toggled => { root.changed("global-limit", self.checked ? "true" : "false"); } }
-            }
-            ValueSlider {
-                id: "download-limit";
-                icon-source: AetherIcons.download;
-                label: @tr("下载限速");
-                value <=> root.download-limit-kb;
-                minimum: 0;
-                maximum: 10240;
-                suffix: " KB/s";
-                divider: false;
-                changed(v) => { root.changed("download-limit", v); }
-            }
-        }
-
-        SectionCard {
-            icon-source: AetherIcons.drive;
-            title: @tr("任务");
-            id: "download-after";
-            subtitle: @tr("完成动作");
-
-            SettingRow {
-                id: "download-after-done";
-                icon-source: AetherIcons.folder;
-                title: @tr("完成后动作");
-                description: @tr("任务下载完成后的默认行为");
-                divider: false;
-                ComboBox {
-                    model: [@tr("不操作"), @tr("打开所在文件夹"), @tr("打开文件")];
-                    current-index <=> root.after-done-index;
-                    min-width: Aether.field-md;
-                    max-width: Aether.field-md;
-                    selected => { root.changed("after-done", self.current-index == 1 ? "打开所在文件夹" : self.current-index == 2 ? "打开文件" : "不操作"); }
-                }
-            }
-        }
-    }
-}
-
 export component MediaPanel inherits Rectangle {
     // Daemon-backed ffmpeg path, shared by rtmp capture and the media
     // remux step; edits go out on `changed` (commit on Enter).
@@ -269,6 +157,10 @@ export component MediaPanel inherits Rectangle {
             title: "ffmpeg";
             id: "media-ffmpeg";
             subtitle: @tr("rtmp 直播录制与媒体转封装共用");
+            // The bundled binary is the recommended setup; a custom path is an
+            // exception, so keep the field out of the default view.
+            collapsible: true;
+            expanded: false;
 
             SettingRow {
                 id: "media-ffmpeg-path";

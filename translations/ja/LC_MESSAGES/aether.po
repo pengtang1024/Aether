@@ -201,9 +201,6 @@ msgstr "システムに従うか、Aether 用に個別設定"
 msgid "代理地址"
 msgstr "プロキシアドレス"
 
-msgid "支持 HTTP / SOCKS5；切到手动模式后生效"
-msgstr "HTTP / SOCKS5 に対応。手動モードに切り替えて有効"
-
 msgid "DNS 服务器"
 msgstr "DNS サーバー"
 
@@ -237,9 +234,6 @@ msgstr "接続"
 msgid "监听端口"
 msgstr "リスンポート"
 
-msgid "需要放行时在路由器中转发"
-msgstr "必要に応じてルーターで転送してください"
-
 msgid "通过分布式哈希表发现节点"
 msgstr "DHT でピアを発見"
 
@@ -248,9 +242,6 @@ msgstr "シード"
 
 msgid "上传限速"
 msgstr "アップロード速度制限"
-
-msgid "过滤与 Tracker"
-msgstr "フィルタとトラッカー"
 
 msgid "屏蔽列表路径"
 msgstr "ブロックリストのパス"
@@ -399,6 +390,9 @@ msgstr "アクセントカラー"
 msgid "品牌强调色，按钮、进度与高亮同步换色"
 msgstr "ブランドカラー。ボタン・進捗・ハイライトに反映"
 
+msgid "当前取值不在预设档位，按原样显示；选择其他档位才会写入"
+msgstr "現在の値はプリセット外のためそのまま表示しています。別のプリセットを選んだときだけ書き込まれます"
+
 msgid "界面"
 msgstr "インターフェース"
 
@@ -513,14 +507,8 @@ msgstr "システムまたは独自のネットワーク経由に"
 msgid "兼容性与请求行为"
 msgstr "互換性とリクエスト動作"
 
-msgid "端口与节点发现"
-msgstr "ポートとピア発見"
-
 msgid "上传带宽，0 为不限速"
 msgstr "アップロード帯域。0 は無制限"
-
-msgid "屏蔽规则与私有 Tracker"
-msgstr "ブロック規則とプライベートトラッカー"
 
 msgid "已实现的能力"
 msgstr "利用可能な機能"
@@ -1017,3 +1005,39 @@ msgstr "選択肢："
 
 msgid "已保存"
 msgstr "保存済み"
+
+msgid "高级网络选项"
+msgstr "高度なネットワーク設定"
+
+msgid "留空即用推荐值，通常无需修改"
+msgstr "空欄のまま推奨値を使用（通常は変更不要）"
+
+msgid "高级 BT 选项"
+msgstr "高度な BT 設定"
+
+msgid "端口转发、屏蔽规则与私有 Tracker"
+msgstr "ポート転送、ブロックリスト、プライベート Tracker"
+
+msgid "高级插件选项"
+msgstr "高度なプラグイン設定"
+
+msgid "来源策略、版本固定与手动安装"
+msgstr "取得元ポリシー、バージョン固定、手動インストール"
+
+msgid "收起高级选项"
+msgstr "詳細設定を折りたたむ"
+
+msgid "展开高级选项"
+msgstr "詳細設定を展開"
+
+msgid "支持 HTTP / SOCKS5；手动模式下生效"
+msgstr "HTTP / SOCKS5 に対応（手動モードで有効）"
+
+msgid "节点发现"
+msgstr "ピア探索"
+
+msgid "默认 127.0.0.1:6800；留空关闭；非回环地址必须设置令牌"
+msgstr "既定 127.0.0.1:6800。空欄で無効、ループバック以外はトークン必須"
+
+msgid "默认 51413；需要放行时在路由器中转发"
+msgstr "既定 51413。必要に応じてルーターでポート転送"

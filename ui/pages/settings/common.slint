@@ -4,6 +4,18 @@ import { Aether } from "../../theme.slint";
 import { AetherIcons } from "../../icons.slint";
 import { SettingsFilter } from "../../settings-filter.slint";
 
+// Shown under a preset dropdown when the stored value sits outside the
+// presets. The appended row only echoes that value, so the hint explains
+// why it is not written back until the user picks a real preset.
+export component PresetCustomHint inherits Text {
+    text: @tr("当前取值不在预设档位，按原样显示；选择其他档位才会写入");
+    color: Aether.on-surface-muted;
+    font-size: Aether.text-micro;
+    width: Aether.field-md;
+    horizontal-alignment: right;
+    wrap: word-wrap;
+}
+
 export component ValueSlider inherits Rectangle {
     in property <image> icon-source;
     // Search identity, same contract as SettingRow.
@@ -16,6 +28,9 @@ export component ValueSlider inherits Rectangle {
     in property <float> maximum: 100;
     in property <string> suffix: "";
     in property <bool> divider: true;
+    // A slider that governs an optional feature dims and stops accepting
+    // input while the switch controlling it is off.
+    in property <bool> enabled: true;
     callback changed(float);
     /// Fires once when the drag ends; daemon-backed limits commit here so a
     /// drag does not send one `set_settings` per pixel.
@@ -23,6 +38,7 @@ export component ValueSlider inherits Rectangle {
 
     height: SettingsFilter.shows-row(root.id) ? Aether.row-comfortable : 0px;
     visible: SettingsFilter.shows-row(root.id);
+    opacity: root.enabled ? 1 : 0.45;
 
     HorizontalLayout {
         spacing: Aether.space-sm;
@@ -54,6 +70,7 @@ export component ValueSlider inherits Rectangle {
 
         inner := Slider {
             horizontal-stretch: 1;
+            enabled: root.enabled;
             value <=> root.value;
             minimum: root.minimum;
             maximum: root.maximum;
@@ -159,6 +176,20 @@ export component EmptyHint inherits Rectangle {
             font-size: Aether.text-caption;
             horizontal-alignment: center;
         }
+    }
+}
+
+// Inline validation for the text fields that must stay free-form (paths,
+// addresses, credentials). Rust validates the committed value and fills this
+// in, so a rejected entry is explained next to its field instead of only
+// disappearing into a toast. `key` is the same string `settings-changed`
+// carries; an empty `message` means the field is valid.
+export global SettingsValidation {
+    in-out property <string> key: "";
+    in-out property <string> message: "";
+
+    public pure function error(field: string) -> string {
+        return root.key == field ? root.message : "";
     }
 }
 
