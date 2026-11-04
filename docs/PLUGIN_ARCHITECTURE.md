@@ -64,6 +64,12 @@ aether-plugin-http/
 └── LICENSE
 ```
 
+Linux 的 `media`/`rtmp` 包在 `bin/` 中额外带一份精简版 `ffmpeg`（由
+`scripts/build-ffmpeg.py` 从 ffmpeg.org 源码构建，GPL-2.0-or-later），随插件
+一起安装、升级和卸载。插件查找 ffmpeg 的顺序是：任务 `ffmpeg_path` 设置 →
+`AETHER_FFMPEG` → 插件 `bin/` 同目录的 `ffmpeg` → `PATH`。Windows/macOS
+暂不捆绑，仍使用系统 ffmpeg。
+
 `plugin.json` 示例：
 
 ```json
@@ -394,6 +400,8 @@ Host 的“插件”页面（Slint，2026-10-31 已接真）展示/执行：
 - macOS：`Aether.app/Contents/PlugIns/`；universal 插件二进制。
 - 每平台/架构构建插件二进制；CI 矩阵与 Host 相同（Linux x64/arm64、Windows x64/arm64、
   macOS universal）。
+- Linux 的 `media`/`rtmp` 包附带精简 ffmpeg（`bin/ffmpeg`，约 13MB）；因为它是
+  包内文件，签名/`files` 校验和安装/卸载天然覆盖它。Windows/macOS 暂不捆绑。
 - 插件独立版本；应用包可以带一组默认版本，用户可单独更新。
 - 第一方插件签名；更新通道与 Host 发布分离；失败可回滚上一版。
 - 可选插件（SFTP/WebDAV/S3、ED2K、thunder、IPFS、RTMP、yt-dlp）以独立签名包分发，
@@ -457,7 +465,7 @@ Host 的“插件”页面（Slint，2026-10-31 已接真）展示/执行：
 
 ## 19. 当前状态
 
-**v0.6.1 已发布：17 个第一方插件（16 个下载引擎 + aria2 服务），插件设置、特性标签与任务抽屉全部由 manifest schema 驱动。**
+**v0.6.2 已发布（tag v0.6.2，2026-11-04）：17 个第一方插件（16 个下载引擎 + aria2 服务），插件设置、特性标签与任务抽屉全部由 manifest schema 驱动。**
 
 - `crates/aether-plugin-sdk`：manifest、MessagePack IPC、协议类型、插件 runner、Host 侧 supervisor。
 - `crates/aether-plugin-fake`：fake 插件 + 真实进程契约测试（握手、Probe、Start、Progress、Completed、id 不匹配拒绝）。

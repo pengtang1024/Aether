@@ -1,11 +1,14 @@
 # 路线图与会话交接
 
 > 面向后续会话/贡献者：现在在哪、下一步做什么、怎么做、别踩哪些坑。
-> 最后更新：2026-11-03（main @ 0.6.1 发布提交，0.6.1 已发布）。历史盲区清单见 `GAP_AUDIT.md`，
+> 最后更新：2026-11-04（main @ 0.6.2 发布提交；0.6.2 已发布）。历史盲区清单见 `GAP_AUDIT.md`，
 > 本文跟踪其中已完成的部分与剩余特性的具体方案。
 
 ## 1. 当前状态
 
+- **0.6.2 已发布**（tag v0.6.2，2026-11-04）：托盘图标改用全出血字形、应用更新下载进度条、
+  插件更新/安装进度（`stats.plugin_progress`）、插件配置对话框改为两列 SettingRow 布局、
+  `media`/`rtmp` 插件包内置 ffmpeg 9.0.2、全局限速改为按任务均分、aria2 兼容性修复。
 - **0.6.1 已发布**（tag v0.6.1，2026-11-03）：自动更新默认开启（内置 release 清单地址
   与公钥）、清单新增 `packages` 让 deb 安装下载安装包并提示 `dpkg -i`、更新状态不再把
   “只下载未安装”谎报为 `ready`（新增 `package`）、第二实例以 0 退出止住 systemd 重启风暴。
@@ -232,7 +235,12 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
     半写输出被清理。容器名做了白名单校验（≤8 字符字母数字），不进 shell。
   - daemon settings 新增全局 `ffmpeg_path`（KEYS 第 21 键）：`add` 时注入
     任务 settings（`entry().or_insert`——任务自带的不被覆盖），rtmp 与
-    media 共用同一语义（task.settings.ffmpeg_path > AETHER_FFMPEG > PATH）。
+    media 共用同一语义（task.settings.ffmpeg_path > AETHER_FFMPEG >
+    插件同目录的 ffmpeg > PATH）。
+  - Linux 的 `media`/`rtmp` 包各带一份精简 ffmpeg（`bin/ffmpeg`，约 13MB，
+    `scripts/build-ffmpeg.py` 用 ffmpeg 9.0.2 源码构建，GPL-2.0-or-later）：
+    安装插件即得到可用的转封装/录制，不需要系统 ffmpeg。Windows/macOS 暂不
+    捆绑，仍回退到 PATH。
   - UI 媒体页：ffmpeg 路径行（回车提交，提示「对之后开始的任务生效」），
     HLS/DASH 描述更新为已支持转封装。
   - 验收：`tests/transcode_e2e.rs` 假 ffmpeg e2e（4 用例：argv 断言

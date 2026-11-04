@@ -87,8 +87,8 @@ Windows / macOS 使用对应平台目录）；应用还会在跟随系统模式�
 ### 任务详情
 
 任务行点击后打开紧凑的 icon inspector：文件 glyph、状态点、进度线、操作图标、三枚指标
-图标、无标签速度图、分片网格和信息图标。标签与数值都在悬停提示里，日志与 BT 节点列表
-不属于当前界面范围。
+图标、无标签速度图、分片网格和信息图标。操作与信息图标用悬停提示说明，底部指标行保留
+「速度 / 剩余时间 / 大小」等文字标签；日志与 BT 节点列表属于插件 schema 的可选段落。
 
 ![任务详情](docs/screenshots/drawer.png)
 
@@ -141,6 +141,59 @@ AETHER_THEME=light ./scripts/shot.sh /tmp/light.png
 
 依赖 `Xvfb` 与 ImageMagick 的 `import`；若安装了 `xdotool`，脚本会先把指针移出内容区，
 避免截到悬停/焦点态。窗口默认 900×600，可在 900×560 以上自由缩放；脚本默认画布与窗口一致。
+
+#### 文档截图基线
+
+`docs/screenshots/` 下的 9 张图统一按下面这套固定条件生成，便于以后复现或做像素 diff：
+
+| 条件 | 取值 |
+| --- | --- |
+| 画布 | Xvfb 900×600，不带窗口装饰（`shot.sh` 默认） |
+| 隔离配置 | `XDG_CONFIG_HOME=/tmp/aether-shots/config`（不读写用户真实配置） |
+| 数据源 | `AETHER_SOCKET=/tmp/aether-shots/daemon.sock` 指向独立的 demo daemon，下载目录 `/tmp/aether-shots/downloads` |
+| 示例数据 | 8 条任务：2 条下载中（2 GB，分别 8 / 4 连接）、4 条已完成（18 MB / 6 GB / 320 MB / 1.4 GB）、1 条暂停、1 条失败 |
+| 主题 | 深色（默认）；`home-light` / `settings-light` 用 `AETHER_THEME=light` |
+| 版本 | 页脚 / 系统卡读取构建产物 `CARGO_PKG_VERSION`，本轮为 0.6.2 |
+| 等待 | 8–10 秒，等首个快照、统计与插件更新检查完成后再抓图 |
+
+demo daemon 使用构建产物的插件目录，并以空 `AETHER_UPDATE_URL` 关闭联网更新检查、
+用独立 `AETHER_RPC_LISTEN` 端口避免与本机常驻 daemon 冲突。各张图的视图参数：
+
+| 文件 | 环境变量 |
+| --- | --- |
+| `home.png` | 无（默认主页），`AETHER_THEME=dark` |
+| `downloads.png` | `AETHER_VIEW=downloads` |
+| `settings.png` | `AETHER_VIEW=settings` |
+| `settings-light.png` | `AETHER_VIEW=settings AETHER_THEME=light` |
+| `plugins.png` | `AETHER_VIEW=settings AETHER_SETTINGS_TAB=5` |
+| `settings-theme.png` | `AETHER_VIEW=settings AETHER_SETTINGS_TAB=7` |
+| `home-light.png` | `AETHER_THEME=light` |
+| `dialog.png` | `AETHER_VIEW=dialog` |
+| `drawer.png` | `AETHER_VIEW=drawer`（自动选中一条下载中的任务） |
+
+`AETHER_VIEW=drawer` 会在启动后短暂等待首个快照，再打开下载中任务的详情抽屉；
+不设置 `AETHER_VIEW` 时仍是普通主页启动。下载页与新建/详情浮层没有页脚，版本以
+主页「系统与会话」卡与设置页左栏页脚为准。
+
+整套基线可以用一条命令重放：
+
+```bash
+cargo build --workspace
+./scripts/capture-docs-screenshots.sh
+```
+
+[capture-docs-screenshots.sh](scripts/capture-docs-screenshots.sh) 会起私有 Xvfb `:97`、
+限速 HTTP 源（[shot-fixture.py](scripts/shot-fixture.py) `serve`，64 KiB / 100 ms / 连接）、
+隔离 demo daemon，并用 [shot-fixture.py](scripts/shot-fixture.py) `seed` 写入 6 条历史任务，
+再经 CLI 添加 2 条运行任务（8 / 4 连接），最后逐张等待 8–10 秒抓图。插件目录优先取
+`AETHER_SHOT_PLUGINS`，其次系统包 `/usr/lib/aether/plugins`、`build/plugins`，都没有时
+从构建产物暂存（首次会编译随包 ffmpeg）。`AETHER_SHOT_KEEP=1` 保留 `/tmp/aether-shots`
+便于排查，默认退出即清理。
+
+纳入 CI 的成本：一个 job 需要 Xvfb、Slint 软件渲染、上述构建与插件暂存，单轮约
+90–120 秒；产物是像素级 PNG，字体会随发行版/光栅化版本漂移，首次 ffmpeg 编译还依赖
+网络缓存。结论是**不放进每个 PR 的必备门禁**，更适合 nightly 或 `workflow_dispatch`
+手动触发；若要在 PR 上跑，只比较画布尺寸与关键区域，而不是整图哈希。
 
 ### 打包与安装
 
@@ -373,7 +426,8 @@ Esc 关闭；下载空状态提供“清除筛选条件”，一次恢复全部�
 - 没有机制支撑的假控件已从界面移除或改为能力说明卡：密度/缩放/紧凑列表、
   HTTP/2 开关、镜像加速、低速断开、连接总数、BT 的加密/PEX/LSD/做种比例
   （librqbit 不支持）、媒体转码与浏览器接管
-- 详情面板按图标设计，标签在悬停提示里；不展示真实分段图与 BT 节点
+- 详情面板以图标操作为主，操作与信息图标用悬停提示；指标行保留文字标签，
+  不展示真实分段图与 BT 节点
 - 系统托盘（Linux StatusNotifier、Windows 通知区域、macOS 菜单栏）统一由
   Slint `SystemTrayIcon` 提供；Linux 仍要求 StatusNotifier 宿主（GNOME 需
   AppIndicator 扩展），macOS 菜单栏行为 CI 仅编译、运行时待真机验证。
