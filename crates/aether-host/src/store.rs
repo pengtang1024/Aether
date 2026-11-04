@@ -406,6 +406,28 @@ impl TaskStore {
         Ok(tasks)
     }
 
+    /// Bytes still owed by queued/paused tasks, grouped by the stored target
+    /// directory (`None` = the daemon's download dir). One SQL aggregate
+    /// instead of loading every task row: the add path used to parse the
+    /// settings JSON of up to 10k rows on every request.
+    pub fn reserved_by_target(&self) -> Result<Vec<(Option<String>, u64)>, StoreError> {
+        let mut statement = self.connection.prepare(
+            "SELECT target_dir, COALESCE(SUM(total), 0) FROM tasks
+             WHERE state IN ('queued', 'paused') GROUP BY target_dir",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, Option<String>>(0)?,
+                row.get::<_, i64>(1)? as u64,
+            ))
+        })?;
+        let mut groups = Vec::new();
+        for row in rows {
+            groups.push(row?);
+        }
+        Ok(groups)
+    }
+
     /// One row per state: `(task count, aggregate speed)`.
     pub fn summary(&self) -> Result<std::collections::HashMap<String, (u64, u64)>, StoreError> {
         let mut statement = self.connection.prepare(

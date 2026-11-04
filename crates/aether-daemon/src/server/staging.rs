@@ -127,15 +127,12 @@ pub(crate) fn reserved_in(state: &State, dir: &Path) -> u64 {
         .filter(|task| destination_dir(state, task.target_dir.as_deref()) == dir)
         .map(|task| task.total.unwrap_or(0).saturating_sub(task.downloaded))
         .sum();
-    if let Ok(tasks) = state.store.list_tasks_with_files(10_000, false) {
+    if let Ok(groups) = state.store.reserved_by_target() {
         reserved = reserved.saturating_add(
-            tasks
+            groups
                 .into_iter()
-                .filter(|task| {
-                    matches!(task.state, TaskState::Queued | TaskState::Paused)
-                        && destination_dir(state, task.target_dir.as_deref()) == dir
-                })
-                .map(|task| task.total.unwrap_or(0))
+                .filter(|(target, _)| destination_dir(state, target.as_deref()) == dir)
+                .map(|(_, bytes)| bytes)
                 .sum::<u64>(),
         );
     }
@@ -150,14 +147,8 @@ pub(crate) fn reserved_staging(state: &State) -> u64 {
         .filter_map(|task_id| state.store.task(task_id).ok().flatten())
         .map(|task| task.total.unwrap_or(0).saturating_sub(task.downloaded))
         .sum();
-    if let Ok(tasks) = state.store.list_tasks_with_files(10_000, false) {
-        reserved = reserved.saturating_add(
-            tasks
-                .into_iter()
-                .filter(|task| matches!(task.state, TaskState::Queued | TaskState::Paused))
-                .map(|task| task.total.unwrap_or(0))
-                .sum::<u64>(),
-        );
+    if let Ok(groups) = state.store.reserved_by_target() {
+        reserved = reserved.saturating_add(groups.into_iter().map(|(_, bytes)| bytes).sum::<u64>());
     }
     reserved
 }
