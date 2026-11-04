@@ -30,7 +30,7 @@
 | `1c1e8dd` | 默认请求头（HTTP 族）、FTP 主动模式、BT 端口/DHT/上传限速/屏蔽列表/Tracker → 插件引擎 |
 | `4710e01` | 计划下载窗口（daemon 调度器，支持跨午夜）+ 完成/失败桌面通知 |
 | `4f9493a` | Windows：named pipe transport（无新依赖），daemon/UI/CLI/native-host 全部跨平台，CI Windows job 跑回环测试 |
-| `1353da9` | RPC over TCP：`rpc_listen`/`rpc_secret` settings + `--rpc-listen`，token 鉴权（常数时间，热轮换），CLI `--socket ip:port`，`tests/rpc.rs` 6 用例 |
+| `1353da9` | RPC over TCP：`rpc_listen`/`rpc_secret` settings + `--rpc-listen`，token 鉴权（常数时间，热轮换），CLI `--socket ip:port`，`crates/aether-daemon/tests/rpc.rs` 6 用例 |
 | `cb3ef23` | 浏览器接管：Cookie 显式授权（optional permission）、站点过滤、Windows manifest 安装（注册表）、native-host 透传测试 |
 | `f8aefa0` | 媒体转码：`transcode_to` 任务级容器转封装（ffmpeg `-c copy`，失败保留原件）、全局 `ffmpeg_path` 注入、媒体页路径行、假 ffmpeg e2e |
 | `4c84ac2` | 剪贴板链接检测：arboard 轮询（默认关、变化触发、scheme 白名单）、toast 动作按钮 → 新建对话框预填、设置页开关；托盘/i18n 仍待做 |
@@ -64,13 +64,15 @@
 ## 2. 架构速查（新会话必读）
 
 ```text
-UI (src/backend.rs 后台线程 + src/main.rs)
+UI (src/main.rs 入口 → src/app.rs；daemon 桥 src/backend.rs；行刷新 src/rows/；
+    定时器/可见性 src/wiring/clock.rs)
   │  JSON lines over unix socket（契约：docs/UI_INTEGRATION.md）
   ▼
-daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
+daemon (crates/aether-daemon/src/server.rs 门面 + server/{run,requests,scheduler,
+    plugins,transport,state,tasks,…}，单线程拥有 State)
   │  HostCommand::Init / Start / Pause…（docs/PLUGIN_ABI.md）
   ▼
-插件进程（16 个第一方，SDK：crates/aether-plugin-sdk）
+插件进程（16 个第一方下载插件 + 1 个 aria2 兼容服务插件，SDK：crates/aether-plugin-sdk）
 ```
 
 配置有四条通道，别混用：
@@ -87,10 +89,11 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
 3. **TaskSpec.settings**（任务级，随 add 下发）：
    `headers/referrer/cookies/user_agent/max_speed_bps/checksum/initial_peers/…`，
    任务级同名键优先于全局。
-4. **UI 本地偏好**（`~/.config/aether/ui.json`，`src/main.rs` 的 `UiPrefs`）：
+4. **UI 本地偏好**（`~/.config/aether/ui.json`，`src/prefs.rs` 的 `UiPrefs`）：
    主色/动效/流线/启动页/完成后动作/通知开关——无 daemon 对应物。
 
-调度入口在 `server.rs`：`try_launch` 门控（max_concurrent、全局限速按
+调度入口在 `server/scheduler/`（`limits` / `retry` / `window`）与 `server/tasks.rs`：
+`try_launch` 门控（max_concurrent、全局限速按
 `active+1` 均摊、`schedule_in_window`），`tick_schedule` 每 15s 强制计划窗口
 （`schedule_paused` 集合只恢复调度器自己暂停的任务）。
 
@@ -145,9 +148,9 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
 - **已落地（2026-10-29，main CI 全绿）**：`crates/aether-daemon/src/transport.rs`
   抽象了「JSON lines 双向流」——Unix 走 socket 文件（0600），Windows 直接 FFI
   kernel32 实现 named pipe（`\\.\pipe\aether-<user>`，默认 DACL 限同用户，
-  无新增依赖）；`server.rs/client.rs` 与 UI `src/backend.rs`、CLI
+  无新增依赖）；`server/`、`client.rs` 与 UI `src/backend.rs`、CLI
   remote/import、native-host 的 `#[cfg(unix)]` 门全部移除，Windows 有真实
-  后端；`tests/transport.rs` 回环测试在 CI Windows job 实机通过。
+  后端；`crates/aether-daemon/tests/transport.rs` 回环测试在 CI Windows job 实机通过。
 - **剩余两项已落地（2026-10-30，`1d75cd5` CI 三平台全绿）**：
   - **Windows 桌面通知**：`send_notification` 接 notify-rust（4.x，MIT/Apache；
     Windows 后端 tauri-winrt-notification 同许可，unix/mac 后端依赖仅进
@@ -191,7 +194,7 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
   - CLI：`aether-cli remote … --socket ip:port [--token …]`（token 也可用
     `AETHER_RPC_TOKEN`）走 RPC；`Client::connect_rpc(addr, token)` 是客户端
     入口。
-  - 验收：`tests/rpc.rs` 6 个用例（正确 token 通/错 token 拒/无 auth 拒/
+  - 验收：`crates/aether-daemon/tests/rpc.rs` 6 个用例（正确 token 通/错 token 拒/无 auth 拒/
     authed 会话含 subscribe+shutdown/非 loopback 无 secret 拒启/token 轮换），
     CI Windows job 与 transport 回环一起实跑。
   - **aria2 兼容（2026-10-31）**：新增 `kind: "service"` 插件（`aria2`），与原生
@@ -200,7 +203,7 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
     覆盖常用方法与 `system.multicall`，`addTorrent`/`addMetalink` 经 daemon 的
     `/aria2-blobs/` 持久化路由交给 BT/HTTP 插件；`ws://` 支持调用与 `aria2.onDownload*` 通知；
     `changeOption` 的 `max-download-limit` 支持 HTTP 实时/排队限速（BT 拒绝），
-    `changePosition` 通过显式队列重排实现。`tests/aria2.rs` 实测
+    `changePosition` 通过显式队列重排实现。`crates/aether-daemon/tests/aria2.rs` 实测
     HTTP 与原生协议同端口共存、启停服务插件即时生效。
 - **明确不做**：TLS——文档写明「仅限可信网络或 SSH 隧道」。
 
@@ -243,7 +246,7 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
     捆绑，仍回退到 PATH。
   - UI 媒体页：ffmpeg 路径行（回车提交，提示「对之后开始的任务生效」），
     HLS/DASH 描述更新为已支持转封装。
-  - 验收：`tests/transcode_e2e.rs` 假 ffmpeg e2e（4 用例：argv 断言
+  - 验收：`crates/aether-plugin-media/tests/transcode_e2e.rs` 假 ffmpeg e2e（4 用例：argv 断言
     `-c copy`/`-progress pipe:1`/真实路径、退出 0 换名删原件、退出 1 保留
     原件且 note 含 stderr、缺失二进制保留原件、无 `transcode_to` 不碰文件）
     + daemon e2e 注入/覆盖用例 + 容器名校止单测。
@@ -299,13 +302,14 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
   （约 1.4k 行协议代码）。Linux 保留 watcher 探测决定「关闭=隐藏还是退出」，
   `org.aether.UI` / 命名事件唤起保留；macOS 运行时待真机验证（CI 仅 check）。
 - **Windows 托盘已落地（2026-10-30）**：
-  - `src/tray.rs` 重构为平台分发器（Linux 实现原样挪进 `src/tray_sni.rs`，
-    一行逻辑没动）；Windows 走 `src/tray_windows.rs`——**零依赖 raw FFI**
-    （shell32/user32/kernel32，与 transport.rs 同哲学）：message-only 窗口
+  - `src/tray.rs` 重构为平台分发器（Linux 实现原样挪进独立的 `tray_sni`
+    模块，一行逻辑没动）；Windows 走独立的 `tray_windows` 模块——**零依赖
+    raw FFI**（shell32/user32/kernel32，与 transport.rs 同哲学）：message-only 窗口
     （HWND_MESSAGE，不显示不绘制）+ `Shell_NotifyIconW` + WM_APP+1 v0 回调
     （左键/双击→唤起、右键→显示主窗口/退出 菜单，SetForegroundWindow+WM_NULL
     处理菜单吞首击的经典坑）；图标取 exe 旁 `logo.ico`（Inno 打包本就放置），
-    加载失败回退 IDI_APPLICATION（诚实降级，不装死）。
+    加载失败回退 IDI_APPLICATION（诚实降级，不装死）。这两个平台模块已在
+    2026-11-02 随 Slint `system-tray` 统一删除（见下一条）。
   - `Hooks{on_show,on_quit}` 解耦 Slint：dispatcher 从 `Weak<AppWindow>` 适配，
     测试用 no-op 起图标，无需窗口/显示环境。`zbus` 移入
     `[target.'cfg(unix)'.dependencies]`——Windows 构建不再编译 zbus。
@@ -554,8 +558,8 @@ daemon (crates/aether-daemon/src/server.rs，单线程拥有 State)
   - 高级页新增「远程控制（RPC）」：监听地址、访问令牌、随机/清除令牌、应用
     与状态行；默认回环地址和自动令牌会回显，地址重启 daemon 后 bind，令牌热
     轮换。实测 TCP + token 的 `remote stats` 通过，缺失/错误令牌被拒。
-- **测试**：`tests/rpc.rs` 覆盖无源 `update_check=disabled`、
-  `app_auto_update` 往返/持久化/坏类型拒绝；`src/main.rs` 覆盖
+- **测试**：`crates/aether-daemon/tests/rpc.rs` 覆盖无源 `update_check=disabled`、
+  `app_auto_update` 往返/持久化/坏类型拒绝；`src/update_status.rs` 覆盖
   `update_status_text` 全状态分支；三条新 @tr 文案补齐 en/ja/zh-TW。
 - **不变边界**：签名/公证、商店上架、云盘 OAuth、屏幕阅读器真机、
   macOS `.app` 实跑需要外部账号或硬件，设置页不提供假开关。

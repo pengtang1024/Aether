@@ -266,7 +266,9 @@ fn create_staging_root(state, task_id, final_dir) -> Result<PathBuf, DaemonError
 
 ### 5.3 Soak / 故障注入
 
-新增 `crates/aether-daemon/tests/soak.rs`（`#[ignore]`，nightly）：
+新增 soak 用例（`#[ignore]`，nightly）：实际落在
+`crates/aether-daemon/tests/aria2.rs` 的 `soak_http_clients`（时长由
+`AETHER_SOAK_SECS` 控制）：
 
 - 10 个 WS 客户端，每秒 `tellActive`；
 - 1 条 HTTP keep-alive 连接，每秒 `getGlobalStat`；

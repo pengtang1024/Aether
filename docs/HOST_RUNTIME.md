@@ -13,7 +13,8 @@
 | `aether-plugin-sdk` | manifest、IPC、协议类型、进程 supervisor |
 
 `aether-host` 是纯 Rust 库，不依赖 Slint；GUI 接线时直接复用，不需要把插件逻辑写进
-`src/main.rs`。
+UI 层（入口 `src/main.rs` → `src/app.rs`，daemon 桥 `src/backend.rs`，行刷新
+`src/rows/`，定时器与可见性 `src/wiring/clock.rs`）。
 
 ## 2. 插件目录
 

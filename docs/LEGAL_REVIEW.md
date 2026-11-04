@@ -217,7 +217,7 @@ sign-off（`git commit -s`），并说明第三方代码/依赖的许可登记�
 | `scripts/check-license-bundles.py` | 产物门禁要求全部许可文本 |
 | `deny.toml` | 允许 MPL-2.0、补 Slint 例外 |
 | `THIRD_PARTY_NOTICES.md` | 许可文本索引、MPL 说明、依赖清单说明 |
-| `docs/releases/0.2.1|0.2.2|0.3.0.md` | 补 “Made with Slint” 署名 |
+| `docs/releases/0.2.1.md`、`0.2.2.md`、`0.3.0.md` | 补 “Made with Slint” 署名 |
 | `packaging/debian/control.in` | “sandboxed” → “process-isolated” |
 | `docs/LEGAL_NOTICES.md`（新增） | 内容/BT/外部工具/云盘/商标/出口/责任提示 |
 | `browser-extension/PRIVACY.md`（新增） | AMO/Chrome 隐私政策与 Limited Use |

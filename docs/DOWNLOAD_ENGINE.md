@@ -4,7 +4,9 @@
 > 项目形态是 **管理面板（Host）+ 第一方协议插件**；Host/Plugin 契约、IPC、清单、
 > 权限、生命周期与打包见 [PLUGIN_ARCHITECTURE.md](PLUGIN_ARCHITECTURE.md)。
 > 本文第 5–8 节描述的是**协议插件内部**的实现细节，Host 不包含协议代码。
-> 当前 `src/engine.rs` 仍只是模拟器，按本文的 Phase 路线逐层替换。
+> 当前下载引擎已不在 UI 进程中：协议实现在各插件 crate（`crates/aether-plugin-*`），
+> 调度、落盘与校验在 daemon（`crates/aether-daemon/src/server/tasks.rs`、
+> `server/staging.rs`）。本文第 5–8 节描述的是这些插件/引擎的目标设计。
 
 ## 0. 当前支持状态（先看这里）
 

@@ -1,7 +1,11 @@
 # Windows 托盘（4.5 扩展）设计定稿
 
+> 状态：历史设计记录。该方案已于 2026-11-02 被 Slint `system-tray` 取代，
+> 下文提到的 `tray_windows` / `tray_sni` 平台模块均已删除（现行实现见 `src/tray.rs`
+> 与 `ui/tray.slint`）。
+
 - 与 transport.rs 同哲学：**零依赖 raw FFI**（shell32/user32/kernel32）。
-- `src/tray_windows.rs`：`start(Hooks{on_show,on_quit}) -> Option<()>`
+- Windows 平台模块：`start(Hooks{on_show,on_quit}) -> Option<()>`
   - 注册窗口类 + message-only 窗口（HWND_MESSAGE）
   - `Shell_NotifyIconW(NIM_ADD)`，`cbSize = size_of(NotifyIconDataW)`（#[repr(C)] 现代结构 976B/x64，手算对齐）
   - uCallbackMessage = WM_APP+1；v0 事件：LOWORD(lParam) WM_LBUTTONUP→show、
@@ -17,8 +21,8 @@
 ## 实施结果（2026-10-30）
 
 - 文件布局与计划的一处偏差：`src/tray.rs` 不是「给现有文件加 cfg」而是
-  重构为**薄分发器**，Linux 实现整体挪到 `src/tray_sni.rs`（`git mv`，
-  逻辑零改动）——避免在同一文件里给 15 个 item 逐个打 cfg。
+  重构为**薄分发器**，Linux 实现整体挪到独立的 `tray_sni` 模块（`git mv`，
+  逻辑零改动；该模块后已删除）——避免在同一文件里给 15 个 item 逐个打 cfg。
 - 按计划完成：Hooks 解耦、message-only 窗口、NotifyIconData 976B 手算
   对齐（测试钉 size+offset）、v0 回调、菜单（含 SetForegroundWindow+WM_NULL
   坑）、logo.ico→IDI_APPLICATION 回退、zbus 移 unix-only、CI 加

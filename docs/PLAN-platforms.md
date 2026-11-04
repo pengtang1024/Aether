@@ -209,8 +209,8 @@
 
 - **决策**：选 A。`slint` 开启 `system-tray`，新增 `ui/tray.slint`
   （`inherits SystemTrayIcon` + `Menu`），`src/tray.rs` 只保留窗口唤起、
-  宿主探测与二次启动端点；删除 `src/tray_sni.rs` 与 `src/tray_windows.rs`
-  （约 1.4k 行自研协议）。
+  宿主探测与二次启动端点；删除此前拆出的 `tray_sni` / `tray_windows`
+  两个平台模块（约 1.4k 行自研协议，已不存在）。
 - **Linux 实测（Ubuntu GNOME + AppIndicator，真实 session bus）**：
   ksni 注册 `org.kde.StatusNotifierItem-<pid>-1`；`GetLayout` 返回
   显示主窗口/退出；`Event(clicked)` 触发显示与退出；`--silent` 下无窗口

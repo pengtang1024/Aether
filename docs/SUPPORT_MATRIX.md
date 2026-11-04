@@ -28,7 +28,7 @@
 | WebDAV | webdav | Optional | **已实现** | webdav(s) 方案、Basic Auth、Range；PROPFIND Depth:0 取大小/ETag（403/405 回退 HEAD）；PUT/锁待补 |
 | S3 / 兼容对象存储 | s3 | Optional | **已实现** | SigV4 GET/HEAD、并发 Range 分片（1–8 连接）、续传；自定义 CA/分片上传待补 |
 | Metalink | metalink | Optional | **已实现（HTTP 内置）** | v3/v4、优先级选源、SHA-256 |
-| BitTorrent v1 / hybrid | bt | Optional（随包懒启动） | **已实现（基础）** | librqbit、magnet/.torrent、initial peers、多文件选择与完成后做种；DHT 压测待补 |
+| BitTorrent v1 / hybrid | bt | Optional（随包懒启动） | **已实现（基础）** | librqbit、magnet/.torrent、initial peers、多文件选择与完成后做种；**BT web seed（BEP 17/19）不支持**（上游未实现，遇到 webseed 只走 peer）；私有 PT tracker 不承诺（见 7.6）；DHT 压测待补 |
 | BitTorrent v2 / pure v2 | bt | Optional | P3 待验证 | 依赖 BT 内核能力；不支持则明确报错 |
 | WebTorrent / WebRTC | — | Not planned | — | 浏览器 P2P 不在核心 |
 | ED2K / Kad | ed2k | Optional | P5+（未实现） | 需要 eDonkey 内核；当前不做 |
@@ -53,7 +53,7 @@
 | YouTube/Bilibili 等站点 | extractor | External | **已实现插件** | yt-dlp 子进程；站点覆盖取决于 yt-dlp，不保证 |
 | Google Drive / OneDrive / Dropbox | gdrive / onedrive / dropbox | Optional | **已实现** | 公开链接转直链；私有文件支持现成 access_token 或 OAuth2 refresh_token（用户自建应用，插件不内置 client_id）；Dropbox 临时直链过期后需重开任务 |
 | 百度网盘 / 阿里云盘等 | baidupan / aliyunpan | Optional | **官方 API 基础** | 文件 ID + access_token；共享链接 OAuth 待补；不做绕过 |
-| 浏览器正在下载的文件 | browser-extension | Optional | P5 | 扩展 + Native Messaging；用户显式授权 |
+| 浏览器正在下载的文件 | browser-extension | Optional | P5 | 扩展 + Native Messaging；用户显式授权；**尚未上架任何扩展商店**，当前只能本地侧载 |
 | RSS / 自动追番 | Host 功能 | Optional | P5 | 后续 Host 功能，不是协议插件 |
 | 剪贴板监听 | Host 功能 | Optional | P5 | 平台集成层，默认关闭 |
 | 批量 URL 导入 | Host 功能 | 未实现 | 不属于协议插件 |
@@ -83,8 +83,8 @@
 
 | 平台/形态 | 状态 |
 | --- | --- |
-| Linux x86_64 | **第一优先**；打包已通，插件待实现；托盘走 Slint/ksni（SNI），仍要求宿主（GNOME 需 AppIndicator） |
-| Linux arm64 | **第一优先**；打包已通，插件待实现 |
+| Linux x86_64 | **第一优先**；`.deb` 打包与第一方插件均已交付；托盘走 Slint/ksni（SNI），仍要求宿主（GNOME 需 AppIndicator） |
+| Linux arm64 | **第一优先**；打包已通，插件二进制随包交付 |
 | Windows x86_64 | 次优先；打包已通，未签名；托盘走 Slint（Shell_NotifyIcon） |
 | Windows arm64 | 次优先；打包已通，未签名 |
 | macOS universal | 次优先；打包已通，adhoc 未公证；托盘已接入（Slint AppKit），菜单栏/关闭到托盘运行时待真机验证（CI 仅 check） |
@@ -144,6 +144,17 @@
 7. 网盘插件（P6，最后）
 
 > 签名/公证不在交付顺序里；Linux 优先，Windows/macOS 保持可构建、未签名/adhoc。
+
+## 7.6 已实现但受上游/外部条件限制
+
+这些能力**不要**按“已完整支持”宣传：
+
+| 能力 | 现状 | 边界 |
+| --- | --- | --- |
+| BT web seed（BEP 17/19） | 上游 librqbit 未实现 | `.torrent`/magnet 中声明的 web seed 被忽略，只从 peer 取数据；aria2 `addTorrent` 的 web seed 列表同样忽略 |
+| PT 私有 tracker | 无法验证 | 需要站点 passkey/账号，且多数 PT 站点禁止第三方客户端；不承诺连接、做种或通过考核，失败按普通 tracker 错误处理 |
+| 浏览器扩展 | 未上架 | Chrome/Edge/Firefox 商店均无发布，只能本地侧载（`scripts/build-extension.sh` + Native Messaging）；不承诺商店安装体验 |
+| BitTorrent v2 / pure v2 | 待验证 | 依赖 librqbit 能力；不支持时明确报错，不静默降级为 v1 |
 
 ## 8. 如何判断“支持”
 

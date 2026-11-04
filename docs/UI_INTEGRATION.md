@@ -210,8 +210,8 @@ let resolved = client.resolve_proxy("https://example.com/file.zip")?;
 
 1. UI 启动创建 `Client`，读取 `list_tasks` 填充列表。
 2. 新建/暂停/恢复/删除改为调用 daemon。
-3. 订阅事件替换 `src/engine.rs` 的模拟进度。
-4. 保留 `engine.rs` 作为离线演示 fallback，或删除。
+3. 订阅事件替换原模拟引擎的进度推送。
+4. 模拟引擎已删除：daemon 是唯一数据源，daemon 不可用时界面明确提示。
 5. 打包时确保 `aether-daemon` + 插件目录存在。
 
 ## 8. stats（仪表盘统计）

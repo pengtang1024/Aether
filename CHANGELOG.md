@@ -29,6 +29,20 @@ versioning; 0.x releases may still change structure.
 
 ### Changed
 
+- The window does no UI work while it is hidden or minimized: the 5 Hz clock
+  stops, the daemon poller parks on its command channel (no polling, no
+  voluntary context switches), and showing the window again paints the last
+  snapshot immediately instead of waiting for the next interval. In the same
+  fixture the visible CPU cost fell from 8.85–10.15% to 2.60–3.55% and the
+  hidden cost from 1.24% to 0.00%.
+- The 5 Hz tick skips its repaint when the snapshot, statistics and uptime
+  minute are unchanged, and samples the 28 s ambient drift at 1 Hz (≤0.22 px
+  per step) instead of 5 Hz, so an idle window repaints once a second rather
+  than five times.
+- A task's own `connections` (1..=16, HTTP(S) only) now overrides the global
+  default; values outside the range or non-integers are rejected when the task
+  is added instead of being ignored, and the scheduler passes the task's value
+  on both start and budget recalculation.
 - The global speed limit is now split across running tasks as a fair share and
   recomputed live when tasks start, finish, or either limit changes; a task's
   own `max_speed_bps` is capped at its share instead of exceeding the global
@@ -48,6 +62,10 @@ versioning; 0.x releases may still change structure.
 - The host binary, the daemon server and the settings page are split into
   modules (`src/{app,rows,wiring,…}.rs`, `crates/aether-daemon/src/server/`,
   `ui/pages/settings/`); behavior is unchanged.
+- `docs/screenshots/` is a reproducible baseline: `scripts/capture-docs-screenshots.sh`
+  and `scripts/shot-fixture.py` regenerate all nine shots (Xvfb 900×600, isolated
+  config, a demo daemon with eight fixed tasks, no update checks), and the README
+  records the theme/view/tab for each file so changes can be diffed.
 
 ### Fixed
 
@@ -62,6 +80,12 @@ versioning; 0.x releases may still change structure.
   the HTTP body was written. The `OK` response is now flushed before the
   shutdown is dispatched, including when the call sits inside
   `system.multicall` or arrives over the WebSocket transport.
+- The aria2 compatibility surface now has end-to-end cases in
+  `crates/aether-daemon/tests/aria2.rs` for all 35 methods: queueing,
+  pause/reorder, `system.multicall`, `changeGlobalOption`/`getOption` read-back,
+  inline torrent/metalink payloads, `getPeers`/`getServers` shapes and
+  `saveSession`; `shutdown`/`forceShutdown` are additionally checked against a
+  real daemon process.
 - Plugin rows whose manifest declares no settings keep their action column
   aligned instead of shifting their badges left.
 
