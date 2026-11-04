@@ -1,4 +1,4 @@
-# 本机统一用 stable 通道（当前 rustc 1.99.1）；CI 钉 1.99.1 保证可复现。
+# 本机与 CI 使用同一工具链 1.99.1，保证可复现；升级 Rust 时两处一起改。
 [toolchain]
-channel = "stable"
+channel = "1.99.1"
 components = ["rustfmt", "clippy"]
