@@ -1,7 +1,7 @@
 [workspace.package]
 version = "0.6.2"
 edition = "2021"
-rust-version = "1.92"
+rust-version = "1.99"
 license = "MIT"
 
 [workspace]
@@ -38,7 +38,7 @@ resolver = "2"
 name = "aether"
 version = "0.6.2"
 edition = "2021"
-rust-version = "1.92"
+rust-version = "1.99"
 description = "Aether — a native Material 3 download manager (Rust + Slint, no WebView)"
 license = "MIT"
 readme = "README.md"
@@ -84,8 +84,21 @@ notify-rust = "4"
 [build-dependencies]
 slint-build = "1.18"
 
+[profile.dev]
+# 只保留行号信息并剥离调试段，避免 dev 产物像以前那样带上完整 debug_info。
+debug = 1
+strip = "debuginfo"
+
 [profile.dev.package.aether]
 opt-level = "z"
+# 具名包覆盖会整段接管该包的 profile，基础 [profile.dev] 的 strip/debug 对它不再生效，
+# 所以这里必须重复声明，否则产物仍带完整 debug 段（实测 157MB、10 个 .debug_*）。
+debug = 1
+strip = "debuginfo"
+
+[profile.dev.package."*"]
+# 通配覆盖只作用于没有具名覆盖的依赖包；aether 自身的 opt-level 由上面那一段接管。
+debug = false
 
 [profile.release]
 opt-level = 3

@@ -2,7 +2,7 @@
 name = "aether-plugin-abi"
 version.workspace = true
 edition = "2021"
-rust-version = "1.92"
+rust-version = "1.99"
 description = "Optional C ABI for in-process Aether cdylib plugins"
 license = "MIT"
 publish = false

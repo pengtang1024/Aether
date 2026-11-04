@@ -2,7 +2,7 @@
 name = "aether-daemon"
 version.workspace = true
 edition = "2021"
-rust-version = "1.92"
+rust-version = "1.99"
 description = "Aether background download daemon"
 license = "MIT"
 publish = false

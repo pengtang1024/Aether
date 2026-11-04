@@ -2,7 +2,7 @@
 name = "aether-update"
 version.workspace = true
 edition = "2021"
-rust-version = "1.92"
+rust-version = "1.99"
 description = "Signed auto-update client for Aether"
 license = "MIT"
 publish = false

@@ -1,0 +1,4 @@
+# 本机统一用 stable 通道（当前 rustc 1.99.1）；CI 钉 1.99.1 保证可复现。
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]

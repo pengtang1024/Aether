@@ -2,7 +2,7 @@
 name = "aether-plugin-rtmp"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.92"
+rust-version = "1.99"
 description = "RTMP/RTSP capture plugin using ffmpeg for Aether"
 license = "MIT"
 publish = false

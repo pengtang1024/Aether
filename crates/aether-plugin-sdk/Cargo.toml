@@ -2,7 +2,7 @@
 name = "aether-plugin-sdk"
 version.workspace = true
 edition = "2021"
-rust-version = "1.92"
+rust-version = "1.99"
 description = "Protocol, IPC and SDK types for Aether first-party download plugins"
 license = "MIT"
 publish = false

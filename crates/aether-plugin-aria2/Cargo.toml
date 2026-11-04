@@ -2,7 +2,7 @@
 name = "aether-plugin-aria2"
 version.workspace = true
 edition = "2021"
-rust-version = "1.92"
+rust-version = "1.99"
 description = "aria2 JSON-RPC compatibility bridge for Aether"
 license = "MIT"
 publish = false

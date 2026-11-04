@@ -2,7 +2,7 @@
 name = "aether-plugin-fake"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.92"
+rust-version = "1.99"
 description = "Fake plugin used to exercise the Aether plugin IPC contract"
 license = "MIT"
 publish = false

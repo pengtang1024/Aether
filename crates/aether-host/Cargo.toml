@@ -2,7 +2,7 @@
 name = "aether-host"
 version.workspace = true
 edition = "2021"
-rust-version = "1.92"
+rust-version = "1.99"
 description = "Host-side plugin discovery, supervision, probing and finalization"
 license = "MIT"
 publish = false

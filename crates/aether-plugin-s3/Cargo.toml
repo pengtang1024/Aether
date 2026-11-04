@@ -2,7 +2,7 @@
 name = "aether-plugin-s3"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.92"
+rust-version = "1.99"
 description = "S3-compatible object download plugin for Aether"
 license = "MIT"
 publish = false

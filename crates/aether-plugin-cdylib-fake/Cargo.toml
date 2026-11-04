@@ -2,7 +2,7 @@
 name = "aether-plugin-cdylib-fake"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.92"
+rust-version = "1.99"
 description = "Fake cdylib plugin for Aether ABI tests"
 license = "MIT"
 publish = false

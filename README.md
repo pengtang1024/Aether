@@ -48,10 +48,16 @@ Material 组件会一起切换。
 
 ### 设置中心
 
-设置页是独立的多分类中心：左侧 10 个分类，右侧是 M3 分组卡片。覆盖下载并发、连接数、
+设置页是独立的多分类中心：左侧 10 个分类，右侧是 M3 分组卡片。默认只展示日常选择
+（全部是预设下拉、滑杆或开关）：并发数 3/5/10/16、每任务连接 2/4/8/16、重试
+0/3/5/10、全局与 BT 上传限速滑杆、代理模式、IP 协议、主题/语言/主色、计划与通知。
+低频项收进默认收起的**高级卡片**（网络 DNS/User-Agent/请求头、BT 端口/屏蔽列表/
+Tracker、ffmpeg 路径、插件来源策略/版本固定/安装、高级页的 RPC 与只读路径）；
+代理地址只在「手动」模式出现。保留的文本输入都有格式示例，提交时做内联校验，
+错误显示在字段下方而不是静默丢弃。覆盖下载并发、连接数、
 动态分段、重试与超时、全局限速、磁盘预分配、任务级 SHA-256 校验、代理、DNS、请求头、BT/PT、DHT/PEX、
 做种、媒体嗅探、浏览器接管、插件、计划任务、通知、外观、RPC（含 aria2 JSON-RPC
-兼容）与维护等能力。
+兼容）与维护等能力。不修改任何设置也能获得推荐行为。
 
 ![设置中心](docs/screenshots/settings.png)
 
@@ -98,7 +104,7 @@ Windows / macOS 使用对应平台目录）；应用还会在跟随系统模式�
 
 前置条件：
 
-- Rust 1.92 或更新版本
+- Rust 1.99 或更新版本
 - Linux 桌面（X11 或 Wayland）
 - OpenGL 驱动；无 GPU 时 Slint 会回退到软件渲染
 
@@ -107,6 +113,11 @@ cargo run --release
 ```
 
 首次构建需要编译 Slint 与整套 Material 组件，耗时略长；之后的增量构建在数秒内完成。
+
+> **本机 `target` 是指向 `/home/pt/.cargo/target` 的符号链接**，与 `dataferry`、`dvkit`
+> 共用同一个 target-dir。**禁止执行 `cargo clean`**——它按 workspace 语义清空整个
+> target-dir，会连带删掉另外两个仓库的缓存（约 22GB）。`Makefile` 与脚本里的
+> `target/release/...` 相对路径正是靠这个链接成立，删掉链接会让产物路径与脚本错位。
 
 ### 开发用启动参数
 
@@ -249,10 +260,16 @@ sudo apt install ./dist/aether_0.1.0_amd64.deb
 .
 ├── build.rs                 # 注册 "material" 样式、include 路径
 ├── src/
-│   ├── main.rs              # UI 胶水层：过滤/搜索、聚合统计、记录、主题检测、定时器
+│   ├── main.rs              # 入口：声明模块并调用 app::run()
+│   ├── app.rs               # 窗口装配、页面路由、主题/可见性/托盘与关闭行为
 │   ├── backend.rs           # daemon 桥：订阅事件、命令通道、快照、稳定 id 映射
-│   ├── chart.rs             # 速度折线/面积几何
-│   └── model.rs             # Task / Status 领域模型与格式化
+│   ├── wiring/              # Slint 回调接线：定时器、任务、设置、插件、剪贴板、托盘
+│   ├── rows/                # 快照 → 窗口模型：任务行、统计、插件目录、记录、设置镜像
+│   ├── state.rs             # 窗口状态：快照、偏好、令牌、脏检查基线
+│   ├── prefs.rs             # UiPrefs（~/.config/aether/ui.json）
+│   ├── detail.rs            # 任务详情抽屉数据
+│   ├── model.rs             # Task / Status 领域模型
+│   └── chart.rs             # 速度折线/面积几何
 ├── ui/
 │   ├── app.slint            # 左侧导航外壳、页面路由、主题应用、覆盖层
 │   ├── theme.slint          # 浅/深双主题 token、状态色与文件类型色
@@ -262,7 +279,8 @@ sudo apt install ./dist/aether_0.1.0_amd64.deb
 │   ├── pages/
 │   │   ├── home.slint       # 卡片控制台：速度、任务、统计、存储、系统
 │   │   ├── downloads.slint  # 下载列表、本地筛选与搜索
-│   │   ├── settings.slint   # 10 分类设置中心
+│   │   ├── settings.slint   # 10 分类设置中心（页面壳）
+│   │   ├── settings/        # 各分类面板、插件设置对话框与搜索
 │   │   ├── new-download.slint
 │   │   └── task-drawer.slint
 │   ├── plugins.slint        # 17 个第一方插件的展示目录（16 下载 / 1 服务）
@@ -291,6 +309,7 @@ sudo apt install ./dist/aether_0.1.0_amd64.deb
 │   ├── logo-transparent-128.png # 左栏品牌标记（去背景）
 │   ├── logo-transparent-512.png # 去背景高分辨率版本
 │   ├── logo-icon-*.png          # hicolor 32–512 图标（半透明磨砂底）
+│   ├── tray-icon-*.png          # 托盘专用满幅图标（无内缩/无底板）
 │   ├── logo.ico                 # Windows 安装器/快捷方式图标
 ├── packaging/                # desktop / AppStream / Debian / Windows / macOS
 ├── .github/workflows/        # release 分支全平台打包
@@ -298,22 +317,23 @@ sudo apt install ./dist/aether_0.1.0_amd64.deb
 ├── docs/
 │   ├── DESIGN_SYSTEM.md      # 类型比例、组件尺寸、间距与圆角规范
 │   └── screenshots/          # light / dark 界面截图
-└── scripts/shot.sh
+└── scripts/                  # 截图基线、插件 staging、许可与打包辅助脚本
 ```
 
 ### 数据流
 
 ```
-Slint 回调  →  main.rs 意图处理  →  Engine 状态变更
-    ↑                                    │
-    └──  VecModel / 属性更新 / 聚合统计 / 全局曲线 / 记录 ┘
+Slint 回调  →  wiring 意图处理  →  backend 命令通道  →  daemon
+    ↑                                                     │
+    └── rows 写回 VecModel / 属性 / 全局曲线 / 记录  ←  subscribe 事件与快照 ┘
 ```
 
-UI 不直接写任务状态。暂停、继续、取消/删除、新建都变成 `main.rs` 里的意图，经
-`backend.rs` 的命令通道发给 daemon；daemon 的 `subscribe` 事件流回来后合成快照，UI 每
-200 ms 取一次快照，以最小 diff 写回 `VecModel`。全局限速曲线来自后端每秒采样；详情抽屉
-按需刷新图表与分片。主题由 UI 选择 + Rust 系统探测共同决定，`Aether.dark` 驱动自绘
-token，`ColorSchemeSelector` 驱动 Material 控件。
+UI 不直接写任务状态。暂停、继续、取消/删除、新建都变成 `src/wiring/` 里的意图，经
+`src/backend.rs` 的命令通道发给 daemon；daemon 的 `subscribe` 事件流回来后合成快照，UI 每
+200 ms 取一次快照，数据未变时跳过重绘，变化时以最小 diff 由 `src/rows/` 写回 `VecModel`。
+全局限速曲线来自后端每秒采样；详情抽屉按需刷新图表与分片。窗口隐藏或最小化时定时器与
+poller 一起挂起，恢复时立即补一帧。主题由 UI 选择 + Rust 系统探测共同决定，`Aether.dark`
+驱动自绘 token，`ColorSchemeSelector` 驱动 Material 控件。
 
 ---
 

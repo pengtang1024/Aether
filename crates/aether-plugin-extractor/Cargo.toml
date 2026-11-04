@@ -2,7 +2,7 @@
 name = "aether-plugin-extractor"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.92"
+rust-version = "1.99"
 description = "yt-dlp extractor plugin for Aether"
 license = "MIT"
 publish = false
