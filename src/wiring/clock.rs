@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 use slint::ComponentHandle;
 use slint::{Timer, TimerMode};
 
+use crate::backend::Snapshot;
 use crate::detail::refresh_detail;
 use crate::i18n;
 use crate::platform::{open_path, send_notification, system_is_dark};
@@ -202,10 +203,7 @@ fn tick_body(ui: &AppWindow, state: &Rc<RefCell<State>>) {
     let uptime_minute = state.borrow().started.elapsed().as_secs() / 60;
     let repaint = {
         let mut st = state.borrow_mut();
-        let repaint = st
-            .last_painted
-            .as_ref()
-            .is_none_or(|(last, minute)| last != &snapshot || *minute != uptime_minute);
+        let repaint = needs_repaint(st.last_painted.as_ref(), &snapshot, uptime_minute);
         if repaint {
             st.last_painted = Some((snapshot.clone(), uptime_minute));
         }
@@ -314,6 +312,13 @@ fn tick_body(ui: &AppWindow, state: &Rc<RefCell<State>>) {
     }
 }
 
+/// Repaint only when something visible moved: first paint, a changed
+/// snapshot, or a new uptime minute. Drift is applied before this check and
+/// does not force a repaint by itself.
+fn needs_repaint(last: Option<&(Snapshot, u64)>, snapshot: &Snapshot, minute: u64) -> bool {
+    last.is_none_or(|(painted, painted_minute)| painted != snapshot || *painted_minute != minute)
+}
+
 // Follow live desktop theme changes while the user chose "follow system".
 fn make_theme_tick(ui: &AppWindow) -> Callback {
     let ui_handle = ui.as_weak();
@@ -328,4 +333,76 @@ fn make_theme_tick(ui: &AppWindow) -> Callback {
             }
         }
     })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::needs_repaint;
+    use crate::backend::Snapshot;
+    use crate::model::{Status, Task, CHUNK_COUNT};
+
+    fn task(speed: f64, status: Status) -> Task {
+        Task {
+            id: 1,
+            name: "test.zip".into(),
+            source: "http".into(),
+            path: String::new(),
+            note: String::new(),
+            total: 1024,
+            done: 100.0,
+            status,
+            plugin_id: "http".into(),
+            torrent: false,
+            speed,
+            history: Default::default(),
+            order: [0; CHUNK_COUNT],
+            time_ms: 0,
+        }
+    }
+
+    fn snapshot(speed: f64, status: Status) -> Snapshot {
+        Snapshot {
+            tasks: vec![task(speed, status)],
+            ..Snapshot::default()
+        }
+    }
+
+    #[test]
+    fn first_paint_always_happens() {
+        assert!(needs_repaint(None, &Snapshot::default(), 0));
+    }
+
+    #[test]
+    fn unchanged_data_skips_the_repaint() {
+        let snap = snapshot(10.0, Status::Downloading);
+        let painted = (snap.clone(), 3);
+        assert!(!needs_repaint(Some(&painted), &snap, 3));
+    }
+
+    #[test]
+    fn a_new_minute_repaints_for_the_uptime_label() {
+        let snap = snapshot(10.0, Status::Downloading);
+        let painted = (snap.clone(), 3);
+        assert!(needs_repaint(Some(&painted), &snap, 4));
+    }
+
+    #[test]
+    fn a_moving_speed_repaints() {
+        let painted = (snapshot(10.0, Status::Downloading), 3);
+        assert!(needs_repaint(
+            Some(&painted),
+            &snapshot(11.0, Status::Downloading),
+            3
+        ));
+    }
+
+    #[test]
+    fn a_status_change_repaints() {
+        let painted = (snapshot(10.0, Status::Downloading), 3);
+        assert!(needs_repaint(
+            Some(&painted),
+            &snapshot(10.0, Status::Completed),
+            3
+        ));
+    }
 }
