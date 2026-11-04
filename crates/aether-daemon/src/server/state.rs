@@ -20,7 +20,13 @@ pub(crate) struct State {
     /// Progress of `plugin_update_all` / `install_plugin`, read by `stats`
     /// so the UI can draw a bar instead of waiting for the RPC to return.
     pub(crate) plugin_progress: Arc<Mutex<serde_json::Value>>,
-    pub(crate) subscribers: Vec<Sender<serde_json::Value>>,
+    /// Event subscribers. The channel is bounded: a client that stops reading
+    /// must not grow the daemon's heap without limit, so events are dropped
+    /// for that subscriber instead (each event is a full snapshot, and the UI
+    /// re-lists tasks periodically, so a gap is recoverable).
+    pub(crate) subscribers: Vec<mpsc::SyncSender<serde_json::Value>>,
+    /// Events dropped because a subscriber's queue was full; logged periodically.
+    pub(crate) dropped_events: u64,
     pub(crate) max_concurrent: usize,
     pub(crate) max_speed_bps: Option<u64>,
     pub(crate) retry_max: u32,
@@ -70,6 +76,19 @@ pub(crate) struct State {
     /// Number of finalize jobs still in flight; the idle loop polls faster
     /// while this is non-zero so completion is not delayed by a second.
     pub(crate) finalize_pending: usize,
+    /// Terminal transitions the store refused (a full disk makes every write
+    /// fail). They are retried on the health tick so the list stops claiming a
+    /// dead task is still running once space is available again.
+    pub(crate) unpersisted: Vec<UnpersistedFailure>,
+}
+
+/// A failure the store could not record; replayed by `flush_unpersisted`.
+#[derive(Clone)]
+pub(crate) struct UnpersistedFailure {
+    pub(crate) task_id: String,
+    pub(crate) kind: String,
+    pub(crate) message: String,
+    pub(crate) retryable: bool,
 }
 
 /// Result of a background finalize pass, applied on the daemon's main loop.

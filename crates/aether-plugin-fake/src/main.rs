@@ -8,8 +8,8 @@ use std::thread;
 use std::time::Duration;
 
 use aether_plugin_sdk::{
-    run_stdio, Capability, FileInfo, HostCommand, LogLevel, Metadata, Plugin, PluginContext,
-    PluginEvent, PluginSender, SdkError, TaskPaths,
+    run_stdio, Capability, ErrorKind, FileInfo, HostCommand, LogLevel, Metadata, Plugin,
+    PluginContext, PluginEvent, PluginSender, SdkError, TaskPaths,
 };
 
 const PLUGIN_ID: &str = "fake";
@@ -77,6 +77,18 @@ impl Plugin for FakePlugin {
                     .get("retryable")
                     .and_then(serde_json::Value::as_bool)
                     .unwrap_or(true);
+                let fail_kind = task
+                    .settings
+                    .get("fail_kind")
+                    .and_then(serde_json::Value::as_str)
+                    .map(|name| match name {
+                        "diskfull" => ErrorKind::DiskFull,
+                        "checksum" => ErrorKind::Checksum,
+                        "permission" => ErrorKind::Permission,
+                        "internal" => ErrorKind::Internal,
+                        _ => ErrorKind::Protocol,
+                    })
+                    .unwrap_or(ErrorKind::Protocol);
                 let sender = ctx.sender();
                 thread::spawn(move || {
                     if let Err(error) = run_fake_task(
@@ -89,6 +101,7 @@ impl Plugin for FakePlugin {
                             fail,
                             fail_always,
                             retryable,
+                            fail_kind,
                         },
                     ) {
                         eprintln!("aether-plugin-fake: task failed: {error}");
@@ -155,6 +168,7 @@ struct FakeBehavior {
     fail: bool,
     fail_always: bool,
     retryable: bool,
+    fail_kind: ErrorKind,
 }
 
 fn run_fake_task(
@@ -169,6 +183,7 @@ fn run_fake_task(
         fail,
         fail_always,
         retryable,
+        fail_kind,
     } = behavior;
     trace(format!(
         "task {task_id}: hold={hold_ms} fail={fail} fail_always={fail_always} retryable={retryable}"
@@ -186,11 +201,8 @@ fn run_fake_task(
         ));
         sender.send(&PluginEvent::Failed {
             task_id: task_id.clone(),
-            error: aether_plugin_sdk::PluginError::new(
-                aether_plugin_sdk::ErrorKind::Protocol,
-                "fake intentional failure",
-            )
-            .retryable(retryable),
+            error: aether_plugin_sdk::PluginError::new(fail_kind, "fake intentional failure")
+                .retryable(retryable),
         })?;
         trace(format!("task {task_id}: Failed sent"));
         return Ok(());

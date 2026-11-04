@@ -134,6 +134,7 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
         update: update_status,
         plugin_progress: Arc::new(Mutex::new(json!({"running": false}))),
         subscribers: Vec::new(),
+        dropped_events: 0,
         max_concurrent: limits.max_concurrent,
         max_speed_bps: limits.max_speed_bps,
         retry_max: limits.retry_max,
@@ -155,6 +156,7 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
         finalize_tx,
         finalize_rx,
         finalize_pending: 0,
+        unpersisted: Vec::new(),
     };
 
     recover_tasks(&mut state);

@@ -43,6 +43,7 @@ pub(crate) fn event_loop(
                 last_health = Instant::now();
                 recover_dead_plugins(state);
                 check_stalled_tasks(state);
+                flush_unpersisted(state);
             }
             if last_schedule_tick.elapsed() >= Duration::from_secs(15) {
                 last_schedule_tick = std::time::Instant::now();
@@ -67,6 +68,7 @@ pub(crate) fn event_loop(
         if last_health.elapsed() >= Duration::from_secs(5) {
             last_health = Instant::now();
             recover_dead_plugins(state);
+            flush_unpersisted(state);
         }
         if last_stall.elapsed() >= Duration::from_secs(30) {
             last_stall = Instant::now();

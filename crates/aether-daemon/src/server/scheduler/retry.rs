@@ -30,13 +30,12 @@ pub(crate) fn recover_dead_plugins(state: &mut State) {
                 continue;
             }
             let message = format!("plugin {plugin_id} exited while the task was running");
-            let _ = state.store.fail_task(&task.id, "plugin", &message, true);
-            let _ = state.store.append_log(&task.id, "error", &message, None);
+            record_failure(state, &task.id, "plugin", &message, true);
             broadcast(
                 state,
                 json!({"event": "failed", "task_id": task.id, "error": message}),
             );
-            schedule_retry(state, &task.id, &message);
+            schedule_retry(state, &task.id, &message, true);
             failed_any = true;
         }
         if failed_any {
@@ -87,13 +86,12 @@ pub(crate) fn check_stalled_tasks(state: &mut State) {
         state.last_progress.remove(&task_id);
         apply_speed_budgets(state);
         let message = format!("no progress for {} s", STALL.as_secs());
-        let _ = state.store.fail_task(&task_id, "timeout", &message, true);
-        let _ = state.store.append_log(&task_id, "error", &message, None);
+        record_failure(state, &task_id, "timeout", &message, true);
         broadcast(
             state,
             json!({"event": "failed", "task_id": task_id, "error": message}),
         );
-        schedule_retry(state, &task_id, &message);
+        schedule_retry(state, &task_id, &message, true);
         failed_any = true;
     }
     if failed_any {
@@ -101,10 +99,113 @@ pub(crate) fn check_stalled_tasks(state: &mut State) {
     }
 }
 
+/// Record a terminal failure. A store that cannot write (a full disk rejects
+/// every SQLite statement) would otherwise leave the row at "running"
+/// forever, so the failure is kept in memory and replayed by
+/// `flush_unpersisted` once space is available again.
+pub(crate) fn record_failure(
+    state: &mut State,
+    task_id: &str,
+    kind: &str,
+    message: &str,
+    retryable: bool,
+) {
+    // A permanent "disk full" failure cannot keep its partial file: the
+    // half-written staging file is what fills the quota, and while it stays
+    // the store cannot even record the failure (SQLite lives on the same
+    // filesystem). Free the space first so the failure becomes visible.
+    if matches!(kind, "diskfull" | "disk_full") && !retryable {
+        // The row lookup itself can fail while SQLite is out of space, so the
+        // centralized staging root (which needs no DB access) is always
+        // removed; the cross-device one is added when the record is readable.
+        let centralized = state.download_dir.join(".aether").join(task_id);
+        let mut roots = vec![centralized.clone()];
+        if let Ok(Some(task)) = state.store.task(task_id) {
+            let final_dir = destination_dir(state, task.target_dir.as_deref());
+            let target_root = final_dir.join(".aether-staging").join(task_id);
+            if target_root != centralized {
+                roots.push(target_root);
+            }
+        }
+        for root in roots {
+            if !root.is_dir() {
+                continue;
+            }
+            match fs::remove_dir_all(&root) {
+                Ok(()) => cleanup_staging_parent(&root),
+                Err(error) => {
+                    eprintln!("aether-daemon: could not clear staging for {task_id}: {error}")
+                }
+            }
+        }
+    }
+    let _ = state.store.append_log(
+        task_id,
+        "error",
+        message,
+        Some(&json!({"kind": kind, "retryable": retryable})),
+    );
+    match state.store.fail_task(task_id, kind, message, retryable) {
+        Ok(()) => {}
+        Err(error) => {
+            eprintln!(
+                "aether-daemon: could not persist failure for {task_id} (kind={kind}, retryable={retryable}): {error}"
+            );
+            if !state
+                .unpersisted
+                .iter()
+                .any(|failure| failure.task_id == task_id)
+            {
+                state.unpersisted.push(UnpersistedFailure {
+                    task_id: task_id.to_string(),
+                    kind: kind.to_string(),
+                    message: message.to_string(),
+                    retryable,
+                });
+            }
+        }
+    }
+}
+
+/// Retry the failures the store rejected earlier; runs on the health tick.
+pub(crate) fn flush_unpersisted(state: &mut State) {
+    if state.unpersisted.is_empty() {
+        return;
+    }
+    let pending = std::mem::take(&mut state.unpersisted);
+    let mut still = Vec::new();
+    for failure in pending {
+        match state.store.fail_task(
+            &failure.task_id,
+            &failure.kind,
+            &failure.message,
+            failure.retryable,
+        ) {
+            Ok(()) => eprintln!(
+                "aether-daemon: persisted deferred failure for {}",
+                failure.task_id
+            ),
+            Err(_) => still.push(failure),
+        }
+    }
+    state.unpersisted = still;
+}
+
 /// Schedule an automatic retry for a retryable failure, honoring the attempt
 /// cap. Exhausted tasks stay failed until the user resumes them manually.
-pub(crate) fn schedule_retry(state: &mut State, task_id: &str, message: &str) {
+/// `retryable` comes from the plugin's error classification: retrying a
+/// permanent failure (disk full, unsupported URL) only burns the budget.
+pub(crate) fn schedule_retry(state: &mut State, task_id: &str, message: &str, retryable: bool) {
     if state.retry_max == 0 {
+        return;
+    }
+    if !retryable {
+        let _ = state.store.append_log(
+            task_id,
+            "warn",
+            &format!("not retrying a permanent failure: {message}"),
+            None,
+        );
         return;
     }
     // The attempt counter lives in the database so it survives restarts and so

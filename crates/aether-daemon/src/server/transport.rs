@@ -1,9 +1,15 @@
 use crate::server::*;
 
+/// Per-subscriber event queue. A slow client gets its oldest events dropped
+/// rather than pinning unbounded memory in the daemon.
+const EVENT_QUEUE: usize = 256;
+/// Log a drop summary every this many dropped events, not one line per event.
+const DROP_LOG_EVERY: u64 = 100;
+
 pub(crate) struct Command {
     pub(crate) request: Request,
     pub(crate) respond: Sender<Response>,
-    pub(crate) subscriber: Option<Sender<serde_json::Value>>,
+    pub(crate) subscriber: Option<mpsc::SyncSender<serde_json::Value>>,
     /// Fired after the response bytes are written, so `shutdown` can wait for
     /// the client to receive its ack before the process exits.
     pub(crate) written: Option<mpsc::Receiver<()>>,
@@ -15,7 +21,7 @@ pub(crate) fn subscribe_events(
     commands: &Sender<Command>,
 ) -> Option<mpsc::Receiver<serde_json::Value>> {
     let (respond_tx, respond_rx) = mpsc::channel();
-    let (event_tx, event_rx) = mpsc::channel();
+    let (event_tx, event_rx) = mpsc::sync_channel(EVENT_QUEUE);
     let request = Request {
         id: 0,
         method: "subscribe".into(),
@@ -68,7 +74,23 @@ pub(crate) fn dispatch(state: &mut State, mut command: Command) -> bool {
 pub(crate) fn broadcast(state: &mut State, event: Value) {
     state
         .subscribers
-        .retain(|subscriber| subscriber.send(event.clone()).is_ok());
+        .retain(|subscriber| match subscriber.try_send(event.clone()) {
+            Ok(()) => true,
+            Err(mpsc::TrySendError::Full(_)) => {
+                // Keep the subscriber: the next events may still fit once it
+                // catches up. Each event is a full snapshot, so a gap only
+                // means the UI skips a frame until its next list refresh.
+                state.dropped_events += 1;
+                if state.dropped_events.is_multiple_of(DROP_LOG_EVERY) {
+                    eprintln!(
+                        "aether-daemon: dropped {} events for slow subscribers",
+                        state.dropped_events
+                    );
+                }
+                true
+            }
+            Err(mpsc::TrySendError::Disconnected(_)) => false,
+        });
 }
 
 pub(crate) fn accept_loop(mut listener: Listener, commands: Sender<Command>) {
@@ -107,7 +129,7 @@ pub(crate) fn serve(reader: &mut BufReader<Conn>, writer: &mut Conn, commands: S
         };
         let subscribe = request.method == "subscribe";
         let (respond_tx, respond_rx) = mpsc::channel();
-        let (event_tx, event_rx) = mpsc::channel();
+        let (event_tx, event_rx) = mpsc::sync_channel(EVENT_QUEUE);
         let (written_tx, written_rx) = mpsc::channel();
         if commands
             .send(Command {

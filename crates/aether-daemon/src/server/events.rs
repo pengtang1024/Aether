@@ -139,22 +139,14 @@ pub(crate) fn handle_event(state: &mut State, envelope: PluginEventEnvelope) {
                     .store
                     .append_log(&task_id, "info", "canceled by plugin", None);
             } else {
-                let _ = state.store.fail_task(
+                record_failure(
+                    state,
                     &task_id,
                     &format!("{:?}", error.kind).to_ascii_lowercase(),
                     &error.message,
                     error.retryable,
                 );
-                let _ = state.store.append_log(
-                    &task_id,
-                    "error",
-                    &error.message,
-                    Some(&json!({
-                        "kind": format!("{:?}", error.kind).to_ascii_lowercase(),
-                        "retryable": error.retryable,
-                    })),
-                );
-                schedule_retry(state, &task_id, &error.message);
+                schedule_retry(state, &task_id, &error.message, error.retryable);
             }
             broadcast(
                 state,

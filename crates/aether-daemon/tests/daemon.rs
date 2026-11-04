@@ -660,6 +660,92 @@ fn daemon_stops_retrying_after_the_cap() {
 }
 
 #[test]
+fn daemon_does_not_retry_a_permanent_failure() {
+    let Some(daemon) = spawn_daemon_with("retrypermanent", 1, None, 5, 1) else {
+        eprintln!("fake plugin binary is not built; skipping");
+        return;
+    };
+    let socket = daemon.socket.clone();
+
+    let mut client = connect(&socket);
+    let added = client
+        .add_with_settings(
+            "https://example.com/full-disk.bin",
+            None,
+            None,
+            json!({"fail": true, "retryable": false}),
+        )
+        .unwrap();
+    let task_id = added["task_id"].as_str().unwrap().to_string();
+    assert_reaches(&mut client, &task_id, "failed", 300);
+
+    // A permanent failure (disk full, unsupported URL) must not burn the
+    // retry budget: no pending deadline, no attempt consumed, and no second
+    // "running with plugin" start.
+    thread::sleep(Duration::from_millis(2500));
+    let record = client.task_record(&task_id).unwrap();
+    assert_eq!(record.state, aether_host::TaskState::Failed);
+    assert!(
+        record.retry_at.is_none(),
+        "permanent failures must not retry"
+    );
+    assert_eq!(record.retry_attempts, 0);
+    let starts = client
+        .logs(&task_id, 100)
+        .unwrap()
+        .iter()
+        .filter(|log| log.message.starts_with("running with plugin"))
+        .count();
+    assert_eq!(starts, 1, "the task must not be restarted");
+    assert!(client
+        .logs(&task_id, 100)
+        .unwrap()
+        .iter()
+        .any(|log| log.message.contains("not retrying a permanent failure")));
+
+    client.shutdown().unwrap();
+    daemon.shutdown();
+}
+
+#[test]
+fn daemon_clears_staging_after_a_permanent_disk_full_failure() {
+    let Some(daemon) = spawn_daemon_with("diskfullstaging", 1, None, 5, 1) else {
+        eprintln!("fake plugin binary is not built; skipping");
+        return;
+    };
+    let socket = daemon.socket.clone();
+    let root = daemon.root.clone();
+
+    let mut client = connect(&socket);
+    let added = client
+        .add_with_settings(
+            "https://example.com/disk-full.bin",
+            None,
+            None,
+            json!({"fail_always": true, "retryable": false, "fail_kind": "diskfull"}),
+        )
+        .unwrap();
+    let task_id = added["task_id"].as_str().unwrap().to_string();
+    assert_reaches(&mut client, &task_id, "failed", 300);
+
+    let record = client.task_record(&task_id).unwrap();
+    assert_eq!(record.state, aether_host::TaskState::Failed);
+    assert_eq!(record.error_kind.as_deref(), Some("diskfull"));
+    assert!(record.retry_at.is_none());
+
+    // The half-written staging tree is what keeps the quota full (and the
+    // SQLite store unwritable), so a permanent disk-full failure must clear it.
+    let staging_root = root.join("downloads").join(".aether").join(&task_id);
+    assert!(
+        !staging_root.exists(),
+        "staging must be removed after a permanent disk-full failure"
+    );
+
+    client.shutdown().unwrap();
+    daemon.shutdown();
+}
+
+#[test]
 fn daemon_canceled_task_stops_the_retry_cycle() {
     let Some(daemon) = spawn_daemon_with("retrycancel", 1, None, 5, 1) else {
         eprintln!("fake plugin binary is not built; skipping");
