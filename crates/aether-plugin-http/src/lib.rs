@@ -6,6 +6,7 @@
 pub mod client;
 pub mod dns;
 pub mod download;
+pub mod gate;
 pub mod metalink;
 pub mod plugin;
 pub mod state;

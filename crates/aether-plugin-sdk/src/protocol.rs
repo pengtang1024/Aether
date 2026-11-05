@@ -537,7 +537,14 @@ impl Default for Limits {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Budget {
+    /// Connections the task may use. The HTTP plugin splits its ranges into
+    /// this many workers.
     pub connections: u32,
+    /// Connections all tasks pointing at one host may share, enforced across
+    /// the tasks of one plugin process. 8 keeps a single `connections = 8`
+    /// task from being squeezed while still leaving room when two or three
+    /// tasks hit the same origin (anti-leech servers start answering 418/429
+    /// well before 16 connections).
     pub per_host_connections: u32,
     pub download_bps: u64,
     pub upload_bps: u64,
@@ -547,7 +554,7 @@ impl Default for Budget {
     fn default() -> Self {
         Self {
             connections: 4,
-            per_host_connections: 4,
+            per_host_connections: 8,
             download_bps: 0,
             upload_bps: 0,
         }

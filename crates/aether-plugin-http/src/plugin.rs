@@ -9,7 +9,8 @@ use aether_plugin_sdk::{
     SdkError, TaskPaths, TaskSpec,
 };
 
-use crate::client;
+use crate::client::{self, HttpVersion};
+use crate::gate::HostGate;
 use crate::metalink;
 use aether_plugin_sdk::task::{shared_progress, SharedProgress, TaskControl};
 
@@ -24,6 +25,9 @@ pub struct HttpPlugin {
     client: Option<reqwest::blocking::Client>,
     init: Option<Init>,
     tasks: HashMap<String, TaskRecord>,
+    /// Shared by every task in this process so `per_host_connections` is a
+    /// host-wide cap rather than a per-task one.
+    gate: Arc<HostGate>,
 }
 
 struct TaskRecord {
@@ -40,6 +44,7 @@ impl HttpPlugin {
             client: None,
             init: None,
             tasks: HashMap::new(),
+            gate: Arc::new(HostGate::default()),
         }
     }
 
@@ -50,23 +55,28 @@ impl HttpPlugin {
     }
 
     /// Client for one task: a proxy resolved by the Host (PAC) wins over the
-    /// process-level client, so it gets its own connection pool.
+    /// process-level client, so it gets its own connection pool. A task asking
+    /// for more than one connection gets an HTTP/1.1 client so each shard owns
+    /// a TCP connection instead of sharing one h2 stream multiplexer.
     fn client_with(
         &self,
         proxy: &Option<aether_plugin_sdk::ProxyConfig>,
+        version: HttpVersion,
     ) -> Result<reqwest::blocking::Client, SdkError> {
-        let Some(proxy) = proxy else {
-            return self.client();
-        };
-        if self.init.as_ref().and_then(|init| init.proxy.as_ref()) == Some(proxy) {
+        if version == HttpVersion::Auto
+            && (proxy.is_none()
+                || self.init.as_ref().and_then(|init| init.proxy.as_ref()) == proxy.as_ref())
+        {
             return self.client();
         }
         let mut init = self
             .init
             .clone()
             .ok_or_else(|| SdkError::Protocol("plugin received a command before Init".into()))?;
-        init.proxy = Some(proxy.clone());
-        client::build_client(&init)
+        if proxy.is_some() {
+            init.proxy = proxy.clone();
+        }
+        client::build_client_with_protocol(&init, None, None, version)
             .map_err(|error| SdkError::Protocol(format!("per-task http client: {error}")))
     }
 
@@ -77,11 +87,22 @@ impl HttpPlugin {
         paths: TaskPaths,
         budget: Budget,
     ) -> Result<(), SdkError> {
-        let client = self.client_with(&task.proxy)?;
+        // The protocol is picked once, when the task starts: segmented tasks
+        // need one TCP per shard, single-connection tasks keep the shared
+        // process client. A budget change cannot re-split ranges anyway.
+        let (client, fallback) = if budget.connections > 1 {
+            (
+                self.client_with(&task.proxy, HttpVersion::Http1Only)?,
+                Some(self.client_with(&task.proxy, HttpVersion::Auto)?),
+            )
+        } else {
+            (self.client_with(&task.proxy, HttpVersion::Auto)?, None)
+        };
         let task_id = task.task_id.clone();
         let sender = ctx.sender();
         let control = Arc::new(TaskControl::new());
         let progress: SharedProgress = shared_progress();
+        let gate = self.gate.clone();
 
         let thread_control = control.clone();
         let thread_progress = progress.clone();
@@ -91,6 +112,8 @@ impl HttpPlugin {
             download::run_with_budget(
                 sender,
                 client,
+                fallback,
+                gate,
                 task,
                 paths,
                 thread_budget,
@@ -150,7 +173,7 @@ impl Plugin for HttpPlugin {
                 input,
                 proxy,
             } => {
-                let client = self.client_with(&proxy)?;
+                let client = self.client_with(&proxy, HttpVersion::Auto)?;
                 if metalink::is_metalink(&input) {
                     let (supported, filename, size, reason) =
                         match metalink::resolve(&client, &input) {

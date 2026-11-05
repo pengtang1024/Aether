@@ -4,6 +4,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -394,6 +395,11 @@ fn wait_for_completed(plugin: &mut PluginProcess) {
             PluginEvent::Failed { task_id, error } if task_id == "task-1" => {
                 panic!("task failed: {error:?}")
             }
+            PluginEvent::Log {
+                level: LogLevel::Warn,
+                message,
+                ..
+            } => eprintln!("[warn] {message}"),
             _ => {}
         }
     }
@@ -902,6 +908,319 @@ fn weak_etags_disable_mid_download_failover() {
     assert!(
         ranges.iter().all(|range| range == "bytes=0-0"),
         "a weak ETag must not authorize mid-download failover: {ranges:?}"
+    );
+    fs::remove_dir_all(&root).ok();
+}
+
+/// Server that limits how many connections may be open at once and answers
+/// the overflow with `status`. Bodies are streamed at `bytes_per_sec`, which
+/// keeps concurrent connections open long enough to observe a real peak.
+struct GatedServer {
+    addr: SocketAddr,
+    peak: Arc<AtomicUsize>,
+    rejections: Arc<AtomicUsize>,
+}
+
+fn start_gated_server(
+    data: Vec<u8>,
+    limit: usize,
+    status: u16,
+    bytes_per_sec: usize,
+) -> GatedServer {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let data = Arc::new(data);
+    let peak = Arc::new(AtomicUsize::new(0));
+    let rejections = Arc::new(AtomicUsize::new(0));
+    let current = Arc::new(AtomicUsize::new(0));
+    let server_peak = peak.clone();
+    let server_rejections = rejections.clone();
+
+    thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(stream) = stream else { continue };
+            let data = data.clone();
+            let peak = server_peak.clone();
+            let rejections = server_rejections.clone();
+            let current = current.clone();
+            thread::spawn(move || {
+                handle_gated(
+                    stream,
+                    &data,
+                    limit,
+                    status,
+                    bytes_per_sec,
+                    &current,
+                    &peak,
+                    &rejections,
+                )
+            });
+        }
+    });
+
+    GatedServer {
+        addr,
+        peak,
+        rejections,
+    }
+}
+
+struct ActiveConnections(Arc<AtomicUsize>);
+
+impl Drop for ActiveConnections {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_gated(
+    mut stream: TcpStream,
+    data: &[u8],
+    limit: usize,
+    status: u16,
+    bytes_per_sec: usize,
+    current: &Arc<AtomicUsize>,
+    peak: &Arc<AtomicUsize>,
+    rejections: &Arc<AtomicUsize>,
+) {
+    let mut request = Vec::new();
+    let mut buffer = [0_u8; 1024];
+    loop {
+        let read = match stream.read(&mut buffer) {
+            Ok(0) | Err(_) => return,
+            Ok(read) => read,
+        };
+        request.extend_from_slice(&buffer[..read]);
+        if request.windows(4).any(|window| window == b"\r\n\r\n") {
+            break;
+        }
+    }
+
+    let text = String::from_utf8_lossy(&request);
+    let mut lines = text.lines();
+    let request_line = lines.next().unwrap_or_default();
+    let method = request_line.split_whitespace().next().unwrap_or("GET");
+    let mut range_header = None;
+    for line in lines {
+        if line.is_empty() {
+            break;
+        }
+        if let Some((name, value)) = line.split_once(':') {
+            if name.eq_ignore_ascii_case("range") {
+                range_header = Some(value.trim().to_string());
+            }
+        }
+    }
+
+    // Probes (`bytes=0-0` / HEAD) are metadata requests. Excluding them from
+    // the accounting lets the test measure the download connections only.
+    let is_probe = method == "HEAD" || range_header.as_deref() == Some("bytes=0-0");
+    let _counted = if is_probe {
+        None
+    } else {
+        let active = current.fetch_add(1, Ordering::SeqCst) + 1;
+        peak.fetch_max(active, Ordering::SeqCst);
+        // The guard must exist before the reject path returns, otherwise a
+        // rejected connection would be counted forever.
+        let guard = ActiveConnections(current.clone());
+        if active > limit {
+            rejections.fetch_add(1, Ordering::SeqCst);
+            let text = if status == 429 {
+                "Too Many Requests"
+            } else {
+                "Teapot"
+            };
+            let response = format!(
+                "HTTP/1.1 {status} {text}\r\nContent-Length: 0\r\nRetry-After: 1\r\nConnection: close\r\n\r\n"
+            );
+            let _ = stream.write_all(response.as_bytes());
+            return;
+        }
+        Some(guard)
+    };
+
+    let range = range_header
+        .as_deref()
+        .and_then(|value| parse_range(value, data.len()))
+        .unwrap_or((0, data.len() - 1));
+    let (start, end) = range;
+    let body_len = end - start + 1;
+    let status_line = if range_header.is_some() {
+        "206 Partial Content"
+    } else {
+        "200 OK"
+    };
+    let mut response = format!(
+        "HTTP/1.1 {status_line}\r\nContent-Length: {body_len}\r\nContent-Type: application/octet-stream\r\nETag: {ETAG}\r\nAccept-Ranges: bytes\r\nConnection: close\r\n"
+    );
+    if range_header.is_some() {
+        response.push_str(&format!(
+            "Content-Range: bytes {start}-{end}/{}\r\n",
+            data.len()
+        ));
+    }
+    response.push_str("\r\n");
+    let _ = stream.write_all(response.as_bytes());
+
+    if method != "HEAD" {
+        let per_chunk = Duration::from_secs_f64(16.0 * 1024.0 / bytes_per_sec as f64);
+        let chunks = data[start..=end].chunks(16 * 1024).count();
+        for (index, piece) in data[start..=end].chunks(16 * 1024).enumerate() {
+            if stream.write_all(piece).is_err() {
+                return;
+            }
+            // Do not sleep after the last chunk: the connection must close as
+            // soon as the client has all bytes, or the next request overlaps.
+            if index + 1 < chunks {
+                thread::sleep(per_chunk);
+            }
+        }
+    }
+}
+
+fn start_task_as(
+    plugin: &mut PluginProcess,
+    task_id: &str,
+    url: String,
+    staging: PathBuf,
+    checksum: String,
+    connections: u32,
+    per_host_connections: u32,
+) {
+    plugin
+        .start_task(
+            TaskSpec {
+                task_id: task_id.into(),
+                url,
+                filename: None,
+                settings: serde_json::json!({}),
+                plugin_state: None,
+                expected_size: None,
+                checksum: Some(Checksum {
+                    algorithm: ChecksumAlgorithm::Sha256,
+                    value: checksum,
+                }),
+                proxy: None,
+            },
+            TaskPaths {
+                staging,
+                final_dir: PathBuf::from("/tmp/aether-final"),
+            },
+            Budget {
+                connections,
+                per_host_connections,
+                download_bps: 0,
+                upload_bps: 0,
+            },
+        )
+        .unwrap();
+}
+
+fn wait_for_all_completed(plugin: &mut PluginProcess, task_ids: &[&str]) {
+    let mut done = Vec::new();
+    for _ in 0..400 {
+        match plugin.recv_event(Duration::from_secs(2)).unwrap() {
+            PluginEvent::Completed { task_id, .. } => {
+                if task_ids.contains(&task_id.as_str()) {
+                    done.push(task_id);
+                }
+                if done.len() == task_ids.len() {
+                    return;
+                }
+            }
+            PluginEvent::Failed { task_id, error } => {
+                panic!("task {task_id} failed: {error:?}")
+            }
+            PluginEvent::Log {
+                level: LogLevel::Warn,
+                message,
+                ..
+            } => eprintln!("[warn] {message}"),
+            _ => {}
+        }
+    }
+    panic!("tasks {task_ids:?} did not complete");
+}
+
+/// Three tasks asking for 8 connections each on the same host must never
+/// exceed the 8-connection host cap, and every task must still finish.
+#[test]
+fn per_host_cap_holds_across_three_tasks() {
+    let data = test_data();
+    let server = start_gated_server(data.clone(), 8, 418, 64 * 1024);
+    let root = temp_dir("per-host-cap");
+    let url = format!("http://{}/file.bin", server.addr);
+    let mut plugin = PluginProcess::spawn(manifest(), &executable(), init(&root)).unwrap();
+
+    for task in ["task-a", "task-b", "task-c"] {
+        let staging = root.join(task);
+        fs::create_dir_all(&staging).unwrap();
+        start_task_as(
+            &mut plugin,
+            task,
+            url.clone(),
+            staging.clone(),
+            sha256_hex(&data),
+            8,
+            8,
+        );
+    }
+    wait_for_all_completed(&mut plugin, &["task-a", "task-b", "task-c"]);
+    plugin.shutdown().unwrap();
+
+    for task in ["task-a", "task-b", "task-c"] {
+        assert_eq!(fs::read(root.join(task).join("file.bin")).unwrap(), data);
+    }
+    let peak = server.peak.load(Ordering::SeqCst);
+    eprintln!(
+        "[cap] peak={peak} rejections={}",
+        server.rejections.load(Ordering::SeqCst)
+    );
+    assert!(
+        peak <= 8,
+        "24 requested connections must stay at the cap: {peak}"
+    );
+    assert!(
+        peak >= 4,
+        "the tasks must actually download concurrently: {peak}"
+    );
+    assert_eq!(
+        server.rejections.load(Ordering::SeqCst),
+        0,
+        "the cap must be enforced by us, not by the server's 418"
+    );
+    fs::remove_dir_all(&root).ok();
+}
+
+/// A source that allows one connection and answers 418 beyond it: the task
+/// must cool down, halve its connection count and finish instead of failing
+/// with zero bytes.
+#[test]
+fn cooldown_recovers_from_418_and_finishes() {
+    let data = test_data();
+    let server = start_gated_server(data.clone(), 1, 418, 256 * 1024);
+    let root = temp_dir("418-cooldown");
+    let staging = root.join("staging");
+    fs::create_dir_all(&staging).unwrap();
+    let mut plugin = PluginProcess::spawn(manifest(), &executable(), init(&root)).unwrap();
+
+    start_task_as(
+        &mut plugin,
+        "task-1",
+        format!("http://{}/file.bin", server.addr),
+        staging.clone(),
+        sha256_hex(&data),
+        4,
+        4,
+    );
+    wait_for_completed(&mut plugin);
+    plugin.shutdown().unwrap();
+
+    assert_eq!(fs::read(staging.join("file.bin")).unwrap(), data);
+    assert!(
+        server.rejections.load(Ordering::SeqCst) > 0,
+        "the server must have rejected the over-quota connections"
     );
     fs::remove_dir_all(&root).ok();
 }

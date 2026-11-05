@@ -11,14 +11,15 @@ use std::time::{Duration, Instant};
 use aether_plugin_sdk::fsutil::write_all_at;
 use aether_plugin_sdk::task::{SharedProgress, TaskControl};
 use aether_plugin_sdk::{
-    Budget, Checksum, ChecksumAlgorithm, ErrorKind, FileInfo, Metadata, PluginError, PluginEvent,
-    PluginSender, TaskPaths, TaskSpec,
+    Budget, Checksum, ChecksumAlgorithm, ErrorKind, FileInfo, LogLevel, Metadata, PluginError,
+    PluginEvent, PluginSender, TaskPaths, TaskSpec,
 };
 use reqwest::blocking::Client;
-use reqwest::header::{ACCEPT_ENCODING, RANGE};
+use reqwest::header::{ACCEPT_ENCODING, RANGE, RETRY_AFTER};
 use thiserror::Error;
 
 use crate::client;
+use crate::gate::{parse_retry_after, Cooldown, HostGate};
 use crate::metalink;
 use crate::state::{self, ResumeState};
 use crate::throttle::Throttle;
@@ -29,6 +30,16 @@ const DETAIL_INTERVAL: Duration = Duration::from_secs(1);
 const STATE_INTERVAL: Duration = Duration::from_secs(1);
 const MAX_RETRIES: u32 = 3;
 const CHUNK: usize = 64 * 1024;
+/// One Range request covers at most this many bytes. A request is the unit
+/// that holds a per-host connection slot, so a bounded request is what lets a
+/// shrunken fair share (or a 418 cooldown) take effect within seconds instead
+/// of after a whole multi-hundred-MiB range. 16 MiB is also the chunk size the
+/// planned work-queue sharding will use, so the request shape stays compatible.
+const REQUEST_BYTES: u64 = 16 * 1024 * 1024;
+/// Give up after this many 418/429 cooldowns; each halves the connection count
+/// and backs off exponentially (1, 2, 4 … 30 s), so this bounds wasted time
+/// while still letting an anti-leech source settle at one connection.
+const MAX_RATE_LIMIT_STRIKES: u32 = 6;
 
 /// Run one task with a private budget. Kept for plugins that reuse the HTTP
 /// downloader (cloud drives, IPFS gateways, …) and do not need live updates.
@@ -44,6 +55,8 @@ pub fn run(
     run_with_budget(
         sender,
         client,
+        None,
+        Arc::new(HostGate::default()),
         task,
         paths,
         Arc::new(Mutex::new(budget)),
@@ -53,10 +66,15 @@ pub fn run(
 }
 
 /// Run one task with a shared budget; `SetBudget` can change the limit while
-/// the download is running (aria2 `changeOption`).
+/// the download is running (aria2 `changeOption`). `fallback` is the
+/// auto-negotiation client used when the HTTP/1.1 client cannot talk to an
+/// h2-only origin; `gate` is the process-wide per-host connection limiter.
+#[allow(clippy::too_many_arguments)]
 pub fn run_with_budget(
     sender: PluginSender,
     client: Client,
+    fallback: Option<Client>,
+    gate: Arc<HostGate>,
     task: TaskSpec,
     paths: TaskPaths,
     budget: Arc<Mutex<Budget>>,
@@ -66,6 +84,8 @@ pub fn run_with_budget(
     let result = run_inner(
         &sender,
         &client,
+        fallback.as_ref(),
+        &gate,
         &task,
         &paths,
         budget,
@@ -86,9 +106,12 @@ pub fn run_with_budget(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_inner(
     sender: &PluginSender,
     client: &Client,
+    fallback: Option<&Client>,
+    gate: &Arc<HostGate>,
     task: &TaskSpec,
     paths: &TaskPaths,
     budget: Arc<Mutex<Budget>>,
@@ -150,7 +173,7 @@ fn run_inner(
                 .map(str::to_string),
         );
     }
-    let probes = candidates
+    let mut probes = candidates
         .iter()
         .map(|candidate| {
             (
@@ -159,11 +182,49 @@ fn run_inner(
             )
         })
         .collect::<Vec<_>>();
+
+    // h2-only origins reject an HTTP/1.1 client at the protocol level (ALPN /
+    // connection reset), which surfaces as an unusable probe. Only in that
+    // case is the multiplexed client used, and the whole candidate list is
+    // re-probed so mirror eligibility stays consistent with the real client.
+    let mut download_client = client.clone();
+    let primary_unusable = probes
+        .first()
+        .is_some_and(|(_, info)| probe_needs_h2_fallback(info));
+    if let Some(fallback) = fallback {
+        if primary_unusable {
+            let alt = candidates
+                .iter()
+                .map(|candidate| {
+                    (
+                        candidate.clone(),
+                        client::probe_with(fallback, candidate, &extra),
+                    )
+                })
+                .collect::<Vec<_>>();
+            if alt.iter().any(|(_, info)| usable(info)) {
+                probes = alt;
+                download_client = fallback.clone();
+                let _ = sender.send(&PluginEvent::Log {
+                    level: LogLevel::Warn,
+                    message: format!(
+                        "source rejected HTTP/1.1 ({}); falling back to the h2 client, shards will share one TCP",
+                        probes
+                            .first()
+                            .and_then(|(_, info)| info.reason.clone())
+                            .unwrap_or_else(|| "protocol mismatch".into())
+                    ),
+                    fields: Default::default(),
+                });
+            }
+        }
+    }
+
     let mut active_url = candidates.first().cloned().unwrap_or_default();
     let mut info = probes
         .first()
         .map(|(_, info)| info.clone())
-        .unwrap_or_else(|| client::probe_with(client, &active_url, &extra));
+        .unwrap_or_else(|| client::probe_with(&download_client, &active_url, &extra));
     if probes.len() > 1 && (!info.supported || info.reason.is_some()) {
         for (candidate, mirror) in &probes[1..] {
             if mirror.supported && mirror.reason.is_none() {
@@ -290,17 +351,28 @@ fn run_inner(
     let file = Arc::new(file);
     let mut mirror_index = 0_usize;
     let mut final_error: Option<DownloadError> = None;
+    // Shared by all workers and kept across mirror attempts so a source that
+    // taught us to use fewer connections does not get the full count back.
+    let cooldown = Arc::new(Cooldown::new(range_count));
+    let host_cap = budget.lock().unwrap().per_host_connections.clamp(1, 16);
 
     // One attempt per compatible source. Completed ranges stay in `shared`,
     // so a failover re-requests only the missing bytes.
     loop {
         let attempt_url = mirrors[mirror_index].clone();
+        let host = host_of(&attempt_url);
+        // Held for the whole attempt; dropping it releases the host share on
+        // completion, failure and cancellation alike.
+        let _registration = gate.register(&host, &task.task_id, host_cap);
         let stop = Arc::new(AtomicBool::new(false));
         let (result_tx, result_rx) = mpsc::channel();
         let mut workers = Vec::new();
         for index in 0..range_count as usize {
-            let client = client.clone();
+            let client = download_client.clone();
             let url = attempt_url.clone();
+            let host = host.clone();
+            let task_id = task.task_id.clone();
+            let sender = sender.clone();
             let file = file.clone();
             let shared = shared.clone();
             let downloaded = downloaded.clone();
@@ -309,11 +381,16 @@ fn run_inner(
             let extra = extra.clone();
             let throttle = throttle.clone();
             let budget = budget.clone();
+            let gate = gate.clone();
+            let cooldown = cooldown.clone();
             let stop = stop.clone();
             workers.push(thread::spawn(move || {
                 let result = download_range(
                     &client,
                     &url,
+                    &host,
+                    &task_id,
+                    &sender,
                     &file,
                     index,
                     &shared,
@@ -323,6 +400,8 @@ fn run_inner(
                     &extra,
                     &throttle,
                     &budget,
+                    &gate,
+                    &cooldown,
                     &stop,
                 );
                 let _ = result_tx.send(result);
@@ -587,6 +666,9 @@ fn is_complete(shared: &Arc<Mutex<ResumeState>>, total: Option<u64>) -> bool {
 fn download_range(
     client: &Client,
     url: &str,
+    host: &str,
+    task_id: &str,
+    sender: &PluginSender,
     file: &File,
     index: usize,
     shared: &Arc<Mutex<ResumeState>>,
@@ -596,6 +678,8 @@ fn download_range(
     extra: &client::HeaderMap,
     throttle: &Arc<Mutex<Throttle>>,
     budget: &Arc<Mutex<Budget>>,
+    gate: &Arc<HostGate>,
+    cooldown: &Arc<Cooldown>,
     stop: &Arc<AtomicBool>,
 ) -> Result<(), DownloadError> {
     let mut attempts = 0;
@@ -618,10 +702,22 @@ fn download_range(
             return Ok(());
         }
 
+        // A 418/429 parks every worker of the task until the shared deadline;
+        // by then the connection limit has already been halved.
+        wait_out_cooldown(control, stop, cooldown)?;
+        let _slot = take_slot(gate, host, task_id, cooldown, control, stop)?;
+
+        // One request covers at most `REQUEST_BYTES`, so a slot — and therefore
+        // a TCP connection — is never held for a whole multi-hundred-MiB range.
+        let request_end = if supports_range {
+            end.min(start + done + REQUEST_BYTES - 1)
+        } else {
+            end
+        };
         let mut request =
             client::apply_headers(client.get(url), extra).header(ACCEPT_ENCODING, "identity");
         if supports_range {
-            request = request.header(RANGE, format!("bytes={}-{}", start + done, end));
+            request = request.header(RANGE, format!("bytes={}-{}", start + done, request_end));
         } else if done > 0 {
             request = request.header(RANGE, format!("bytes={done}-"));
         }
@@ -629,6 +725,7 @@ fn download_range(
         let response = match request.send() {
             Ok(response) => response,
             Err(error) => {
+                drop(_slot);
                 if attempts < MAX_RETRIES && retryable_reqwest(&error) {
                     attempts += 1;
                     backoff(attempts);
@@ -643,6 +740,31 @@ fn download_range(
             return Err(DownloadError::InvalidRange);
         }
         if !status.is_success() {
+            // 418/429 mean "too many connections", not "bad request": cool the
+            // task down and retry with fewer connections instead of failing
+            // the whole task in the first round.
+            if matches!(status.as_u16(), 418 | 429) {
+                let retry_after = response
+                    .headers()
+                    .get(RETRY_AFTER)
+                    .and_then(|value| value.to_str().ok())
+                    .and_then(parse_retry_after);
+                let (limit, wait) = cooldown.note_rejection(retry_after);
+                let _ = sender.send(&PluginEvent::Log {
+                    level: LogLevel::Warn,
+                    message: format!(
+                        "HTTP {status} from {host}: cooling down {wait:?} and lowering the task to {limit} connection(s)"
+                    ),
+                    fields: Default::default(),
+                });
+                drop(response);
+                drop(_slot);
+                if cooldown.strikes() >= MAX_RATE_LIMIT_STRIKES {
+                    return Err(DownloadError::HttpStatus(status.as_u16()));
+                }
+                continue;
+            }
+            drop(_slot);
             if attempts < MAX_RETRIES && retryable_status(status.as_u16()) {
                 attempts += 1;
                 backoff(attempts);
@@ -711,7 +833,29 @@ fn download_range(
         })();
 
         match read_result {
-            Ok(()) => return Ok(()),
+            Ok(()) => {
+                if supports_range {
+                    let next = shared.lock().unwrap().ranges[index].next_offset();
+                    if next <= request_end {
+                        // The body ended before the bytes this request asked
+                        // for: a truncated response. Retry the same slice; a
+                        // clean slice boundary continues to the next slice.
+                        attempts += 1;
+                        if attempts >= MAX_RETRIES {
+                            return Err(DownloadError::Read(io::Error::new(
+                                io::ErrorKind::UnexpectedEof,
+                                "response ended before the requested range",
+                            )));
+                        }
+                        backoff(attempts);
+                        continue;
+                    }
+                    if next <= end {
+                        continue;
+                    }
+                }
+                return Ok(());
+            }
             Err(DownloadError::Canceled) => return Err(DownloadError::Canceled),
             Err(error) => {
                 if attempts < MAX_RETRIES && retryable_error(&error) {
@@ -723,6 +867,74 @@ fn download_range(
             }
         }
     }
+}
+
+fn wait_out_cooldown(
+    control: &Arc<TaskControl>,
+    stop: &Arc<AtomicBool>,
+    cooldown: &Arc<Cooldown>,
+) -> Result<(), DownloadError> {
+    loop {
+        if stop.load(Ordering::Relaxed) {
+            return Err(DownloadError::Aborted);
+        }
+        if !control.wait_until_running() {
+            return Err(DownloadError::Canceled);
+        }
+        let remaining = cooldown.remaining();
+        if remaining.is_zero() {
+            return Ok(());
+        }
+        thread::sleep(remaining.min(Duration::from_millis(200)));
+    }
+}
+
+/// Poll for a per-host slot, staying responsive to pause/cancel and to other
+/// tasks on the same host entering or leaving.
+fn take_slot(
+    gate: &Arc<HostGate>,
+    host: &str,
+    task_id: &str,
+    cooldown: &Arc<Cooldown>,
+    control: &Arc<TaskControl>,
+    stop: &Arc<AtomicBool>,
+) -> Result<crate::gate::Slot, DownloadError> {
+    loop {
+        if stop.load(Ordering::Relaxed) {
+            return Err(DownloadError::Aborted);
+        }
+        if !control.wait_until_running() {
+            return Err(DownloadError::Canceled);
+        }
+        if let Some(slot) = gate.acquire(host, task_id, cooldown.limit()) {
+            return Ok(slot);
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// Host key for the per-host limiter: the hostname, so different ports and
+/// schemes on the same origin still share one cap.
+fn host_of(url: &str) -> String {
+    reqwest::Url::parse(url)
+        .ok()
+        .and_then(|url| url.host_str().map(ToOwned::to_owned))
+        .unwrap_or_else(|| url.to_string())
+}
+
+fn usable(info: &client::ProbeInfo) -> bool {
+    info.supported && info.reason.is_none()
+}
+
+/// An HTTP/1.1 probe that failed at the connection/protocol level is the
+/// signal to retry with the h2 client. A plain HTTP error status is a source
+/// answer, not a protocol mismatch, so it must not trigger the fallback.
+fn probe_needs_h2_fallback(info: &client::ProbeInfo) -> bool {
+    if usable(info) {
+        return false;
+    }
+    let reason = info.reason.as_deref().unwrap_or_default();
+    reason.starts_with("probe failed") || !info.supported
 }
 
 /// Errors that justify trying the same byte ranges on another mirror. Disk
@@ -936,5 +1148,43 @@ mod tests {
     fn eta_is_none_without_speed() {
         assert_eq!(eta(10, Some(100), 0), None);
         assert_eq!(eta(10, Some(100), 10), Some(9));
+    }
+
+    fn probe(reason: Option<&str>, supported: bool) -> client::ProbeInfo {
+        client::ProbeInfo {
+            supported,
+            protocol: Some("https".into()),
+            http_version: None,
+            final_url: "https://example.test/file".into(),
+            size: None,
+            etag: None,
+            content_type: None,
+            filename: None,
+            accept_ranges: false,
+            reason: reason.map(ToOwned::to_owned),
+        }
+    }
+
+    /// An h2-only origin fails the HTTP/1.1 probe at the transport level; a
+    /// plain status answer must never send the task back to the h2 client.
+    #[test]
+    fn only_protocol_level_probe_failures_fall_back_to_h2() {
+        assert!(probe_needs_h2_fallback(&probe(
+            Some("probe failed: error sending request: connection closed"),
+            true
+        )));
+        assert!(probe_needs_h2_fallback(&probe(Some("unsupported"), false)));
+        assert!(!probe_needs_h2_fallback(&probe(
+            Some("HTTP 403 Forbidden"),
+            true
+        )));
+        assert!(!probe_needs_h2_fallback(&probe(None, true)));
+    }
+
+    #[test]
+    fn host_key_ignores_port_and_path() {
+        assert_eq!(host_of("http://127.0.0.1:8080/a?b=1"), "127.0.0.1");
+        assert_eq!(host_of("https://example.test/x"), "example.test");
+        assert_eq!(host_of("not a url"), "not a url");
     }
 }

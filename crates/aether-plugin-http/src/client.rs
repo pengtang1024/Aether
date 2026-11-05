@@ -34,6 +34,8 @@ pub enum ClientError {
 pub struct ProbeInfo {
     pub supported: bool,
     pub protocol: Option<String>,
+    /// Negotiated HTTP version (`h2`, `http/1.1`, …) as reported by reqwest.
+    pub http_version: Option<String>,
     pub final_url: String,
     pub size: Option<u64>,
     pub etag: Option<String>,
@@ -48,6 +50,7 @@ impl ProbeInfo {
         Self {
             supported: false,
             protocol: None,
+            http_version: None,
             final_url: url.to_string(),
             size: None,
             etag: None,
@@ -57,6 +60,20 @@ impl ProbeInfo {
             reason: Some(reason.into()),
         }
     }
+}
+
+/// Which HTTP version a client is allowed to negotiate.
+///
+/// With h2 the whole task shares one connection pool and reqwest multiplexes
+/// every range onto the first TCP connection, so per-connection limits on the
+/// origin cap the *task*, not the connection. Segmented downloads therefore
+/// ask for HTTP/1.1, where each concurrent request necessarily gets its own
+/// TCP connection. `Auto` stays the default for single-connection tasks and
+/// is the fallback for h2-only origins.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HttpVersion {
+    Auto,
+    Http1Only,
 }
 
 pub fn build_client(init: &Init) -> Result<Client, ClientError> {
@@ -80,6 +97,17 @@ pub fn build_client_custom(
     init: &Init,
     user_agent: Option<&str>,
     auth: Option<(&str, &str)>,
+) -> Result<Client, ClientError> {
+    build_client_with_protocol(init, user_agent, auth, HttpVersion::Auto)
+}
+
+/// Same as [`build_client_custom`] but pins (or leaves free) the negotiated
+/// HTTP version.
+pub fn build_client_with_protocol(
+    init: &Init,
+    user_agent: Option<&str>,
+    auth: Option<(&str, &str)>,
+    version: HttpVersion,
 ) -> Result<Client, ClientError> {
     let network = init.network.as_ref();
     let user_agent = user_agent
@@ -119,6 +147,12 @@ pub fn build_client_custom(
         .connect_timeout(Duration::from_secs(15))
         .default_headers(headers)
         .user_agent(user_agent);
+
+    if version == HttpVersion::Http1Only {
+        // One concurrent request per TCP connection: no h2 multiplexing, so
+        // the origin's per-connection limits apply per shard as intended.
+        builder = builder.http1_only();
+    }
 
     if let Some(config) = network {
         // Binding a wildcard address restricts connections to one family; the
@@ -321,6 +355,7 @@ pub fn probe_with(client: &Client, input: &str, extra: &HeaderMap) -> ProbeInfo 
         Ok(response) => ProbeInfo {
             supported: true,
             protocol: Some(url.scheme().to_string()),
+            http_version: version_label(response.version()),
             final_url: response.url().to_string(),
             size: content_length(&response),
             etag: header(&response, ETAG),
@@ -335,6 +370,7 @@ pub fn probe_with(client: &Client, input: &str, extra: &HeaderMap) -> ProbeInfo 
             // surfaces a retryable error instead of "no plugin supports this".
             supported: true,
             protocol: Some(url.scheme().to_string()),
+            http_version: None,
             final_url: url.to_string(),
             size: None,
             etag: None,
@@ -358,6 +394,7 @@ fn inspect(response: Response, requested_url: &str, ranged_request: bool) -> Pro
     ProbeInfo {
         supported: true,
         protocol: url.as_ref().map(|url| url.scheme().to_string()),
+        http_version: version_label(response.version()),
         final_url: final_url.to_string(),
         size: total,
         etag: header(&response, ETAG),
@@ -366,6 +403,19 @@ fn inspect(response: Response, requested_url: &str, ranged_request: bool) -> Pro
         accept_ranges,
         reason: (!status.is_success()).then(|| format!("HTTP {status}")),
     }
+}
+
+/// Short label for the negotiated version, used in logs and probe results.
+fn version_label(version: reqwest::Version) -> Option<String> {
+    let label = match version {
+        reqwest::Version::HTTP_09 => "http/0.9",
+        reqwest::Version::HTTP_10 => "http/1.0",
+        reqwest::Version::HTTP_11 => "http/1.1",
+        reqwest::Version::HTTP_2 => "h2",
+        reqwest::Version::HTTP_3 => "h3",
+        _ => return None,
+    };
+    Some(label.to_string())
 }
 
 /// `Accept-Ranges: bytes` is a promise some servers do not keep. Verify with
