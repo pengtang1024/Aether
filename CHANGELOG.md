@@ -26,9 +26,26 @@ versioning; 0.x releases may still change structure.
   before, 4 TCP / 104.7 MB/s after.
 - A Range request covers at most 16 MiB, so a shrunken fair share or a
   cooldown takes effect within seconds instead of after a whole shard.
+- HTTP downloads now use a dynamic 16 MiB work queue instead of a fixed static
+  split: workers steal the next chunk when they finish, so one slow stream no
+  longer sets the task duration. A chunk that lags 2x behind the median
+  completed chunk splits its tail (aligned to 1 MiB) for idle workers, and the
+  already-written prefix is never re-requested. Local 512 MiB fixture with the
+  first 64 MiB capped at 5 MB/s, 4 workers: 25.60 s static, 12.93 s with the
+  16 MiB request cap, 3.57 s with the queue, 0 duplicated bytes. Unlimited
+  local source: 0.458 s vs 0.466 s static (101.7%), same 32 Range requests.
+  TUNA `speedtest/1000mb.bin` interleaved 3-round median: x4 95.6 MiB/s vs
+  aria2 103.4 MiB/s (92.5%, was 88.7% with the static split), x8 97.7 vs
+  105.1 (92.9%).
 
 ### Fixed
-
+- Resume state is validated on load (no gaps, no overlaps, full coverage of
+  the known length). A state that fails the check, or whose file/ETag no
+  longer matches, is discarded together with the partial file and the task
+  restarts from zero instead of silently resuming from a corrupt bitmap.
+- Legacy `.aether` state files without a `version` are still accepted: the
+  static ranges are migrated to 16 MiB chunks on load (downloaded progress
+  preserved) and written back as version 1 on the next checkpoint.
 - 418 and 429 responses no longer fail the whole task in the first round:
   the task cools down, halves its connection limit (floor 1), honours
   `Retry-After` (delay-seconds), backs off exponentially up to 30 s, and only

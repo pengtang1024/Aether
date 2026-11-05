@@ -234,24 +234,38 @@ host 任务留出可平分的余量。
 3. 记录 `ETag`、`Last-Modified`、`Content-Disposition`、`Content-Type`、最终 URL。
 4. HEAD 不可靠（403/405）时，只用 Range 探测，不发 HEAD。
 
-### 5.2 分段策略
+### 5.2 分段策略（动态工作队列）
 
-- 初始 segment 大小：4 MiB（可配置 1–16 MiB），最后一段取余。
-- 连接数：min(配置, ceil(size / 2 MiB), per-host/global permit)。
-- 慢段拆分：若剩余 > 2×最小段且该段速度低于中位数 50%，拆成两段并交给空闲 worker。
-- 相邻完成段合并，减少元数据；不合并正在请求的段。
-- 每个 worker 循环领取 segment，直到队列空或取消。
-- 失败段进入任务内重试队列；连续失败触发 source 切换。
-
-当前实现（还没有动态拆段）：
-
-- 启动时按 `connections` 一次性等分（`count = connections.clamp(1,16).min(total/64KiB)`），
-  运行期间分片数不变，改 `connections` 只能在下一次任务启动时生效。
-- 每个分片一个阻塞 worker，**独占一条 TCP**（见 5.4）。
-- 单条 Range 请求最多覆盖 16 MiB（`REQUEST_BYTES`）。请求是持 per-host 槽位的单位，
+- 启动时按总长规划 16 MiB 块：`count = min(connections×8, total/64 KiB)`，
+  块大小 `clamp(total/count, 64 KiB, 16 MiB)`。`connections` 仍是“每任务 worker 数”，
+  块才是工作单位（1 GiB 无论 ×4 还是 ×8 都是 63 个 16 MiB 块，只是 worker 数不同）。
+- 队列 `WorkQueue` 保存 `(start, end, done)` 与 `pending/claimed`：worker 完成一块后
+  `claim()` 下一块（逐片窃取）。慢连接只占住自己那一块，其余 worker 继续领新块，
+  不再“最慢分片决定总时长”。
+- 单条 Range 请求最多覆盖 16 MiB（`CHUNK_BYTES`）。请求是持 per-host 槽位的单位，
   请求有界才能让缩小的公平份额、418/429 冷却在秒级生效，而不是等几百 MiB 的整段跑完。
-- 总完成时间 = 最慢分片，静态等分对“单条流变慢”没有抵抗力；动态工作队列（16 MiB 块 +
-  2× 落后截尾）是下一轮改动，本轮不包含。
+- 2× 落后截尾：仅在队列已空、至少 2 个已完成块样本、剩余 ≥8 MiB 且该块 ETA 超过已完成
+  块中位耗时 2 倍时触发；截断点取 `start+done+剩余/2`（1 MiB 对齐），新尾块追加进队列，
+  原 worker 每 250 ms 重读 `end`，写到截断点即返回。已写前缀不重下，所以截尾本身不产生
+  重复字节；每块最多截尾一次，避免碎片化。
+- worker 循环：拿 per-host 槽位 → 领块 → 发请求 → 写盘并推进 `done` → 完成块再领下一块。
+  暂停时 worker 睡在 `wait_until_running`，418/429 冷却时睡在共享 deadline 上，都不空转
+  CPU；冷却重试期间保持当前块的归属，不会把块丢回队列造成重复请求。
+- 失败块走任务内重试；连续失败或 mirror 切换时由 `WorkQueue::rebuild()` 重建队列，
+  已完成块保留、未完成块重新入队（见 5.6）。协议回退（HTTP/1.1 → h2）会重新探测整组
+  候选，因此同样走一次重建，不会沿用指向旧镜像的片。
+
+实测（本机 512 MiB，首 64 MiB 限 5 MB/s，4 worker，同一台服务端）：
+
+| 调度 | 完成时间 | 请求数 | 重复字节 |
+| --- | --- | --- | --- |
+| 整段静态等分（每 128 MiB 一条请求，设计报告基线 26.83 s） | 25.60 s | 4 | 0 |
+| 16 MiB 请求上限 + 静态等分（上一批） | 12.93 s | 32 | 0 |
+| **16 MiB 动态队列（本轮）** | **3.57 s** | 32 | 0 |
+
+不限速本地源（512 MiB ×4，同一二进制、同一块内存 fixture，各 3 轮中位）：
+静态等分 0.466 s、动态队列 0.458 s（101.7%，即调度开销 0），两者都是 32 条 Range 请求，
+请求数不增。
 
 ### 5.3 Range 请求细节
 
@@ -296,21 +310,31 @@ Accept-Encoding: identity
 | --- | --- | --- |
 | 本地 h2 + 每 TCP 限速 25 MB/s，256 MiB，4 连接 | 26.2 MB/s，1 条 TCP | 104.7 MB/s，4 条 TCP（×4.0） |
 | 本地 h1 + 每 TCP 限速 26 MB/s，256 MiB | — | 插件 x1 26.8 / x2 52.7 / x4 101.8 / x8 193.5 MB/s |
-| TUNA `speedtest/100mb.bin`，x4，5 轮中位 | — | aria2 43.84 MB/s，插件 38.88 MB/s（88.7%） |
-| TUNA `speedtest/1000mb.bin`，x8，单轮 | — | aria2 100.23 MB/s，插件 92.74 MB/s（92.5%） |
+| TUNA `speedtest/100mb.bin`，x4，5 轮中位（上一批，静态分片） | — | aria2 43.84 MB/s，插件 38.88 MB/s（88.7%） |
+| TUNA `speedtest/1000mb.bin`，x8，单轮（上一批，静态分片） | — | aria2 100.23 MB/s，插件 92.74 MB/s（92.5%） |
+| TUNA `speedtest/1000mb.bin`，x4，3 轮交错中位（动态队列） | — | aria2 103.4 MiB/s，插件 95.6 MiB/s（92.5%） |
+| TUNA `speedtest/1000mb.bin`，x8，3 轮交错中位（动态队列） | — | aria2 105.1 MiB/s，插件 97.7 MiB/s（92.9%） |
 
 `tcp_conns` 用 `ss -tnp state established` 按插件进程计数核对：x4 峰值 4、x8 峰值 8，
-均与配置一致。TUNA 侧的差距来自逐流速率抖动 + 静态等分（总时长由最慢分片决定），
-同条件用原始 reqwest 跑同样 4 连接也只有 aria2 的约 73–92%，所以这不是本次改造的回归；
-动态分片落地后应再测一次。
+均与配置一致。TUNA 的剩余差距主要是逐流速率抖动 + 每块新建请求的固定开销（含 TLS 握手），
+同条件用原始 reqwest 跑同样 4 连接也只有 aria2 的约 73–92%；动态队列把 x4 中位从 88.7%
+提升到 92.5%（交错 3 轮：95.0/95.6/97.6 MiB/s），x8 为 92.9%。
 
-### 5.5 续传
+### 5.5 续传与状态校验
 
-- checkpoint 记录：最终 URL、ETag、Last-Modified、总大小、segment 表、已完成字节、校验和。
-- 重启后先做轻量探测；ETag/大小一致才续传，否则标记 `RemoteChanged` 并提示。
-- `If-Range` 不匹配时，服务器返回 200；此时必须丢弃旧 segment 并重新规划。
-- 写入采用 `pwrite`/positioned write；每个 segment 完成后记录完成位图。
-- 进程崩溃最多回退一个 checkpoint 周期（默认 1 秒）内的 segment。
+- 状态文件 `<staging>/.aether-http-state.json`（原子写：tmp + rename），每 250 ms 一次：
+  `{version, url, etag, total, filename, supports_range, ranges:[{start,end,done}]}`。
+- `version = 1` 表示 16 MiB 块。旧格式（无 `version` 或 `version == 0`，即静态等分）加载后
+  `normalize()` 会把所有超过 16 MiB 的未完成 range 在**绝对** 16 MiB 边界切开并保留各自
+  `done`，下一次持久化写回 v1；迁移幂等，不需要独立工具。
+- 加载时校验不变量：按 `start` 排序后必须从 0 开始、末块 `end+1 == total`、相邻块无缝且
+  无重叠、`done ≤ len`；`total == 0`（未知长度）只允许一条开放式 range。
+- 任一项失败（文件被截断、字段被手工改坏、ETag/URL 不一致）：删除状态文件与半成品，
+  记一条 Warn 后整任务重来，绝不按错误状态续传。
+- 重启后先做轻量探测；ETag/大小一致才续传，否则按上一条重建。
+- `If-Range` 不匹配时服务器返回 200；此时丢弃旧分片并按新长度重新规划。
+- 写入采用 `pwrite`；暂停不打断在途响应，恢复后按顺序继续读同一连接，因此不产生重复
+  请求。进程被 kill -9 时最多损失 250 ms 的已写进度，实测重下 1 MiB / 256 MiB（0.39%）。
 
 ### 5.6 多镜像 / Metalink
 
@@ -318,7 +342,10 @@ Accept-Encoding: identity
 - 镜像评分：最近成功率、RTT、吞吐、失败次数、协议优先级。
 - 每个 segment 可绑定不同镜像；响应必须与主源大小/ETag 兼容（或使用 piece hash 校验）。
 - 镜像全部失败时回到主 URL；不无限重试。
-- 同一 segment 不允许并发写同一偏移；以 segment lease 保证。
+- 每次换源（含 HTTP/1.1 → h2 协议回退）都会 `WorkQueue::rebuild()`：已完成块保留，
+  未完成块重新入队，队列里不存在指向旧镜像的请求；换源时按新客户端的探测结果重新
+  判定候选集，避免“旧片的 URL 还在飞”。
+- 同一 segment 不允许并发写同一偏移；以 queue `claimed` 位保证。
 
 ## 6. BitTorrent 插件
 
