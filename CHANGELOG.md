@@ -3,6 +3,37 @@
 All notable changes to Aether are documented here. Versions follow semantic
 versioning; 0.x releases may still change structure.
 
+## [Unreleased]
+
+### Added
+
+- Per-host connection cap is enforced instead of being a dead field:
+  `Budget.per_host_connections` (default 8) is applied inside the HTTP plugin
+  process for every task on the same host, with the cap split evenly between
+  the tasks sharing that host. Each Range request holds one slot and releases
+  it on completion, failure or cancel, so a paused task cannot leak a lease.
+  Eight is the default because a single task may legitimately ask for eight
+  connections while two or three tasks on one host still need headroom before
+  anti-leech origins start answering 418/429.
+
+### Changed
+
+- Multi-connection HTTP tasks build a per-task `http1_only()` client, so each
+  shard owns a TCP connection instead of sharing one h2 multiplexer; tasks
+  with a single connection keep the shared h2 client. Origins that only speak
+  h2 fall back to the multiplexed client when the HTTP/1.1 probe fails at the
+  protocol level. Local h2 test with 25 MB/s per TCP: 1 TCP / 26.2 MB/s
+  before, 4 TCP / 104.7 MB/s after.
+- A Range request covers at most 16 MiB, so a shrunken fair share or a
+  cooldown takes effect within seconds instead of after a whole shard.
+
+### Fixed
+
+- 418 and 429 responses no longer fail the whole task in the first round:
+  the task cools down, halves its connection limit (floor 1), honours
+  `Retry-After` (delay-seconds), backs off exponentially up to 30 s, and only
+  gives up after six strikes with an explicit HTTP status.
+
 ## [0.6.4] - 2026-11-04
 
 ### Changed

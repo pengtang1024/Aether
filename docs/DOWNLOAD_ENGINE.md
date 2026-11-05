@@ -192,15 +192,27 @@ Seeding（BT 完成后，可选）──► Completed / Paused
 
 - `max_active_tasks`（默认 3）
 - `max_total_connections`（默认 32）
-- `max_connections_per_host`（默认 8）
+- `max_connections_per_host`（默认 8，与 `Budget.per_host_connections` 的默认值一致）
 - `max_connections_per_task`（默认 4）
 - 下载/上传 token bucket（全局 + 单任务）
 - 磁盘写入背压：写队列高水位时暂停读取 socket
+
+per-host 默认取 8 而不是更小，是因为单个任务默认就要 4 连接、预设档位到 8：cap=4 会把
+一个 x8 任务腰斩，cap 也不能远大于单任务上限，否则 2–3 个同 host 任务瞬间把反盗链源顶到
+418/429（华为源在 16 连接左右就会拒绝）。8 的取值让单个 x8 任务跑满，同时给 2–3 个同
+host 任务留出可平分的余量。
 
 ### 4.2 队列与公平性
 
 - 优先级 `-10..10`；每等待 30 秒提升一级有效优先级。
 - 同一 host 使用信号量限制；`Semaphore` permit 从全局和 per-host 两层获取。
+- per-host 限制的实际执行点在 **HTTP 插件进程内**（`aether-plugin-http` 的 `HostGate`），
+  因为它比 daemon 更接近真实 socket：`cap = Budget.per_host_connections`，同 host 有 N 个
+  活跃任务时每任务份额为 `cap / N`（至少 1）。槽位按**单个请求**申请，请求结束、失败或
+  取消即释放（RAII），所以任务暂停/失败/退出都不会留下租约。
+- 全局连接预算仍是 `max_active_tasks × 每任务连接数`（daemon 的 `distribute_budget`），
+  per-host cap 是不依赖它的第一层限制；限速份额按活跃任务均摊、与连接数无关，降并发后
+  份额不变，冷却期间可能出现“份额用不满”但不会影响其他任务。
 - 暂停/取消使用 `CancellationToken` 向下传播，不等待所有 socket 自然超时。
 - 任务完成后释放 permit；失败重试进入 `RetryWait`，不占用活跃槽。
 
@@ -231,6 +243,16 @@ Seeding（BT 完成后，可选）──► Completed / Paused
 - 每个 worker 循环领取 segment，直到队列空或取消。
 - 失败段进入任务内重试队列；连续失败触发 source 切换。
 
+当前实现（还没有动态拆段）：
+
+- 启动时按 `connections` 一次性等分（`count = connections.clamp(1,16).min(total/64KiB)`），
+  运行期间分片数不变，改 `connections` 只能在下一次任务启动时生效。
+- 每个分片一个阻塞 worker，**独占一条 TCP**（见 5.4）。
+- 单条 Range 请求最多覆盖 16 MiB（`REQUEST_BYTES`）。请求是持 per-host 槽位的单位，
+  请求有界才能让缩小的公平份额、418/429 冷却在秒级生效，而不是等几百 MiB 的整段跑完。
+- 总完成时间 = 最慢分片，静态等分对“单条流变慢”没有抵抗力；动态工作队列（16 MiB 块 +
+  2× 落后截尾）是下一轮改动，本轮不包含。
+
 ### 5.3 Range 请求细节
 
 ```http
@@ -243,7 +265,13 @@ Accept-Encoding: identity
 - 必须校验响应为 `206` 且 `Content-Range` 的 start/end 与请求一致。
 - 若服务器返回 `200`：放弃分段，切换单流；已写数据只有在偏移 0 连续时才可复用。
 - 若 ETag/Last-Modified 改变：默认作废旧分段并从 0 开始；可选“重新校验后保留同前缀”。
-- `Retry-After`、`429`、`503` 做指数退避 + jitter；`401/403` 不盲目重试。
+- `418` / `429` 不是普通错误，而是“连接太多”，按任务级冷却处理：
+  - 首次命中把该任务的连接上限减半（下限 1），同一冷却窗内的其它 worker 命中合并为一次
+    strike，不会连续砍到 1；
+  - 退避 1 → 2 → 4 … → 30 s，`Retry-After`（仅 `delay-seconds`）更大时取它；
+  - 冷却由任务内所有 worker 共享，等待结束后用新的（更小的）连接数继续；
+  - 连续 6 次 strike 才以明确的 HTTP 状态失败，而不是 61 ms 内整任务失败、0 字节。
+- `503` 等其余可重试状态仍走 worker 级指数退避；`401/403` 不盲目重试。
 - 重定向策略：最多 10 跳；跨 scheme 需重新校验（https→http 默认拒绝）。
 - 代理：HTTP CONNECT / SOCKS5；代理认证只存于内存/系统 keyring，不写日志。
 - 鉴权：Basic/Bearer/自定义 Header；Cookie 可由调用方提供；不自动读取浏览器 Cookie（后续插件）。
@@ -251,11 +279,30 @@ Accept-Encoding: identity
 
 ### 5.4 多连接与 HTTP/2/3
 
-- HTTP/1.1：每连接一个 Range 请求，连接池按 host 复用。
-- HTTP/2：一个 TCP/TLS 连接上多路复用多个 Range stream；per-host 并发按 stream 计。
+- 连接策略由任务启动时的 `connections` 决定：
+  - `connections > 1`：按任务建一个 `http1_only()` 客户端，每个分片请求独占一条 TCP，
+    不再让 h2 把多条流塞进同一条 TCP（h2 单连接在多流下会被单连接带宽上限锁死）；
+  - `connections == 1`：继续用进程级 h2 客户端，单任务单流时 h2 的握手/帧开销更小。
+- h2-only 源的回退：HTTP/1.1 客户端探测在**协议层**失败（ALPN 拒绝、连接立即关闭、
+  探测失败）时，用 h2 客户端对整组候选镜像重新探测；只要有可用候选就整体改用 h2，
+  并记一条 Warn。普通 HTTP 状态码（403/404/416 等）不触发回退，避免把“源站拒绝”误判成
+  “协议不兼容”。
 - HTTP/3：启用 quinn/h3 时同样多路复用；UDP 被封时快速回退 HTTP/2。
-- 是否启用 h2/h3 由客户端能力 + 服务器 ALPN 决定；不在代码里假设。
 - 下载请求禁用透明压缩，避免 Content-Length 与实际字节不一致。
+
+实测（本轮改造，均为本机数据）：
+
+| 场景 | 改造前 | 改造后 |
+| --- | --- | --- |
+| 本地 h2 + 每 TCP 限速 25 MB/s，256 MiB，4 连接 | 26.2 MB/s，1 条 TCP | 104.7 MB/s，4 条 TCP（×4.0） |
+| 本地 h1 + 每 TCP 限速 26 MB/s，256 MiB | — | 插件 x1 26.8 / x2 52.7 / x4 101.8 / x8 193.5 MB/s |
+| TUNA `speedtest/100mb.bin`，x4，5 轮中位 | — | aria2 43.84 MB/s，插件 38.88 MB/s（88.7%） |
+| TUNA `speedtest/1000mb.bin`，x8，单轮 | — | aria2 100.23 MB/s，插件 92.74 MB/s（92.5%） |
+
+`tcp_conns` 用 `ss -tnp state established` 按插件进程计数核对：x4 峰值 4、x8 峰值 8，
+均与配置一致。TUNA 侧的差距来自逐流速率抖动 + 静态等分（总时长由最慢分片决定），
+同条件用原始 reqwest 跑同样 4 连接也只有 aria2 的约 73–92%，所以这不是本次改造的回归；
+动态分片落地后应再测一次。
 
 ### 5.5 续传
 
