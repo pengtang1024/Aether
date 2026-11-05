@@ -14,8 +14,23 @@ use thiserror::Error;
 
 pub const STATE_FILE: &str = ".aether-http-state.json";
 
+/// Format version of the state file. `0` (absent) is the legacy static split,
+/// which loaded as a plain range list and is migrated on the first write.
+pub const VERSION: u32 = 1;
+
+/// One unit of work: the downloader enqueues chunks of this size and workers
+/// claim them one at a time, so a slow chunk no longer pins a whole range.
+pub const CHUNK_BYTES: u64 = 16 * 1024 * 1024;
+/// Smallest useful slice. Below this a request costs more than it reveals
+/// about the source, and small files keep one chunk per 64 KiB anyway.
+const MIN_CHUNK_BYTES: u64 = 64 * 1024;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResumeState {
+    /// Written as `1` by this version. Legacy files have no field and load as
+    /// `0`; [`ResumeState::normalize`] splits their oversized ranges.
+    #[serde(default)]
+    pub version: u32,
     pub url: String,
     #[serde(default)]
     pub etag: Option<String>,
@@ -35,6 +50,10 @@ pub struct RangeState {
 }
 
 impl RangeState {
+    pub(crate) fn len(&self) -> u64 {
+        self.end.saturating_sub(self.start).saturating_add(1)
+    }
+
     pub fn remaining(&self) -> u64 {
         if self.is_complete() {
             return 0;
@@ -63,7 +82,7 @@ impl ResumeState {
         connections: u32,
     ) -> Self {
         let ranges = if total > 0 {
-            split_ranges(total, connections)
+            plan_chunks(total, connections)
         } else {
             vec![RangeState {
                 start: 0,
@@ -73,6 +92,7 @@ impl ResumeState {
         };
 
         Self {
+            version: VERSION,
             url: url.into(),
             etag,
             total,
@@ -88,10 +108,87 @@ impl ResumeState {
             && self.etag.as_deref() == etag
             && total.is_none_or(|total| self.total == total)
             && !self.ranges.is_empty()
-            && self
-                .ranges
-                .iter()
-                .all(|range| range.done <= range.end - range.start + 1)
+            && self.invariant_error().is_none()
+    }
+
+    /// Resume safety check: the ranges must tile `[0, total)` exactly once,
+    /// with `done` inside each range. A gap would silently leave bytes at zero
+    /// and an overlap would make two workers write the same offset, so any
+    /// violation means the whole state and partial file must be discarded.
+    pub fn invariant_error(&self) -> Option<String> {
+        if self.ranges.is_empty() {
+            return Some("state has no ranges".into());
+        }
+        for range in &self.ranges {
+            if range.done > range.len() {
+                return Some(format!(
+                    "range {}-{} has done={} beyond its length",
+                    range.start, range.end, range.done
+                ));
+            }
+        }
+        if self.total == 0 {
+            // Unknown size: only the single open-ended range is meaningful.
+            return (self.ranges.len() != 1)
+                .then(|| format!("open-ended state has {} ranges", self.ranges.len()));
+        }
+        // Splits append their tail to the end of the list, so coverage is
+        // checked on a start-sorted view rather than on insertion order.
+        let mut sorted: Vec<&RangeState> = self.ranges.iter().collect();
+        sorted.sort_by_key(|range| range.start);
+        if sorted[0].start != 0 {
+            return Some(format!("first range starts at {}", sorted[0].start));
+        }
+        if sorted
+            .last()
+            .is_some_and(|range| range.end + 1 != self.total)
+        {
+            return Some(format!(
+                "last range ends at {} but total is {}",
+                sorted.last().unwrap().end,
+                self.total
+            ));
+        }
+        for pair in sorted.windows(2) {
+            if pair[0].end + 1 != pair[1].start {
+                return Some(format!(
+                    "ranges {}-{} and {}-{} are not contiguous",
+                    pair[0].start, pair[0].end, pair[1].start, pair[1].end
+                ));
+            }
+        }
+        None
+    }
+
+    /// Split any oversized range into [`CHUNK_BYTES`] chunks. Legacy state
+    /// files (version 0, static split) are migrated on load; the operation is
+    /// idempotent, so it also runs on every resume for safety.
+    pub fn normalize(&mut self) {
+        self.version = VERSION;
+        if self.total == 0 {
+            return;
+        }
+        let mut ranges = Vec::with_capacity(self.ranges.len());
+        for range in std::mem::take(&mut self.ranges) {
+            if range.is_complete() || range.len() <= CHUNK_BYTES {
+                ranges.push(range);
+                continue;
+            }
+            let mut start = range.start;
+            let mut done = range.done;
+            while start <= range.end {
+                let end = start.saturating_add(CHUNK_BYTES - 1).min(range.end);
+                let len = end - start + 1;
+                ranges.push(RangeState {
+                    start,
+                    end,
+                    done: done.min(len),
+                });
+                done = done.saturating_sub(len);
+                start = end + 1;
+            }
+        }
+        self.ranges = ranges;
     }
 
     pub fn downloaded(&self) -> u64 {
@@ -103,17 +200,20 @@ impl ResumeState {
     }
 }
 
-pub fn split_ranges(total: u64, connections: u32) -> Vec<RangeState> {
-    // Do not split tiny files into more ranges than useful: one connection
-    // should own at least 64 KiB where possible.
-    let useful = total.div_ceil(64 * 1024).max(1) as u32;
-    let count = connections.clamp(1, 16).min(useful) as u64;
-    let chunk = total.div_ceil(count).max(1);
+/// Chunk plan for a new download: 16 MiB units, shrinking for small files so
+/// a short download still has enough chunks to keep every worker busy.
+pub fn plan_chunks(total: u64, connections: u32) -> Vec<RangeState> {
+    let connections = u64::from(connections.clamp(1, 16));
+    // ~8 chunks per worker give the queue slack for stealing without turning
+    // a 1 GiB download into thousands of requests.
+    let useful = (total / MIN_CHUNK_BYTES).max(1);
+    let count = (connections * 8).min(useful);
+    let target = (total / count).clamp(MIN_CHUNK_BYTES, CHUNK_BYTES);
     let mut ranges = Vec::new();
     let mut start = 0_u64;
 
     while start < total {
-        let end = (start + chunk - 1).min(total - 1);
+        let end = start.saturating_add(target - 1).min(total - 1);
         ranges.push(RangeState {
             start,
             end,
@@ -175,12 +275,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn splits_ranges_without_gaps_or_overlap() {
-        let total = 1024 * 1024;
-        let ranges = split_ranges(total, 4);
-        assert_eq!(ranges.len(), 4);
+    fn chunk_plan_tiles_the_file_without_gaps_or_overlap() {
+        let total = 512 * 1024 * 1024;
+        let ranges = plan_chunks(total, 4);
+        assert_eq!(ranges.len(), 32);
+        assert!(ranges.iter().all(|range| range.len() == CHUNK_BYTES));
         assert_eq!(ranges[0].start, 0);
-        assert_eq!(ranges[3].end, total - 1);
+        assert_eq!(ranges[31].end, total - 1);
         for pair in ranges.windows(2) {
             assert_eq!(pair[0].end + 1, pair[1].start);
         }
@@ -188,10 +289,111 @@ mod tests {
     }
 
     #[test]
-    fn small_file_uses_one_range() {
-        let ranges = split_ranges(3, 8);
-        assert_eq!(ranges.len(), 1);
-        assert_eq!(ranges[0].end, 2);
+    fn small_files_get_smaller_chunks() {
+        // 40 MiB with four workers: 32 chunks of 1.25 MiB keep the queue fed.
+        let ranges = plan_chunks(40 * 1024 * 1024, 4);
+        assert_eq!(ranges.len(), 32);
+        assert!(ranges.iter().all(|range| range.len() == 1_310_720));
+        // A 512 KiB fixture still splits into 64 KiB chunks, as before.
+        let small = plan_chunks(512 * 1024, 8);
+        assert_eq!(small.len(), 8);
+        assert!(small.iter().all(|range| range.len() == MIN_CHUNK_BYTES));
+        let tiny = plan_chunks(3, 8);
+        assert_eq!(tiny.len(), 1);
+        assert_eq!(tiny[0].end, 2);
+    }
+
+    #[test]
+    fn invariant_check_rejects_gaps_and_overlaps() {
+        let mut state =
+            ResumeState::new("https://example.com/a", Some("e".into()), 100, "a", true, 2);
+        state.ranges = vec![
+            RangeState {
+                start: 0,
+                end: 49,
+                done: 10,
+            },
+            RangeState {
+                start: 60,
+                end: 99,
+                done: 0,
+            },
+        ];
+        assert!(state.invariant_error().unwrap().contains("not contiguous"));
+
+        state.ranges[1].start = 50;
+        state.ranges[0].end = 49;
+        assert!(state.invariant_error().is_none());
+
+        state.ranges[0].end = 51;
+        assert!(state.invariant_error().unwrap().contains("not contiguous"));
+
+        state.ranges[0].done = 100;
+        assert!(state
+            .invariant_error()
+            .unwrap()
+            .contains("beyond its length"));
+    }
+
+    #[test]
+    fn invariant_check_rejects_short_or_shifted_coverage() {
+        let state = ResumeState::new("https://example.com/a", None, 100, "a", true, 2);
+        assert!(state.invariant_error().is_none());
+
+        let mut shifted = state.clone();
+        shifted.ranges[0].start = 5;
+        assert!(shifted.invariant_error().unwrap().contains("first range"));
+
+        let mut short = state.clone();
+        short.ranges.last_mut().unwrap().end -= 1;
+        assert!(short.invariant_error().unwrap().contains("last range"));
+    }
+
+    /// Legacy files (no `version`, static 128 MiB ranges) must load and turn
+    /// into 16 MiB chunks without losing the already-written prefix.
+    #[test]
+    fn legacy_state_loads_and_migrates_to_chunks() {
+        let json = serde_json::json!({
+            "url": "https://example.com/a",
+            "etag": "e",
+            "total": 256 * 1024 * 1024_u64,
+            "filename": "a",
+            "supports_range": true,
+            "ranges": [
+                {"start": 0, "end": 128 * 1024 * 1024_u64 - 1, "done": 40 * 1024 * 1024_u64},
+                {"start": 128 * 1024 * 1024_u64, "end": 256 * 1024 * 1024_u64 - 1, "done": 0}
+            ]
+        });
+        let mut state: ResumeState = serde_json::from_value(json).unwrap();
+        assert_eq!(state.version, 0, "legacy file has no version field");
+        assert!(state.invariant_error().is_none());
+        assert_eq!(state.downloaded(), 40 * 1024 * 1024);
+
+        state.normalize();
+        assert_eq!(state.version, VERSION);
+        assert_eq!(state.ranges.len(), 16);
+        assert!(state.ranges.iter().all(|range| range.len() == CHUNK_BYTES));
+        assert!(state.invariant_error().is_none());
+        assert_eq!(state.downloaded(), 40 * 1024 * 1024);
+        assert_eq!(state.ranges[0].done, CHUNK_BYTES);
+        assert_eq!(state.ranges[1].done, CHUNK_BYTES);
+        assert_eq!(state.ranges[2].done, 8 * 1024 * 1024);
+    }
+
+    #[test]
+    fn normalize_is_idempotent() {
+        let mut state = ResumeState::new(
+            "https://example.com/a",
+            None,
+            512 * 1024 * 1024,
+            "a",
+            true,
+            4,
+        );
+        let before = state.ranges.len();
+        state.normalize();
+        assert_eq!(state.ranges.len(), before);
+        assert!(state.invariant_error().is_none());
     }
 
     #[test]

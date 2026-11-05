@@ -570,10 +570,26 @@ fn resumes_from_persisted_state() {
 
     assert_eq!(fs::read(staging.join("file.bin")).unwrap(), data);
     let ranges = server.ranges.lock().unwrap().clone();
-    let expected = format!("bytes=100-{}", FILE_SIZE - 1);
+    // The state marks 100 bytes as done; the queue may split the rest into
+    // several smaller chunks, but nothing already on disk may be requested
+    // again: the served bytes must add up to exactly the missing suffix.
+    let served: usize = ranges
+        .iter()
+        .filter_map(|range| parse_range(range, FILE_SIZE))
+        .map(|(start, end)| end - start + 1)
+        .sum();
+    let probe = ranges
+        .iter()
+        .filter(|range| range.as_str() == "bytes=0-0")
+        .count();
+    assert_eq!(
+        served - probe,
+        FILE_SIZE - 100,
+        "resume must not refetch completed bytes, got {ranges:?}"
+    );
     assert!(
-        ranges.iter().any(|range| range == &expected),
-        "expected resume range {expected}, got {ranges:?}"
+        ranges.iter().any(|range| range.starts_with("bytes=100-")),
+        "resume must start at the first missing byte, got {ranges:?}"
     );
 
     plugin.shutdown().unwrap();

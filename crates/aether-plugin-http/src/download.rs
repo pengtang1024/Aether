@@ -21,21 +21,19 @@ use thiserror::Error;
 use crate::client;
 use crate::gate::{parse_retry_after, Cooldown, HostGate};
 use crate::metalink;
-use crate::state::{self, ResumeState};
+use crate::queue::WorkQueue;
+use crate::state::{self, ResumeState, CHUNK_BYTES};
 use crate::throttle::Throttle;
 
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
 /// Detail is for the drawer's schema rows, not the progress bar: 1 Hz is plenty.
 const DETAIL_INTERVAL: Duration = Duration::from_secs(1);
-const STATE_INTERVAL: Duration = Duration::from_secs(1);
+/// Resume state is small (one entry per 16 MiB chunk), so it is rewritten
+/// four times a second: a kill -9 then loses at most a quarter second of
+/// progress per worker instead of a full second.
+const STATE_INTERVAL: Duration = Duration::from_millis(250);
 const MAX_RETRIES: u32 = 3;
 const CHUNK: usize = 64 * 1024;
-/// One Range request covers at most this many bytes. A request is the unit
-/// that holds a per-host connection slot, so a bounded request is what lets a
-/// shrunken fair share (or a 418 cooldown) take effect within seconds instead
-/// of after a whole multi-hundred-MiB range. 16 MiB is also the chunk size the
-/// planned work-queue sharding will use, so the request shape stays compatible.
-const REQUEST_BYTES: u64 = 16 * 1024 * 1024;
 /// Give up after this many 418/429 cooldowns; each halves the connection count
 /// and backs off exponentially (1, 2, 4 … 30 s), so this bounds wasted time
 /// while still letting an anti-leech source settle at one connection.
@@ -293,6 +291,7 @@ fn run_inner(
         &filename,
         supports_range,
         connections,
+        sender,
     )?;
 
     if control.is_canceled() {
@@ -325,16 +324,19 @@ fn run_inner(
     }
 
     let total_downloaded = resume.downloaded();
-    let shared = Arc::new(Mutex::new(resume));
+    let shared = Arc::new(Mutex::new(WorkQueue::new(resume)));
     let downloaded = Arc::new(AtomicU64::new(total_downloaded));
-    let range_count = shared.lock().unwrap().ranges.len() as u32;
+    let chunk_count = shared.lock().unwrap().chunks() as u32;
+    // `connections` is the number of workers; a short queue may need fewer.
+    // Extra workers would only race for an empty queue.
+    let worker_count = connections.min(chunk_count).max(1);
 
     {
         let mut snapshot = progress.lock().unwrap();
         snapshot.downloaded = total_downloaded;
         snapshot.total = total;
-        snapshot.connections = range_count;
-        snapshot.chunks_total = range_count;
+        snapshot.connections = worker_count;
+        snapshot.chunks_total = chunk_count;
     }
 
     let _ = sender.send(&PluginEvent::Metadata {
@@ -353,12 +355,15 @@ fn run_inner(
     let mut final_error: Option<DownloadError> = None;
     // Shared by all workers and kept across mirror attempts so a source that
     // taught us to use fewer connections does not get the full count back.
-    let cooldown = Arc::new(Cooldown::new(range_count));
+    let cooldown = Arc::new(Cooldown::new(worker_count));
     let host_cap = budget.lock().unwrap().per_host_connections.clamp(1, 16);
 
-    // One attempt per compatible source. Completed ranges stay in `shared`,
+    // One attempt per compatible source. Completed chunks stay in `shared`,
     // so a failover re-requests only the missing bytes.
     loop {
+        // A new source means new claims: rebuild so every unfinished chunk is
+        // queued again instead of staying owned by a worker of the old mirror.
+        shared.lock().unwrap().rebuild();
         let attempt_url = mirrors[mirror_index].clone();
         let host = host_of(&attempt_url);
         // Held for the whole attempt; dropping it releases the host share on
@@ -367,7 +372,7 @@ fn run_inner(
         let stop = Arc::new(AtomicBool::new(false));
         let (result_tx, result_rx) = mpsc::channel();
         let mut workers = Vec::new();
-        for index in 0..range_count as usize {
+        for _ in 0..worker_count as usize {
             let client = download_client.clone();
             let url = attempt_url.clone();
             let host = host.clone();
@@ -385,14 +390,13 @@ fn run_inner(
             let cooldown = cooldown.clone();
             let stop = stop.clone();
             workers.push(thread::spawn(move || {
-                let result = download_range(
+                let result = download_worker(
                     &client,
                     &url,
                     &host,
                     &task_id,
                     &sender,
                     &file,
-                    index,
                     &shared,
                     &downloaded,
                     &control,
@@ -409,7 +413,7 @@ fn run_inner(
         }
         drop(result_tx);
 
-        let mut active = range_count;
+        let mut active = worker_count;
         let mut first_error: Option<DownloadError> = None;
         let mut last_bytes = downloaded.load(Ordering::Relaxed);
         let mut last_speed_time = Instant::now();
@@ -462,14 +466,15 @@ fn run_inner(
                 last_progress = now;
 
                 let (done, total_ranges) = {
-                    let state = shared.lock().unwrap();
+                    let queue = shared.lock().unwrap();
                     (
-                        state
+                        queue
+                            .state()
                             .ranges
                             .iter()
                             .filter(|range| range.is_complete())
                             .count() as u32,
-                        state.ranges.len() as u32,
+                        queue.chunks() as u32,
                     )
                 };
 
@@ -489,7 +494,7 @@ fn run_inner(
                     total,
                     speed_bps: speed,
                     eta_secs,
-                    connections: if control.is_paused() { 0 } else { range_count },
+                    connections: if control.is_paused() { 0 } else { worker_count },
                     chunks_done: Some(done),
                     chunks_total: Some(total_ranges),
                 });
@@ -549,7 +554,7 @@ fn run_inner(
             let _ = sender.send(&PluginEvent::Log {
                 level: aether_plugin_sdk::LogLevel::Warn,
                 message: format!(
-                    "source failed ({error}); switching to mirror {next} and keeping completed ranges"
+                    "source failed ({error}); switching to mirror {next}, keeping completed chunks and rebuilding the work queue"
                 ),
                 fields: Default::default(),
             });
@@ -615,6 +620,7 @@ fn run_inner(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn load_or_create_state(
     paths: &TaskPaths,
     url: &str,
@@ -623,15 +629,33 @@ fn load_or_create_state(
     filename: &str,
     supports_range: bool,
     connections: u32,
+    sender: &PluginSender,
 ) -> Result<ResumeState, DownloadError> {
-    if let Some(state) = state::read(&paths.staging)? {
-        if state.matches(url, etag, total)
-            && state.filename == filename
-            && state.supports_range == supports_range
-        {
+    if let Some(mut state) = state::read(&paths.staging)? {
+        let same_file = state.filename == filename;
+        let reusable =
+            state.matches(url, etag, total) && same_file && state.supports_range == supports_range;
+        if reusable {
+            // New chunks are 16 MiB; legacy files still hold their static
+            // ranges, so migrate once here (the next persist writes version 1).
+            state.normalize();
             return Ok(state);
         }
+        // Anything else (different source/size, changed Range support, or a
+        // range list that fails the no-gap/no-overlap check) must restart from
+        // zero: resuming from an unverified state could leave holes in the file.
+        let reason = state
+            .invariant_error()
+            .unwrap_or_else(|| "source or file changed".into());
         state::remove(&paths.staging)?;
+        if same_file {
+            let _ = fs::remove_file(paths.staging.join(filename));
+        }
+        let _ = sender.send(&PluginEvent::Log {
+            level: LogLevel::Warn,
+            message: format!("discarding resume state ({reason}); restarting from zero"),
+            fields: Default::default(),
+        });
     }
 
     Ok(ResumeState::new(
@@ -644,8 +668,8 @@ fn load_or_create_state(
     ))
 }
 
-fn persist_state(paths: &TaskPaths, shared: &Arc<Mutex<ResumeState>>, sender: &PluginSender) {
-    let snapshot = shared.lock().unwrap().clone();
+fn persist_state(paths: &TaskPaths, shared: &Arc<Mutex<WorkQueue>>, sender: &PluginSender) {
+    let snapshot = shared.lock().unwrap().state().clone();
     if let Err(error) = state::write(&paths.staging, &snapshot) {
         let _ = sender.send(&PluginEvent::Log {
             level: aether_plugin_sdk::LogLevel::Warn,
@@ -655,23 +679,40 @@ fn persist_state(paths: &TaskPaths, shared: &Arc<Mutex<ResumeState>>, sender: &P
     }
 }
 
-fn is_complete(shared: &Arc<Mutex<ResumeState>>, total: Option<u64>) -> bool {
+fn is_complete(shared: &Arc<Mutex<WorkQueue>>, total: Option<u64>) -> bool {
     if total.is_none() {
         return true;
     }
-    shared.lock().unwrap().is_complete()
+    shared.lock().unwrap().state().is_complete()
+}
+
+/// A private comment for the chunk a worker currently owns. Kept across a
+/// 418/429 cooldown so the bytes already written are not queued again.
+#[derive(Clone, Copy)]
+struct ChunkRun {
+    index: usize,
+    started: Instant,
+}
+
+/// How often a worker checks whether its chunk deserves a tail split.
+const SPLIT_CHECK_INTERVAL: Duration = Duration::from_millis(250);
+
+enum ReadOutcome {
+    /// The response body ended; the chunk may or may not be complete.
+    Done,
+    /// The chunk was cut in half mid-body; drop the rest and re-read it.
+    Split,
 }
 
 #[allow(clippy::too_many_arguments)]
-fn download_range(
+fn download_worker(
     client: &Client,
     url: &str,
     host: &str,
     task_id: &str,
     sender: &PluginSender,
     file: &File,
-    index: usize,
-    shared: &Arc<Mutex<ResumeState>>,
+    shared: &Arc<Mutex<WorkQueue>>,
     downloaded: &Arc<AtomicU64>,
     control: &Arc<TaskControl>,
     supports_range: bool,
@@ -683,6 +724,8 @@ fn download_range(
     stop: &Arc<AtomicBool>,
 ) -> Result<(), DownloadError> {
     let mut attempts = 0;
+    let mut current: Option<ChunkRun> = None;
+    let mut split_reported = false;
 
     loop {
         if stop.load(Ordering::Relaxed) {
@@ -692,25 +735,47 @@ fn download_range(
             return Err(DownloadError::Canceled);
         }
 
+        // A 418/429 parks every worker of the task until the shared deadline;
+        // by then the connection limit has already been halved. The slot is
+        // taken before claiming so no worker can outrun the per-host cap.
+        wait_out_cooldown(control, stop, cooldown)?;
+        let slot = take_slot(gate, host, task_id, cooldown, control, stop)?;
+
+        let run = match current {
+            Some(run) => run,
+            None => {
+                let Some(index) = shared.lock().unwrap().claim() else {
+                    drop(slot);
+                    return Ok(());
+                };
+                let run = ChunkRun {
+                    index,
+                    started: Instant::now(),
+                };
+                current = Some(run);
+                split_reported = false;
+                run
+            }
+        };
+        let index = run.index;
+
         let (start, end, done) = {
-            let state = shared.lock().unwrap();
-            let range = state.ranges[index];
+            let queue = shared.lock().unwrap();
+            let range = queue.state().ranges[index];
             (range.start, range.end, range.done)
         };
 
         if supports_range && start + done > end {
-            return Ok(());
+            drop(slot);
+            shared.lock().unwrap().finish(index, run.started.elapsed());
+            current = None;
+            continue;
         }
 
-        // A 418/429 parks every worker of the task until the shared deadline;
-        // by then the connection limit has already been halved.
-        wait_out_cooldown(control, stop, cooldown)?;
-        let _slot = take_slot(gate, host, task_id, cooldown, control, stop)?;
-
-        // One request covers at most `REQUEST_BYTES`, so a slot — and therefore
-        // a TCP connection — is never held for a whole multi-hundred-MiB range.
+        // A chunk is at most `CHUNK_BYTES`, so one request covers it; the cap
+        // keeps a legacy range from turning into a multi-hundred-MiB request.
         let request_end = if supports_range {
-            end.min(start + done + REQUEST_BYTES - 1)
+            end.min(start + done + CHUNK_BYTES - 1)
         } else {
             end
         };
@@ -725,7 +790,7 @@ fn download_range(
         let response = match request.send() {
             Ok(response) => response,
             Err(error) => {
-                drop(_slot);
+                drop(slot);
                 if attempts < MAX_RETRIES && retryable_reqwest(&error) {
                     attempts += 1;
                     backoff(attempts);
@@ -758,13 +823,13 @@ fn download_range(
                     fields: Default::default(),
                 });
                 drop(response);
-                drop(_slot);
+                drop(slot);
                 if cooldown.strikes() >= MAX_RATE_LIMIT_STRIKES {
                     return Err(DownloadError::HttpStatus(status.as_u16()));
                 }
                 continue;
             }
-            drop(_slot);
+            drop(slot);
             if attempts < MAX_RETRIES && retryable_status(status.as_u16()) {
                 attempts += 1;
                 backoff(attempts);
@@ -783,14 +848,14 @@ fn download_range(
             // mode, so restarting the file is safe.
             file.set_len(0)?;
             downloaded.fetch_sub(done, Ordering::Relaxed);
-            let mut state = shared.lock().unwrap();
-            state.ranges[index].done = 0;
+            shared.lock().unwrap().state_mut().ranges[index].done = 0;
             offset = 0;
         }
 
         let mut response = response;
         let mut buffer = vec![0_u8; CHUNK];
-        let read_result = (|| -> Result<(), DownloadError> {
+        let mut last_split_check = Instant::now();
+        let read_result = (|| -> Result<ReadOutcome, DownloadError> {
             loop {
                 if stop.load(Ordering::Relaxed) {
                     return Err(DownloadError::Aborted);
@@ -823,41 +888,81 @@ fn download_range(
                 write_all_at(file, &buffer[..read], offset)?;
                 offset += read as u64;
                 downloaded.fetch_add(read as u64, Ordering::Relaxed);
-                let mut state = shared.lock().unwrap();
-                state.ranges[index].done += read as u64;
-                if !supports_range {
-                    state.ranges[index].end = offset.saturating_sub(1);
+
+                let (new_end, split_now) = {
+                    let mut queue = shared.lock().unwrap();
+                    queue.state_mut().ranges[index].done += read as u64;
+                    if !supports_range {
+                        queue.state_mut().ranges[index].end = offset.saturating_sub(1);
+                    }
+                    let mut split_now = false;
+                    if supports_range && last_split_check.elapsed() >= SPLIT_CHECK_INTERVAL {
+                        last_split_check = Instant::now();
+                        // Splitting only when the queue is dry: with work left
+                        // an idle worker can simply steal the next chunk.
+                        split_now = queue.split(index, run.started).is_some();
+                    }
+                    (queue.state().ranges[index].end, split_now)
+                };
+                if split_now && !split_reported {
+                    split_reported = true;
+                    let _ = sender.send(&PluginEvent::Log {
+                        level: LogLevel::Info,
+                        message: format!(
+                            "slow chunk at byte {offset}: tail queued for idle workers"
+                        ),
+                        fields: Default::default(),
+                    });
+                }
+                if supports_range && offset > new_end {
+                    // The chunk was cut in half; stop reading the discarded tail.
+                    return Ok(ReadOutcome::Split);
                 }
             }
-            Ok(())
+            Ok(ReadOutcome::Done)
         })();
 
         match read_result {
-            Ok(()) => {
+            Ok(ReadOutcome::Split) => {
+                drop(slot);
+                continue;
+            }
+            Ok(ReadOutcome::Done) => {
                 if supports_range {
-                    let next = shared.lock().unwrap().ranges[index].next_offset();
-                    if next <= request_end {
+                    let (next, end_now) = {
+                        let queue = shared.lock().unwrap();
+                        let range = queue.state().ranges[index];
+                        (range.next_offset(), range.end)
+                    };
+                    if next <= request_end.min(end_now) {
                         // The body ended before the bytes this request asked
                         // for: a truncated response. Retry the same slice; a
                         // clean slice boundary continues to the next slice.
                         attempts += 1;
                         if attempts >= MAX_RETRIES {
+                            drop(slot);
                             return Err(DownloadError::Read(io::Error::new(
                                 io::ErrorKind::UnexpectedEof,
                                 "response ended before the requested range",
                             )));
                         }
+                        drop(slot);
                         backoff(attempts);
                         continue;
                     }
-                    if next <= end {
+                    attempts = 0;
+                    if next <= end_now {
+                        drop(slot);
                         continue;
                     }
                 }
-                return Ok(());
+                drop(slot);
+                shared.lock().unwrap().finish(index, run.started.elapsed());
+                current = None;
             }
             Err(DownloadError::Canceled) => return Err(DownloadError::Canceled),
             Err(error) => {
+                drop(slot);
                 if attempts < MAX_RETRIES && retryable_error(&error) {
                     attempts += 1;
                     backoff(attempts);

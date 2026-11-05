@@ -9,6 +9,7 @@ pub mod download;
 pub mod gate;
 pub mod metalink;
 pub mod plugin;
+pub mod queue;
 pub mod state;
 pub mod throttle;
 
