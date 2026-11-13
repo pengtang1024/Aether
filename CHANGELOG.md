@@ -5,6 +5,10 @@ versioning; 0.x releases may still change structure.
 
 ## [Unreleased]
 
+_No unreleased changes._
+
+## [0.6.5] - 2026-11-13
+
 ### Added
 
 - Per-host connection cap is enforced instead of being a dead field:
