@@ -1346,6 +1346,46 @@ mod tests {
     }
 
     #[test]
+    fn wildcard_and_pinned_listeners_agree_with_lan_clients() {
+        // A wildcard listener is reached under this machine's own addresses, so
+        // a non-loopback IP literal has to pass; a domain still does not.
+        let wild = HttpPolicy::new("0.0.0.0:6800".parse().unwrap());
+        assert!(wild
+            .check(&headers(&[("host", "192.168.1.34:6800")]))
+            .is_ok());
+        assert!(wild
+            .check(&headers(&[("host", "evil.example:6800")]))
+            .is_err());
+        // The same rule covers a page hosted elsewhere on the LAN: an IP
+        // literal is not a rebinding domain, and the token is still required.
+        assert!(wild
+            .check(&headers(&[
+                ("host", "192.168.1.34:6800"),
+                ("origin", "http://192.168.1.50:8080"),
+            ]))
+            .is_ok());
+
+        // Pinning a LAN address keeps the listener to that address: neither
+        // loopback nor another host may name it.
+        let pinned = HttpPolicy::new("192.168.1.34:6800".parse().unwrap());
+        assert!(pinned
+            .check(&headers(&[("host", "192.168.1.34:6800")]))
+            .is_ok());
+        assert!(pinned
+            .check(&headers(&[("host", "localhost:6800")]))
+            .is_ok());
+        assert!(pinned
+            .check(&headers(&[("host", "127.0.0.1:6800")]))
+            .is_err());
+        assert!(pinned
+            .check(&headers(&[
+                ("host", "192.168.1.34:6800"),
+                ("origin", "http://10.1.2.3:8080"),
+            ]))
+            .is_err());
+    }
+
+    #[test]
     fn blob_reads_need_a_per_name_capability() {
         let secret = "s3cret";
         let capability = blob_capability(secret, "one.torrent");

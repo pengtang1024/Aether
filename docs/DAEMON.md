@@ -343,9 +343,18 @@ daemon 是常驻入口，但“接管所有下载”还需要：
   落盘，随机源不可用时关闭 TCP 监听（fail-closed，Unix socket 不受影响）。
   端口被占用时默认监听会跳过并在日志里提示，不影响下载；显式配置的地址绑定
   失败仍然报错。RPC 不做 TLS——仅限可信网络或 SSH 隧道。
-- 监听同时校验 `Host`/`Origin`：`Host` 必须是本监听的 IP 字面量或 `localhost`，
-  `Origin`（若存在）也只接受这些主机；域名形态（DNS rebinding）与跨站页面返回
-  403。`/aria2-blobs/` 的 URL 带的是**按 blob 名派生的能力令牌**，不是
+- 监听同时校验 `Host`/`Origin`，阻断 DNS rebinding 与跨站页面：
+  - `Host` 必须是 `localhost` 或 IP 字面量，且端口与监听端口一致。绑定具体
+    地址时，只有该地址（绑回环时任何回环 IP）算本监听；绑定通配地址
+    （`0.0.0.0`、`[::]`）时任意 IP 字面量都接受——LAN 客户端正是用本机 LAN IP
+    访问的，而域名形态一律 403。
+  - `Origin`（若存在）按同一规则判主机，但不比端口（那是页面的端口）。绑通配
+    地址时，同 LAN 另一台机器上托管的 AriaNg 页面也能驱动 API，令牌仍然必需；
+    绑 `127.0.0.1` 或具体 IP 时只接受 `localhost` 与该 IP，其他 IP 的页面被拒。
+  - 实测矩阵（0.0.0.0 / 具体 LAN IP / 回环三种绑定）：LAN IP + 无 Origin 200，
+    `evil.com` 的 Host 与 `http://evil.com` 的 Origin 403，端口不符 403；绑具体
+    LAN IP 时回环 Host 与其他 IP 的 Origin 403；绑回环时 LAN IP 的 Host 403。
+    `/aria2-blobs/` 的 URL 带的是**按 blob 名派生的能力令牌**，不是
   `rpc_secret` 本身：`token = HMAC-SHA256(rpc_secret, "aether-blob-v1:" + name)`，
   URL 形如 `/aria2-blobs/<name>?token=<capability>`。这样任务记录、UI、导出和
   aria2 `tellStatus` 里出现的 blob URL 只泄露单个 payload 的读取权，拿不到 RPC
