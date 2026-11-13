@@ -1,8 +1,9 @@
 //! Daemon event loop and Unix-socket server.
 //!
-//! The implementation lives in submodules. They reach this prelude through
-//! `use super::*`, so the import list below is their shared vocabulary — do
-//! not trim it without moving the imports into each module.
+//! The implementation lives in submodules. The prelude below plus the
+//! `pub(crate) use` re-exports is the shared vocabulary consumed by
+//! `server/tests.rs` through `use crate::server::*` — trim it only together
+//! with an explicit import list in that module.
 
 use std::collections::{HashMap, HashSet};
 use std::fs;

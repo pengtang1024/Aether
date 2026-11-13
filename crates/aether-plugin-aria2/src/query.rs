@@ -127,7 +127,7 @@ pub fn uris(client: &mut DaemonClient, params: &[Value]) -> RpcResult {
         .ok_or_else(|| RpcError::new(-32602, "missing gid"))?;
     let task = resolve(client, gid)?;
     let url = task.get("url").and_then(Value::as_str).unwrap_or_default();
-    Ok(json!([{ "uri": url, "status": "used" }]))
+    Ok(json!([{ "uri": mapping::redact_uri(url), "status": "used" }]))
 }
 
 pub fn peers(client: &mut DaemonClient, params: &[Value]) -> RpcResult {
@@ -150,7 +150,7 @@ pub fn servers(client: &mut DaemonClient, params: &[Value]) -> RpcResult {
         .and_then(Value::as_str)
         .ok_or_else(|| RpcError::new(-32602, "missing gid"))?;
     let task = resolve(client, gid)?;
-    let url = task.get("url").and_then(Value::as_str).unwrap_or_default();
+    let url = mapping::redact_uri(task.get("url").and_then(Value::as_str).unwrap_or_default());
     let speed = task.get("speed_bps").and_then(Value::as_u64).unwrap_or(0);
     let mut servers = vec![json!({
         "uri": url,
@@ -164,8 +164,8 @@ pub fn servers(client: &mut DaemonClient, params: &[Value]) -> RpcResult {
     {
         for mirror in mirrors.iter().filter_map(Value::as_str) {
             servers.push(json!({
-                "uri": mirror,
-                "currentUri": mirror,
+                "uri": mapping::redact_uri(mirror),
+                "currentUri": mapping::redact_uri(mirror),
                 "downloadSpeed": "0",
             }));
         }

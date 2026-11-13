@@ -117,8 +117,9 @@ pub(crate) fn set_settings_request(
     if let Some(value) = patch.get("rpc_secret") {
         let text: Option<String> = serde_json::from_value(value.clone())
             .map_err(|error| DaemonError::Protocol(format!("invalid rpc_secret: {error}")))?;
-        // Same distinction: `Some("")` explicitly disables the token,
-        // `None` regenerates the default on the next boot.
+        // `Some("")` clears the token; the patch is rejected by `validate`
+        // unless it also turns the listener off. `None` (null) is the same:
+        // boot re-seeds it, but only while the listener is off.
         next.rpc_secret = text.map(|text| text.trim().to_string());
     }
     if let Some(value) = patch.get("ffmpeg_path") {
@@ -182,14 +183,26 @@ pub(crate) fn set_settings_request(
     // A raised cap starts waiting tasks immediately; a lowered one
     // lets the running ones finish — nothing is killed.
     promote_queued(state);
-    // The RPC token is read live by the accept loop, so a rotation
-    // is effective for the next connection (no listener restart).
+    // The RPC token is read live by the accept loop, so a rotation is
+    // effective for the next connection (no listener restart). Clearing it is
+    // only legal together with `rpc_listen: ""`, and even then the bound
+    // listener keeps the old token until the restart that actually unbinds it.
     if patch.contains_key("rpc_secret") {
-        *state.rpc_secret.lock().unwrap() = state
+        let next_secret = state
             .settings
             .rpc_secret
             .clone()
             .filter(|secret| !secret.trim().is_empty());
+        if state.rpc_base.is_some() && next_secret.is_none() {
+            eprintln!(
+                "aether-daemon: rpc_secret cleared; keeping the live token until the listener \
+                 restarts (rpc_listen is off)"
+            );
+        } else {
+            *state.rpc_secret.lock().unwrap() = next_secret;
+        }
+        let live = state.rpc_secret.lock().unwrap().clone();
+        state.services.set_endpoint(state.rpc_base.clone(), live);
     }
     // A schedule change takes effect now, not at the next periodic
     // tick: closing the window pauses, opening resumes.

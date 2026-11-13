@@ -62,8 +62,11 @@ pub fn run(config: DaemonConfig) -> Result<(), DaemonError> {
     let mut settings = Settings::load(&settings_path);
     // RPC is useful out of the box (CLI, second device): seed a loopback
     // address and a token on first boot, then persist so the UI and the CLI
-    // read the same values. Explicit empty strings are preserved.
-    if settings.seed_rpc_defaults() {
+    // read the same values. Explicit empty strings are preserved — except for
+    // the listener/token pair, which must never be unauthenticated.
+    let seeded = settings.seed_rpc_defaults();
+    let repaired = settings.ensure_rpc_auth();
+    if seeded || repaired {
         settings.save(&settings_path)?;
     }
     if let Some(pac) = &config.pac_url {

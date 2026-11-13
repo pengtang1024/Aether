@@ -3,8 +3,9 @@
 //! The listener is shared with Aether's native line protocol: the first line
 //! decides which one it is. HTTP requests are parsed here and forwarded to
 //! the `aria2` service plugin (`kind: "service"`), which translates them into
-//! daemon calls. Keeping the token check and the transport in the daemon means
-//! the plugin never sees the secret and never opens a second port.
+//! daemon calls. The token check and the transport stay in the daemon, so the
+//! plugin never opens a second port; it only receives the RPC address and token
+//! to derive the per-blob capabilities its `addTorrent` URLs carry.
 //!
 //! Supported transports: `POST /jsonrpc`, `GET /jsonrpc?...`, and
 //! `ws://.../jsonrpc`, all with CORS so browser front-ends such as AriaNg can
@@ -17,6 +18,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+use aether_plugin_sdk::blob_capability;
 use base64::Engine;
 use serde_json::{json, Value};
 use sha1::{Digest, Sha1};
@@ -46,6 +48,9 @@ pub(crate) fn is_http_request(first_line: &str) -> bool {
 
 /// Serve one HTTP connection. The first request line was already consumed by
 /// the caller so it can decide between HTTP and the native protocol.
+// The compat entry point mirrors the daemon's original wiring; splitting it
+// just to satisfy the argument count would obscure the call chain.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn serve_http(
     mut reader: BufReader<Conn>,
     writer: &mut Conn,
@@ -54,6 +59,7 @@ pub(crate) fn serve_http(
     secret: &Arc<Mutex<Option<String>>>,
     commands: &Sender<crate::server::Command>,
     blob_dir: &std::path::Path,
+    policy: &HttpPolicy,
 ) {
     let Some((method, target, version)) = parse_request_line(first_line) else {
         let _ = write_json(
@@ -79,6 +85,20 @@ pub(crate) fn serve_http(
             return;
         }
     };
+
+    // Browser-facing hardening: this port is reachable from any page on the
+    // machine, so a request aimed at another host (DNS rebinding) or issued
+    // by a web origin that is not this listener is rejected before it can
+    // reach any handler.
+    if let Err(reason) = policy.check(&headers) {
+        let _ = write_json(
+            writer,
+            "403 Forbidden",
+            &rpc_error(&Value::Null, 1, &reason),
+            false,
+        );
+        return;
+    }
 
     // WebSocket upgrade: aria2 clients (AriaNg among them) use it for command
     // calls and real-time notifications on the same /jsonrpc endpoint.
@@ -130,6 +150,15 @@ pub(crate) fn serve_http(
         if is_websocket(&headers) {
             break;
         }
+        if let Err(reason) = policy.check(&headers) {
+            let _ = write_json(
+                writer,
+                "403 Forbidden",
+                &rpc_error(&Value::Null, 1, &reason),
+                false,
+            );
+            break;
+        }
     }
 }
 
@@ -168,9 +197,10 @@ fn handle_http_request(
     keep_alive: bool,
 ) -> bool {
     // Persisted addTorrent/addMetalink bytes served to the local download
-    // plugins. The random token is the capability.
+    // plugins. The URL carries the RPC token; the name alone is not a
+    // credential (other local users can list the directory).
     if method == "GET" && target.starts_with("/aria2-blobs/") {
-        serve_blob(writer, target, blob_dir, keep_alive);
+        serve_blob(writer, target, blob_dir, secret, keep_alive);
         return keep_alive;
     }
 
@@ -438,16 +468,30 @@ fn process_request(
     }
 }
 
-fn serve_blob(writer: &mut Conn, target: &str, directory: &std::path::Path, keep_alive: bool) {
-    let name = target.trim_start_matches("/aria2-blobs/");
-    let safe =
-        !name.is_empty() && !name.contains('/') && !name.contains('\\') && !name.contains("..");
-    let bytes = if safe {
-        std::fs::read(directory.join(name)).ok()
-    } else {
-        None
-    };
-    let Some(bytes) = bytes else {
+fn serve_blob(
+    writer: &mut Conn,
+    target: &str,
+    directory: &std::path::Path,
+    secret: &Arc<Mutex<Option<String>>>,
+    keep_alive: bool,
+) {
+    let (path, query) = target.split_once('?').unwrap_or((target, ""));
+    let name = path.trim_start_matches("/aria2-blobs/");
+    let secret = secret.lock().ok().and_then(|secret| secret.clone());
+    let provided = query
+        .split('&')
+        .find_map(|pair| pair.strip_prefix("token="))
+        .map(percent_decode);
+    if !blob_authorized(secret.as_deref(), name, provided.as_deref()) {
+        let _ = write_json(
+            writer,
+            "403 Forbidden",
+            &rpc_error(&Value::Null, 1, "Unauthorized: invalid or missing token"),
+            keep_alive,
+        );
+        return;
+    }
+    let Some(bytes) = read_blob(directory, name) else {
         let _ = write_bytes(
             writer,
             "404 Not Found",
@@ -465,6 +509,136 @@ fn serve_blob(writer: &mut Conn, target: &str, directory: &std::path::Path, keep
         "application/octet-stream"
     };
     let _ = write_bytes(writer, "200 OK", content_type, &bytes, keep_alive);
+}
+
+/// A blob read is authorized by a capability derived for *this* name, never by
+/// the RPC token: the URL is stored in the task record and shown to the user,
+/// so accepting the raw token would hand the whole RPC API to anyone who reads
+/// a task list, an export, or a screenshot.
+fn blob_authorized(secret: Option<&str>, name: &str, provided: Option<&str>) -> bool {
+    match (secret.filter(|secret| !secret.is_empty()), provided) {
+        (Some(secret), Some(provided)) => constant_time_eq(
+            provided.as_bytes(),
+            blob_capability(secret, name).as_bytes(),
+        ),
+        _ => false,
+    }
+}
+
+/// Resolve a blob without ever following a symbolic link. The blob directory
+/// is writable by the daemon user; a planted link would turn "read this blob"
+/// into "read any file the daemon can read" (including `settings.json`).
+fn read_blob(directory: &std::path::Path, name: &str) -> Option<Vec<u8>> {
+    let safe =
+        !name.is_empty() && !name.contains('/') && !name.contains('\\') && !name.contains("..");
+    if !safe {
+        return None;
+    }
+    let path = directory.join(name);
+    let metadata = std::fs::symlink_metadata(&path).ok()?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return None;
+    }
+    // Belt and braces: even a hard-link-free name is resolved once more and
+    // must stay inside the blob directory.
+    let root = std::fs::canonicalize(directory).ok()?;
+    let real = std::fs::canonicalize(&path).ok()?;
+    if !real.starts_with(&root) {
+        return None;
+    }
+    std::fs::read(real).ok()
+}
+
+/// Request gate for the browser-reachable RPC port.
+///
+/// Loopback is not a boundary: any page in a browser on this machine can send
+/// requests to `127.0.0.1`, and DNS rebinding lets an attacker-controlled
+/// domain resolve to it. Two checks close that:
+///
+/// * `Host` must name this listener (an IP literal, or `localhost`), which
+///   makes a rebinding request visibly wrong.
+/// * `Origin`, when present, must pass the same host test, so a page served
+///   from an unrelated domain is not allowed to drive the API.
+pub(crate) struct HttpPolicy {
+    bind: std::net::SocketAddr,
+}
+
+impl HttpPolicy {
+    pub(crate) fn new(bind: std::net::SocketAddr) -> Self {
+        Self { bind }
+    }
+
+    fn check(&self, headers: &[(String, String)]) -> Result<(), String> {
+        if let Some(host) = header_value(headers, "host") {
+            if !self.host_allowed(host, true) {
+                return Err("forbidden Host".into());
+            }
+        }
+        if let Some(origin) = header_value(headers, "origin") {
+            if !self.origin_allowed(origin) {
+                return Err("forbidden Origin".into());
+            }
+        }
+        Ok(())
+    }
+
+    fn origin_allowed(&self, origin: &str) -> bool {
+        let Some((scheme, rest)) = origin.split_once("://") else {
+            return false;
+        };
+        if !matches!(scheme.to_ascii_lowercase().as_str(), "http" | "https") {
+            return false;
+        }
+        let authority = rest.split(['/', '?', '#']).next().unwrap_or(rest);
+        // The origin's port is the *page's* port, not the listener's, so only
+        // the host part is compared.
+        self.host_allowed(authority, false)
+    }
+
+    fn host_allowed(&self, value: &str, check_port: bool) -> bool {
+        let (name, port) = split_host_port(value.trim());
+        if check_port {
+            if let Some(port) = port {
+                if self.bind.port() != 0 && port != self.bind.port() {
+                    return false;
+                }
+            }
+        }
+        if name.eq_ignore_ascii_case("localhost") {
+            return true;
+        }
+        let Ok(ip) = name.parse::<std::net::IpAddr>() else {
+            // A domain name is exactly the DNS-rebinding shape: reject it.
+            return false;
+        };
+        if self.bind.ip().is_unspecified() {
+            // A wildcard listener is reachable under any local address; an
+            // IP literal is still not a rebinding domain.
+            return true;
+        }
+        ip == self.bind.ip() || (self.bind.ip().is_loopback() && ip.is_loopback())
+    }
+}
+
+/// Split `host:port`, including bracketed IPv6 (`[::1]:6800`).
+fn split_host_port(value: &str) -> (&str, Option<u16>) {
+    if let Some(rest) = value.strip_prefix('[') {
+        return match rest.split_once(']') {
+            Some((name, tail)) => (
+                name,
+                tail.strip_prefix(':').and_then(|port| port.parse().ok()),
+            ),
+            None => (value, None),
+        };
+    }
+    match value.rsplit_once(':') {
+        Some((name, port))
+            if !port.is_empty() && port.bytes().all(|byte| byte.is_ascii_digit()) =>
+        {
+            (name, port.parse().ok())
+        }
+        _ => (value, None),
+    }
 }
 
 fn is_websocket(headers: &[(String, String)]) -> bool {
@@ -1123,5 +1297,102 @@ mod tests {
         assert_eq!(request["method"], "aria2.addUri");
         assert_eq!(request["params"], json!(["https://example.test/a"]));
         assert_eq!(request["id"], "7");
+    }
+
+    fn headers(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+        pairs
+            .iter()
+            .map(|(name, value)| (name.to_string(), value.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn rejects_rebinding_hosts_and_foreign_origins() {
+        let policy = HttpPolicy::new("127.0.0.1:6800".parse().unwrap());
+        // The listener itself, by IP or by name, is fine.
+        assert!(policy
+            .check(&headers(&[("host", "127.0.0.1:6800")]))
+            .is_ok());
+        assert!(policy
+            .check(&headers(&[("host", "localhost:6800")]))
+            .is_ok());
+        // A domain name resolving to the listener is the rebinding shape.
+        assert!(policy
+            .check(&headers(&[("host", "evil.example:6800")]))
+            .is_err());
+        // A Host naming another port is not this listener.
+        assert!(policy
+            .check(&headers(&[("host", "127.0.0.1:9000")]))
+            .is_err());
+
+        // The WebSocket upgrade path uses the same gate.
+        let upgrade = headers(&[
+            ("host", "127.0.0.1:6800"),
+            ("origin", "https://evil.example"),
+            ("upgrade", "websocket"),
+        ]);
+        assert!(policy.check(&upgrade).is_err());
+        // A page served from the machine itself is allowed.
+        assert!(policy
+            .check(&headers(&[
+                ("host", "127.0.0.1:6800"),
+                ("origin", "http://127.0.0.1:8080"),
+            ]))
+            .is_ok());
+        // An opaque origin (`file://`, sandboxed iframe) is not trusted.
+        assert!(policy
+            .check(&headers(&[("host", "127.0.0.1:6800"), ("origin", "null"),]))
+            .is_err());
+    }
+
+    #[test]
+    fn blob_reads_need_a_per_name_capability() {
+        let secret = "s3cret";
+        let capability = blob_capability(secret, "one.torrent");
+        assert!(blob_authorized(
+            Some(secret),
+            "one.torrent",
+            Some(&capability)
+        ));
+        // The RPC token itself is what the old URL carried; it must not open
+        // a blob any more, or a task record would leak the whole API.
+        assert!(!blob_authorized(Some(secret), "one.torrent", Some(secret)));
+        // A capability is scoped to its own payload.
+        assert!(!blob_authorized(
+            Some(secret),
+            "two.torrent",
+            Some(&capability)
+        ));
+        assert!(!blob_authorized(Some(secret), "one.torrent", None));
+        assert!(!blob_authorized(None, "one.torrent", Some(&capability)));
+    }
+
+    #[test]
+    fn blob_reader_rejects_symlinks() {
+        let root = std::env::temp_dir().join(format!(
+            "aether-blob-gate-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("blob.bin"), b"payload").unwrap();
+        assert_eq!(read_blob(&root, "blob.bin").unwrap(), b"payload");
+
+        // A planted link to an arbitrary file is not readable as a blob.
+        let outside = root.with_extension("outside-secret");
+        std::fs::write(&outside, b"secret").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&outside, root.join("link")).unwrap();
+        #[cfg(unix)]
+        assert!(read_blob(&root, "link").is_none());
+        // Path separators and traversal never resolve.
+        assert!(read_blob(&root, "../outside-secret").is_none());
+        assert!(read_blob(&root, "sub/blob.bin").is_none());
+
+        std::fs::remove_file(&outside).ok();
+        std::fs::remove_dir_all(&root).ok();
     }
 }

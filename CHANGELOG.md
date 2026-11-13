@@ -17,7 +17,13 @@ versioning; 0.x releases may still change structure.
   anti-leech origins start answering 418/429.
 
 ### Changed
-
+- Blob URLs from `addTorrent`/`addMetalink` are authorized by a capability
+  derived from the blob name (`HMAC-SHA256(rpc_secret, "aether-blob-v1:" + name)`)
+  rather than by `rpc_secret` itself. The URL is persisted in the task record
+  and surfaces in the UI, aria2 `tellStatus` and exports, so reusing the RPC
+  token there exposed the whole RPC API to anyone reading a task; a leaked URL
+  now only reads its own stored payload. Rotating `rpc_secret` retires every
+  old blob URL, as before.
 - Multi-connection HTTP tasks build a per-task `http1_only()` client, so each
   shard owns a TCP connection instead of sharing one h2 multiplexer; tasks
   with a single connection keep the shared h2 client. Origins that only speak
@@ -39,6 +45,9 @@ versioning; 0.x releases may still change structure.
   105.1 (92.9%).
 
 ### Fixed
+- BitTorrent failures keep their cause chain in the task error instead of only
+  the outermost context, so a rejected blob fetch now shows
+  `add torrent: GET … returned 403 Forbidden` rather than `add torrent`.
 - Resume state is validated on load (no gaps, no overlaps, full coverage of
   the known length). A state that fails the check, or whose file/ETag no
   longer matches, is discarded together with the partial file and the task

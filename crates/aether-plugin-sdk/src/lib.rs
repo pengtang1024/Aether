@@ -8,6 +8,7 @@
 //! The wire protocol is versioned with [`protocol::API_VERSION`]. A Host only
 //! starts plugins whose manifest `api` matches.
 
+pub mod blob;
 pub mod checksum;
 pub mod error;
 pub mod fsutil;
@@ -19,6 +20,7 @@ pub mod supervisor;
 pub mod task;
 pub mod tool;
 
+pub use blob::blob_capability;
 pub use error::SdkError;
 pub use ipc::{read_frame, write_frame, MAX_FRAME_SIZE};
 pub use manifest::{current_platform_key, ManifestError, PluginKind, PluginManifest};

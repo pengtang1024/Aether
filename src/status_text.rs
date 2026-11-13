@@ -19,8 +19,10 @@ pub(crate) fn rpc_status_text(listen: &str, has_secret: bool) -> String {
         )
     } else {
         i18n::tr(
-            format!("已配置 {listen}，无令牌（仅回环地址允许；重启 daemon 后生效）"),
-            format!("Configured on {listen} without a token (loopback only; applies after a daemon restart)"),
+            format!("已配置 {listen}，但缺少访问令牌：TCP 不会监听（请填写令牌或留空关闭）"),
+            format!(
+                "Configured on {listen} without a token: the TCP listener stays off (set a token or clear the address)"
+            ),
         )
     }
 }

@@ -66,9 +66,14 @@ pub enum HostCommand {
     },
     /// Sent to a service plugin once the daemon's RPC listener is bound:
     /// the loopback base URL it should use for published blobs (for example
-    /// `127.0.0.1:6800`). Absent when the listener is disabled.
+    /// `127.0.0.1:6800`) and the token that protects them. Absent when the
+    /// listener is disabled.
     ServiceAddress {
         listen: String,
+        /// RPC token the blob URL must carry. `None` only on older hosts;
+        /// publishing then fails because the reader requires the token.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        token: Option<String>,
     },
     /// A compatibility-protocol request routed from the daemon listener to a
     /// service plugin. `payload` is protocol-specific JSON; the reply is a

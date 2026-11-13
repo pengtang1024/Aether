@@ -236,7 +236,10 @@ fn non_loopback_without_secret_refuses_to_start() {
     let socket = endpoint("wide-open", &root);
     let settings_path = aether_daemon::settings::Settings::path(&root.join("downloads"));
     let mut settings = aether_daemon::settings::Settings::load(&settings_path);
-    // An explicit empty token: the default token must not rescue this config.
+    // A listener explicitly off with no token is a valid pair (the Unix
+    // socket keeps working). The CLI override below tries to turn the TCP
+    // listener on without a token, which must be refused.
+    settings.rpc_listen = Some(String::new());
     settings.rpc_secret = Some(String::new());
     settings.save(&settings_path).unwrap();
     let config = DaemonConfig {

@@ -8,6 +8,7 @@ license = "MIT"
 publish = false
 
 [dependencies]
+hmac = "0.12"
 rmp-serde = "1.3"
 semver = "1"
 serde = { version = "1", features = ["derive"] }

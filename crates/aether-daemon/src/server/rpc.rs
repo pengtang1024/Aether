@@ -21,6 +21,7 @@ fn rpc_accept_loop(
     secret: std::sync::Arc<Mutex<Option<String>>>,
     bridge: Arc<ServiceBridge>,
     blob_dir: PathBuf,
+    policy: Arc<crate::aria2::HttpPolicy>,
 ) {
     let active = Arc::new(AtomicUsize::new(0));
     loop {
@@ -35,9 +36,10 @@ fn rpc_accept_loop(
         let secret = secret.clone();
         let bridge = bridge.clone();
         let blob_dir = blob_dir.clone();
+        let policy = policy.clone();
         thread::spawn(move || {
             let _guard = guard;
-            rpc_client_loop(conn, commands, secret, bridge, blob_dir)
+            rpc_client_loop(conn, commands, secret, bridge, blob_dir, policy)
         });
     }
 }
@@ -48,6 +50,7 @@ fn rpc_client_loop(
     secret: std::sync::Arc<Mutex<Option<String>>>,
     bridge: Arc<ServiceBridge>,
     blob_dir: PathBuf,
+    policy: Arc<crate::aria2::HttpPolicy>,
 ) {
     let reader_stream = match stream.try_clone() {
         Ok(stream) => stream,
@@ -71,6 +74,7 @@ fn rpc_client_loop(
             &secret,
             &commands,
             &blob_dir,
+            &policy,
         );
         writer.shutdown();
         return;
@@ -162,9 +166,15 @@ pub(crate) fn start_rpc(
             .unwrap()
             .as_deref()
             .is_some_and(|secret| !secret.is_empty());
-        if !parsed.ip().is_loopback() && !has_secret {
+        // Fail closed: an unauthenticated listener is a remote file-write
+        // primitive, and loopback is reachable by other local users and web
+        // pages. Boot-time repair (`Settings::ensure_rpc_auth`) covers the
+        // persisted settings; this guard also catches a CLI/env override.
+        if !has_secret {
             return Err(DaemonError::Protocol(
-                "rpc_listen on a non-loopback address requires rpc_secret".into(),
+                "refusing to start TCP RPC without rpc_secret: set a token or disable \
+                 rpc_listen (the Unix socket is unaffected)"
+                    .into(),
             ));
         }
         // The default listener is a convenience, not a requirement: a busy
@@ -192,18 +202,18 @@ pub(crate) fn start_rpc(
                 addr.trim().to_string()
             };
             state.rpc_base = Some(blob_listen.clone());
-            state.services.set_listen(Some(blob_listen));
+            let token = state.rpc_secret.lock().unwrap().clone();
+            state.services.set_endpoint(Some(blob_listen), token);
             state.services.sync(state.manager.registry());
-            if has_secret {
-                eprintln!("aether-daemon: rpc listening on {addr} (token required)");
-            } else {
-                eprintln!("aether-daemon: rpc listening on {addr} (no token; loopback only)");
-            }
+            eprintln!("aether-daemon: rpc listening on {addr} (token required)");
             let rpc_tx = command_tx.clone();
             let rpc_secret = state.rpc_secret.clone();
             let bridge = Arc::new(ServiceBridge::new(state.services.clone(), "aria2"));
             let blob_dir = state.data_dir.join("aria2-blobs");
-            thread::spawn(move || rpc_accept_loop(listener, rpc_tx, rpc_secret, bridge, blob_dir));
+            let policy = Arc::new(crate::aria2::HttpPolicy::new(parsed));
+            thread::spawn(move || {
+                rpc_accept_loop(listener, rpc_tx, rpc_secret, bridge, blob_dir, policy)
+            });
         }
     }
     Ok(())

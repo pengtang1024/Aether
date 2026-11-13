@@ -47,6 +47,7 @@ pub struct ServiceSupervisor {
     data_dir: PathBuf,
     host_version: String,
     listen: Mutex<Option<String>>,
+    token: Mutex<Option<String>>,
     services: Mutex<HashMap<String, Arc<Mutex<ServiceSlot>>>>,
 }
 
@@ -75,15 +76,20 @@ impl ServiceSupervisor {
             data_dir,
             host_version,
             listen: Mutex::new(None),
+            token: Mutex::new(None),
             services: Mutex::new(HashMap::new()),
         })
     }
 
-    /// The daemon's bound RPC address, used by plugins for blob URLs. Existing
-    /// processes receive the new value on a best-effort basis.
-    pub fn set_listen(&self, listen: Option<String>) {
+    /// The daemon's bound RPC address and the token that protects blob URLs.
+    /// Existing processes receive the new pair on a best-effort basis, so a
+    /// token rotation also invalidates URLs published before it.
+    pub fn set_endpoint(&self, listen: Option<String>, token: Option<String>) {
         if let Ok(mut current) = self.listen.lock() {
             *current = listen.clone();
+        }
+        if let Ok(mut current) = self.token.lock() {
+            *current = token.clone();
         }
         let Some(listen) = listen else {
             return;
@@ -100,6 +106,7 @@ impl ServiceSupervisor {
                 if let Some(process) = slot.process.as_mut() {
                     let _ = process.send(&HostCommand::ServiceAddress {
                         listen: listen.clone(),
+                        token: token.clone(),
                     });
                 }
             }
@@ -259,9 +266,10 @@ impl ServiceSupervisor {
                 })
                 .map_err(|error| format!("cannot configure {}: {error}", slot.service))?;
             let listen = self.listen.lock().ok().and_then(|listen| listen.clone());
+            let token = self.token.lock().ok().and_then(|token| token.clone());
             if let Some(listen) = listen {
                 process
-                    .send(&HostCommand::ServiceAddress { listen })
+                    .send(&HostCommand::ServiceAddress { listen, token })
                     .map_err(|error| format!("cannot configure {} blobs: {error}", slot.service))?;
             }
             Ok::<PluginProcess, String>(process)

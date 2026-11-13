@@ -28,8 +28,11 @@ UI 启动时如果连接失败，可以提示“后台服务未启动”，或�
 daemon 首次启动即监听 `127.0.0.1:6800` 并生成随机令牌；地址与令牌都写入
 settings，设置页会回显，令牌字段旁的「随机」按钮可换一个（点「应用」保存）。
 `rpc_listen` 置空关闭监听；`--rpc-listen` / `AETHER_RPC_LISTEN` 覆盖本次运行。
-**非 loopback 地址必须先设置 `rpc_secret`，否则 daemon 拒绝启动**；回环地址
-允许令牌为空（设置页留空即可）。每个 TCP 连接的首条消息必须是鉴权：
+**只要开启监听就必须有一个非空 `rpc_secret`，回环地址同样如此**；否则
+`set_settings` 拒绝该组合，启动时读到这种旧配置会自动补一个令牌（随机源不可用
+则关闭 TCP 监听）。「关闭远程控制」按钮把地址与令牌放在同一个 patch 里清空，
+已绑定的监听保留旧令牌直到重启，不会出现无鉴权的在线监听。每个 TCP 连接的首条
+消息必须是鉴权：
 
 ```json
 {"id":1,"method":"auth","settings":{"token":"<rpc_secret>"}}
@@ -44,8 +47,10 @@ token 用常数时间比较；失败即断开。之后的行协议与本地完�
 同一个监听还兼容 aria2 JSON-RPC：首行是 HTTP 时交给 `aria2` 服务插件，
 `POST http://127.0.0.1:6800/jsonrpc`，令牌按 aria2 约定作为 params 第一项
 `"token:<rpc_secret>"`。HTTP 与 `ws://.../jsonrpc` 都可选：WebSocket 连接会收到
-`aria2.onDownloadStart/Pause/Stop/Complete/Error` 通知。插件未安装或停用时 HTTP 返回
-JSON-RPC 错误，原生协议不受影响。
+`aria2.onDownloadStart/Pause/Stop/Complete/Error` 通知。所有 HTTP/WS 请求先过
+`Host`/`Origin` 校验（域名 Host 与跨站 Origin 一律 403），`addTorrent`/`addMetalink`
+的 blob URL 也带同一个令牌。插件未安装或停用时 HTTP 返回 JSON-RPC 错误，原生协议
+不受影响。
 
 ## 2. 首屏
 

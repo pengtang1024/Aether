@@ -73,7 +73,7 @@ export component AdvancedPanel inherits Rectangle {
                 icon-source: AetherIcons.signal;
                 title: @tr("监听地址");
                 badge: @tr("重启后生效");
-                description: @tr("默认 127.0.0.1:6800；留空关闭；非回环地址必须设置令牌");
+                description: @tr("默认 127.0.0.1:6800；留空关闭；开启时必须设置令牌（回环地址同样需要）");
                 VerticalLayout {
                     spacing: 2px;
                     alignment: end;
@@ -97,7 +97,7 @@ export component AdvancedPanel inherits Rectangle {
                 id: "advanced-rpc-secret";
                 icon-source: AetherIcons.shield;
                 title: @tr("访问令牌");
-                description: @tr("默认自动生成；随机按钮换一个；留空表示不使用令牌（仅回环地址）；应用后立即生效");
+                description: @tr("默认自动生成；随机按钮换一个；开启远程控制时必须填写；应用后立即生效");
                 VerticalLayout {
                     spacing: 2px;
                     alignment: end;
@@ -106,7 +106,7 @@ export component AdvancedPanel inherits Rectangle {
                         LineEdit {
                             text <=> root.rpc-secret-value;
                             input-type: InputType.password;
-                            placeholder-text: @tr("留空表示不使用令牌");
+                            placeholder-text: @tr("开启远程控制时必须填写");
                             min-width: Aether.field-md;
                             max-width: Aether.field-md;
                         }
@@ -130,7 +130,7 @@ export component AdvancedPanel inherits Rectangle {
                 divider: false;
                 HorizontalLayout {
                     spacing: 8px;
-                    TextButton { text: @tr("清除令牌"); clicked => { root.rpc-clear-secret(); } }
+                    TextButton { text: @tr("关闭远程控制"); clicked => { root.rpc-clear-secret(); } }
                     TextButton { text: @tr("应用"); clicked => { root.rpc-apply(root.rpc-listen-value, root.rpc-secret-value); } }
                 }
             }

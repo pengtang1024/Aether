@@ -106,9 +106,9 @@ impl Plugin for Aria2Plugin {
                 self.socket = Some(socket);
                 self.client = None;
             }
-            HostCommand::ServiceAddress { listen } => {
+            HostCommand::ServiceAddress { listen, token } => {
                 if let Some(blobs) = self.blobs.as_mut() {
-                    blobs.set_base(&listen);
+                    blobs.set_base(&listen, token.as_deref());
                 }
             }
             HostCommand::BridgeCall {

@@ -282,8 +282,9 @@ mod tests {
         );
         let no_token = rpc_status_text("0.0.0.0:7777", false);
         assert!(no_token.contains("0.0.0.0:7777"), "{no_token}");
+        // No token means no listener: loopback is never presented as safe.
         assert!(
-            no_token.contains("回环") || no_token.contains("loopback"),
+            no_token.contains("不会监听") || no_token.contains("stays off"),
             "{no_token}"
         );
     }

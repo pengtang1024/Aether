@@ -120,10 +120,13 @@ Linux 的 `media`/`rtmp` 包在 `bin/` 中额外带一份精简版 `ffmpeg`（�
 - 插件**不监听端口**。daemon 在共享 TCP 端口上识别协议，把 HTTP 请求通过
   `BridgeCall { request_id, payload }` 发给插件，插件回 `BridgeResult`。
 - 握手后 daemon 发一次 `ServiceInit { socket }`：本地端点，插件用它回调 daemon
-  的 JSON-lines 接口；令牌由 daemon 校验，插件拿不到 `rpc_secret`。
+  的 JSON-lines 接口；该端点的令牌由 daemon 校验。daemon 另外通过
+  `ServiceAddress { listen, token }` 告诉插件 RPC 监听地址与 `rpc_secret`，
+  插件只用它派生 blob 能力令牌（不回传、不落盘）。
 - HTTP/WS 传输、CORS、令牌校验与 `aria2.onDownload*` 事件扇出都留在 daemon；
   插件只做请求翻译，不接触端口与 `rpc_secret`。`addTorrent`/`addMetalink` 的
-  内联字节由插件写入数据目录，daemon 通过 `/aria2-blobs/<token>` 提供。
+  内联字节由插件写入数据目录，daemon 通过
+  `/aria2-blobs/<name>?token=<capability>` 提供（能力令牌按名派生，非 `rpc_secret`）。
 - 服务插件不参与 `Probe`/`Start` 路由；它崩溃时下一次请求自动重启。
 
 ## 4. IPC 协议

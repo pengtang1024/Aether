@@ -17,6 +17,20 @@ pub fn parse_size(text: &str) -> Option<u64> {
     (value >= 0.0).then_some((value * scale as f64) as u64)
 }
 
+/// Strip `user:password@` from a URI before it is echoed back to a client.
+/// Task URIs are returned verbatim by aria2; credentials embedded in a URL
+/// must not leak through `tellStopped`/`getUris`/`getServers`.
+pub fn redact_uri(uri: &str) -> String {
+    let Some((scheme, rest)) = uri.split_once("://") else {
+        return uri.to_string();
+    };
+    let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let Some(at) = rest[..authority_end].rfind('@') else {
+        return uri.to_string();
+    };
+    format!("{scheme}://{}", &rest[at + 1..])
+}
+
 /// Aether task ids are `task-<nanoseconds>`; aria2 GIDs are 16 hex chars.
 /// The suffix fits a u64, so the mapping is stable and reversible.
 pub fn gid(task_id: &str) -> String {
@@ -78,6 +92,7 @@ pub fn task_object(task: &Value, keys: Option<&[String]>, download_dir: &str) ->
         .unwrap_or(0);
     let completed = task.get("downloaded").and_then(Value::as_u64).unwrap_or(0);
     let url = task.get("url").and_then(Value::as_str).unwrap_or_default();
+    let url = redact_uri(url);
     let completed_state = state == "completed";
 
     let file_objects = match files {
@@ -188,4 +203,27 @@ fn fnv1a(bytes: &[u8]) -> u64 {
         hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
     }
     hash
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn redacts_uri_credentials() {
+        assert_eq!(
+            redact_uri("http://alice:s3cretpass@example.test/x.bin"),
+            "http://example.test/x.bin"
+        );
+        assert_eq!(
+            redact_uri("https://user@example.test:8443/a?b=1"),
+            "https://example.test:8443/a?b=1"
+        );
+        // Nothing to redact stays byte-identical.
+        assert_eq!(
+            redact_uri("https://example.test/x.bin"),
+            "https://example.test/x.bin"
+        );
+        assert_eq!(redact_uri("not a uri"), "not a uri");
+    }
 }

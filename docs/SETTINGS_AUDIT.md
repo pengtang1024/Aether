@@ -142,7 +142,7 @@ BT 键由 `aether-plugin-bt` 消费（`crates/aether-plugin-bt/src/plugin.rs` �
 | RPC 监听地址 | `set_settings {"rpc_listen"}` → `Settings.rpc_listen`，daemon 启动时 bind；首次启动默认 `127.0.0.1:6800`，空字符串关闭 | 真实（重启生效） |
 | RPC 访问令牌 | `set_settings {"rpc_secret"}` → `rpc_secret`（0600 文件），首次启动自动生成 32 位令牌；热轮换立即生效 | 真实 |
 | 随机令牌 | 设置页按钮调用 `generate_rpc_secret()` 填入字段，点「应用」写入 daemon（不自动保存） | 真实 |
-| 清除令牌 | `set_settings {"rpc_secret": ""}`，显式空字符串清除鉴权（仅回环地址） | 真实 |
+| 关闭远程控制 | `set_settings {"rpc_secret": "", "rpc_listen": ""}` 原子提交；不会留下无鉴权监听，已绑定监听保留旧令牌直到重启 | 真实 |
 | RPC 状态 | 由 `rpc_listen` + 是否设置令牌生成，明确写「重启 daemon 后按此地址监听」 | 只读 |
 | 重置界面偏好 | `UiPrefs::default()` + 立即恢复剪贴板开关、语言（zh）、主题（跟随系统）、主色/动效/流线/启动页/完成后动作/通知 | 真实 |
 
@@ -189,4 +189,4 @@ BT 键由 `aether-plugin-bt` 消费（`crates/aether-plugin-bt/src/plugin.rs` �
 | PAC 选项 | 只提示不回弹，界面与 daemon 不一致 | 回弹到实际模式并说明启动配置决定 |
 | 重置界面偏好 | 不重置语言与主题 | 同时恢复 zh 与跟随系统主题 |
 | 计划/开机自启等开关 | `checked:` 单向绑定，Rust 回弹或镜像到属性时开关不跟着变（计划任务未填时间仍显示「已开启」） | 全部改为 `checked <=>` 双向绑定；实测计划开关会回弹、开机自启失败会回弹 |
-| 远程控制（RPC） | 设置页完全没有入口，只有 CLI/设置文件可用 | 高级页新增监听地址、访问令牌、清除令牌、应用与实时状态行；实测令牌错误被拒、正确令牌可 `remote stats` |
+| 远程控制（RPC） | 设置页完全没有入口，只有 CLI/设置文件可用 | 高级页新增监听地址、访问令牌、关闭远程控制、应用与实时状态行；实测令牌错误被拒、正确令牌可 `remote stats` |

@@ -334,13 +334,26 @@ daemon 是常驻入口，但“接管所有下载”还需要：
 
 ## 7. 安全边界
 
-- RPC over TCP 首次启动即启用，但只监听回环地址 `127.0.0.1:6800`
+- RPC over TCP 首次启动即启用，默认监听回环地址 `127.0.0.1:6800`
   （`RPC_LISTEN_DEFAULT`），并自动生成一个 32 位十六进制 `rpc_secret`；
   两者都会写回 `settings.json`，UI 与 CLI 读到的是同一个值。`rpc_listen`
-  置空字符串可关闭监听，`rpc_secret` 置空字符串可关闭鉴权（仅回环地址允许，
-  非 loopback 地址没有令牌时 daemon 拒绝启动）。端口被占用时默认监听会跳过
-  并在日志里提示，不影响下载；显式配置的地址绑定失败仍然报错。RPC 不做
-  TLS——仅限可信网络或 SSH 隧道。
+  置空字符串可关闭监听。**只要开启监听就必须有非空 `rpc_secret`**：回环不是
+  安全边界（同机其他用户与浏览器都能访问 `127.0.0.1`），空令牌 + 监听地址在
+  `validate` 阶段被拒；启动时读到「监听开启 + 令牌为空」的旧配置会先自动生成并
+  落盘，随机源不可用时关闭 TCP 监听（fail-closed，Unix socket 不受影响）。
+  端口被占用时默认监听会跳过并在日志里提示，不影响下载；显式配置的地址绑定
+  失败仍然报错。RPC 不做 TLS——仅限可信网络或 SSH 隧道。
+- 监听同时校验 `Host`/`Origin`：`Host` 必须是本监听的 IP 字面量或 `localhost`，
+  `Origin`（若存在）也只接受这些主机；域名形态（DNS rebinding）与跨站页面返回
+  403。`/aria2-blobs/` 的 URL 带的是**按 blob 名派生的能力令牌**，不是
+  `rpc_secret` 本身：`token = HMAC-SHA256(rpc_secret, "aether-blob-v1:" + name)`，
+  URL 形如 `/aria2-blobs/<name>?token=<capability>`。这样任务记录、UI、导出和
+  aria2 `tellStatus` 里出现的 blob URL 只泄露单个 payload 的读取权，拿不到 RPC
+  API；轮换 `rpc_secret` 会作废所有旧 URL（与旧的「token 即 rpc_secret」行为一致）。
+  该路由只读取 blob 目录内的普通文件，符号链接一律按 404 处理。派生规则是
+  daemon 与 `aria2` 插件之间的契约：两者必须一起升级，旧插件发出的 blob URL
+  没有能力令牌，会被新 daemon 以 403 拒绝（任务错误里能看到具体的 403），
+  重新添加该任务即可。
 - 同一个 6800 端口按首行区分协议：`POST /jsonrpc`、`GET /jsonrpc?...` 等 HTTP
   请求交给 `kind: "service"` 的 `aria2` 兼容插件，原生 Aether JSON-lines 仍走
   `auth` 握手。HTTP 侧复用同一个 `rpc_secret`（aria2 约定：params 首项为
@@ -360,7 +373,8 @@ daemon 是常驻入口，但“接管所有下载”还需要：
   （返回 `OK` 后 12–14 ms 内退出、socket 文件移除）。
   `addTorrent`/`addMetalink`
   会把内联 base64 解码后写入 daemon 数据目录的 `aria2-blobs/`，由同一 6800
-  端口的 `/aria2-blobs/<token>` 路由提供给 BT/HTTP 插件（重启后仍有效，7 天清理）。
+  端口的 `/aria2-blobs/<name>?token=<capability>` 路由提供给 BT/HTTP 插件
+  （重启后仍有效，7 天清理）。
   支持 `ws://.../jsonrpc`：JSON-RPC 调用与
   `aria2.onDownloadStart/Pause/Stop/Complete/Error` 通知。逐任务
   `changeOption` 的 `max-download-limit` 支持实时限速（HTTP）与排队任务持久化，

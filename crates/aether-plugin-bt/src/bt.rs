@@ -629,8 +629,10 @@ impl BtError {
                 "torrent metadata timed out",
             )
             .retryable(true),
+            // `{:#}` keeps the cause chain: with `to_string()` the UI only
+            // ever saw the outermost context ("add torrent"), never why.
             Self::Anyhow(error) => {
-                aether_plugin_sdk::PluginError::new(ErrorKind::Protocol, error.to_string())
+                aether_plugin_sdk::PluginError::new(ErrorKind::Protocol, format!("{error:#}"))
             }
             Self::Io(error) => {
                 aether_plugin_sdk::PluginError::new(ErrorKind::Internal, error.to_string())

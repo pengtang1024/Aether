@@ -28,12 +28,12 @@ pub(super) fn install(ui: &AppWindow, state: &Rc<RefCell<State>>) {
             let mut invalid = None;
             if !listen.is_empty() {
                 match listen.parse::<std::net::SocketAddr>() {
-                    Ok(addr) if !addr.ip().is_loopback() && secret.is_empty() => {
+                    Ok(_) if secret.is_empty() => {
                         invalid = Some((
                             "rpc-secret",
                             i18n::tr(
-                                "非回环地址必须设置访问令牌",
-                                "A non-loopback address requires an access token",
+                                "开启远程控制必须设置访问令牌（回环地址同样需要）",
+                                "Remote control requires an access token, loopback included",
                             ),
                         ));
                     }
@@ -59,8 +59,9 @@ pub(super) fn install(ui: &AppWindow, state: &Rc<RefCell<State>>) {
             if validation.get_key() == "rpc-listen" || validation.get_key() == "rpc-secret" {
                 validation.set_message(Default::default());
             }
-            // An empty string is an explicit choice: blank listen turns
-            // the listener off, blank token removes auth (loopback only).
+            // An empty listen address turns the listener off. A listener
+            // always needs a token: loopback is reachable by other local users
+            // and web pages, so "clearing the token" alone is not an option.
             state.borrow().backend.set_setting(serde_json::json!({
                 "rpc_listen": listen,
                 "rpc_secret": secret,
@@ -86,17 +87,22 @@ pub(super) fn install(ui: &AppWindow, state: &Rc<RefCell<State>>) {
             let Some(ui) = ui_handle.upgrade() else {
                 return;
             };
+            // Clearing the token must not leave an unauthenticated listener
+            // behind: both fields are sent in one patch, so the daemon
+            // validates (and persists) the pair atomically. The bound
+            // listener keeps its old token until the restart that unbinds it.
             state
                 .borrow()
                 .backend
-                .set_setting(serde_json::json!({"rpc_secret": ""}));
+                .set_setting(serde_json::json!({"rpc_secret": "", "rpc_listen": ""}));
             ui.set_settings_rpc_secret_value("".into());
+            ui.set_settings_rpc_listen_value("".into());
             show_toast(
                 &ui,
                 &state,
                 &i18n::tr(
-                    "已清除访问令牌：立即生效（仅回环地址可用）",
-                    "Access token cleared; it applies immediately (loopback only)",
+                    "已清除访问令牌并关闭远程控制：监听在重启 daemon 后关闭",
+                    "Access token cleared and remote control disabled; the listener closes after a daemon restart",
                 ),
             );
         });

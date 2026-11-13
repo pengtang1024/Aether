@@ -88,13 +88,15 @@ pub struct Settings {
     pub schedule_end: Option<String>,
     /// RPC over TCP: `"ip:port"` to listen on. `None` means the built-in
     /// default ([`RPC_LISTEN_DEFAULT`]); an empty string turns the listener
-    /// off. Requires [`Settings::rpc_secret`] on any non-loopback address.
+    /// off. A listener always requires [`Settings::rpc_secret`]: loopback is
+    /// not an authentication boundary (other local users and web pages reach
+    /// `127.0.0.1` too).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rpc_listen: Option<String>,
     /// Token every RPC connection must present as its first message
     /// (`{"method":"auth","settings":{"token":"…"}}`). `None` means "generate
-    /// one on first boot"; an empty string runs without a token (loopback
-    /// only).
+    /// one on first boot"; an empty string is only accepted while the TCP
+    /// listener is off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rpc_secret: Option<String>,
     /// ffmpeg binary for plugins that shell out (rtmp capture, media
@@ -246,6 +248,40 @@ impl Settings {
             }
         }
         changed
+    }
+
+    /// Fail closed: a TCP RPC listener never runs without a token. A settings
+    /// file that was hand-edited (or written by an older build) with a
+    /// listener and an empty token gets a fresh generated token; if the OS
+    /// random source is unavailable the listener is switched off instead of
+    /// serving unauthenticated requests. The Unix socket is unaffected.
+    pub fn ensure_rpc_auth(&mut self) -> bool {
+        let listener_on = self
+            .rpc_listen
+            .as_deref()
+            .is_none_or(|text| !text.trim().is_empty());
+        let has_secret = self
+            .rpc_secret
+            .as_deref()
+            .map(|secret| !secret.trim().is_empty())
+            .unwrap_or(false);
+        if !listener_on || has_secret {
+            return false;
+        }
+        match generate_rpc_secret() {
+            Some(secret) => {
+                eprintln!("aether-daemon: empty rpc_secret with an active listener; generated a new token");
+                self.rpc_secret = Some(secret);
+            }
+            None => {
+                eprintln!(
+                    "aether-daemon: cannot generate an RPC token; disabling the TCP RPC listener \
+                     (the Unix socket keeps working)"
+                );
+                self.rpc_listen = Some(String::new());
+            }
+        }
+        true
     }
 
     /// The network configuration handed to plugin processes, or `None` when
@@ -425,33 +461,30 @@ impl Settings {
                 "schedule_on needs schedule_start and schedule_end".into(),
             ));
         }
-        // RPC over TCP: a listen address must parse, and anything beyond
-        // loopback must carry a token — a wide-open unauthenticated RPC is
-        // never what the user meant.
+        // RPC over TCP: a listen address must parse, and the listener always
+        // needs a token. Loopback is not a boundary — any local user or web
+        // page can reach 127.0.0.1, so an unauthenticated listener would be a
+        // remote file-write primitive.
         if let Some(text) = self
             .rpc_listen
             .as_deref()
             .map(str::trim)
             .filter(|text| !text.is_empty())
         {
-            match text.parse::<std::net::SocketAddr>() {
-                Ok(addr) => {
-                    let has_secret = self
-                        .rpc_secret
-                        .as_deref()
-                        .map(|secret| !secret.trim().is_empty())
-                        .unwrap_or(false);
-                    if !addr.ip().is_loopback() && !has_secret {
-                        return Err(DaemonError::Protocol(
-                            "rpc_listen on a non-loopback address requires rpc_secret".into(),
-                        ));
-                    }
-                }
-                Err(_) => {
-                    return Err(DaemonError::Protocol(format!(
-                        "rpc_listen must be ip:port, got {text:?}"
-                    )));
-                }
+            text.parse::<std::net::SocketAddr>().map_err(|_| {
+                DaemonError::Protocol(format!("rpc_listen must be ip:port, got {text:?}"))
+            })?;
+            let has_secret = self
+                .rpc_secret
+                .as_deref()
+                .map(|secret| !secret.trim().is_empty())
+                .unwrap_or(false);
+            if !has_secret {
+                return Err(DaemonError::Protocol(
+                    "rpc_listen requires a non-empty rpc_secret: loopback is reachable by other \
+                     local users and web pages, so it is not an authentication boundary"
+                        .into(),
+                ));
             }
         }
         Ok(())
@@ -920,19 +953,28 @@ mod tests {
         .validate()
         .unwrap();
 
-        // Loopback needs no token; a typo is still an error.
+        // A listener always needs a token, loopback included.
         let loopback = Settings {
             rpc_listen: Some("127.0.0.1:9090".into()),
             ..Settings::default()
         };
-        loopback.validate().unwrap();
+        assert!(loopback.validate().is_err());
+        let loopback_with_token = Settings {
+            rpc_listen: Some("127.0.0.1:9090".into()),
+            rpc_secret: Some("s3cret".into()),
+            ..Settings::default()
+        };
+        loopback_with_token.validate().unwrap();
+
+        // A typo is still an error.
         let typo = Settings {
             rpc_listen: Some("localhost:9090".into()),
+            rpc_secret: Some("s3cret".into()),
             ..Settings::default()
         };
         assert!(typo.validate().is_err());
 
-        // Anything wider than loopback must carry a token.
+        // Anything wider than loopback needs the same token.
         let wide = Settings {
             rpc_listen: Some("0.0.0.0:9090".into()),
             ..Settings::default()
@@ -944,5 +986,30 @@ mod tests {
             ..Settings::default()
         };
         wide_with_token.validate().unwrap();
+    }
+
+    #[test]
+    fn repairs_an_empty_token_without_losing_the_listener() {
+        // A hand-edited pair (listener on, token blank) is repaired at boot:
+        // a fresh token is generated and the listener survives.
+        let mut settings = Settings {
+            rpc_listen: Some(RPC_LISTEN_DEFAULT.into()),
+            rpc_secret: Some(String::new()),
+            ..Settings::default()
+        };
+        assert!(settings.ensure_rpc_auth());
+        let secret = settings.rpc_secret.as_deref().unwrap();
+        assert_eq!(secret.len(), RPC_SECRET_BYTES * 2);
+        assert_eq!(settings.rpc_listen.as_deref(), Some(RPC_LISTEN_DEFAULT));
+        assert!(!settings.ensure_rpc_auth());
+
+        // With the listener off a blank token is legitimate and untouched.
+        let mut off = Settings {
+            rpc_listen: Some(String::new()),
+            rpc_secret: Some(String::new()),
+            ..Settings::default()
+        };
+        assert!(!off.ensure_rpc_auth());
+        assert_eq!(off.rpc_secret.as_deref(), Some(""));
     }
 }
