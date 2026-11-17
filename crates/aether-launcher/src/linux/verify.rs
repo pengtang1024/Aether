@@ -19,7 +19,7 @@ pub const MANIFEST_FILE: &str = "update.json";
 /// Detached Ed25519 signature of the manifest bytes, base64.
 pub const SIGNATURE_FILE: &str = "update.json.sig";
 /// Official release key, embedded at build time. Public by design.
-const RELEASE_KEY: &str = include_str!("../../../packaging/release-public-key.txt");
+const RELEASE_KEY: &str = include_str!("../../../../packaging/release-public-key.txt");
 
 #[derive(Debug)]
 pub struct Payload {
