@@ -1,5 +1,5 @@
 [workspace.package]
-version = "0.6.5"
+version = "0.6.6"
 edition = "2021"
 rust-version = "1.99"
 license = "MIT"
@@ -12,6 +12,7 @@ members = [
     "crates/aether-daemon",
     "crates/aether-native-host",
     "crates/aether-update",
+    "crates/aether-launcher",
     "crates/aether-plugin-fake",
     "crates/aether-plugin-http",
     "crates/aether-plugin-ftp",
@@ -36,7 +37,7 @@ resolver = "2"
 
 [package]
 name = "aether"
-version = "0.6.5"
+version = "0.6.6"
 edition = "2021"
 rust-version = "1.99"
 description = "Aether — a native Material 3 download manager (Rust + Slint, no WebView)"

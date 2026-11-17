@@ -7,6 +7,26 @@ versioning; 0.x releases may still change structure.
 
 _No unreleased changes._
 
+## [0.6.6] - 2026-11-17
+
+### Added
+
+- The `.deb` installs a verified launcher at `/usr/bin/{aether,aether-cli,
+  aether-daemon,aether-native-host}` and keeps the real programs in
+  `/usr/lib/aether/seed`. Updates are fetched, checked against the signed
+  manifest and installed into `~/.local/share/aether/versions/<version>`, so
+  every update after the first `apt install` is silent: no root, no polkit
+  prompt. The launcher re-verifies the manifest and the payload hash on each
+  start and falls back to the package seed when a copy does not check out.
+  Installs from 0.6.5 or earlier must reinstall one newer `.deb` by hand before
+  this kicks in.
+
+### Changed
+
+- `aether-update` gained a `runtimes` manifest section and `install_runtime`;
+  `update_status` reports `ready` with `kind=runtime` after a user-space update
+  instead of asking the user for `sudo dpkg -i`.
+
 ## [0.6.5] - 2026-11-13
 
 ### Added
