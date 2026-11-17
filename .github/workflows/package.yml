@@ -75,6 +75,21 @@ jobs:
           ARCH: ${{ matrix.deb_arch }}
         run: make deb
 
+      # Bare programs for user-space updates. The launcher re-verifies each
+      # one against the signed manifest, so these are what make a package
+      # install update itself without root and without an authorization
+      # prompt.
+      - name: Stage portable programs
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          APPIMAGE_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          for program in aether aether-cli aether-daemon aether-native-host; do
+            install -m755 "target/release/${program}" \
+              "dist/${program}-${VERSION}-linux-${APPIMAGE_ARCH}"
+          done
+
       - name: Build AppImage
         env:
           VERSION: ${{ needs.version.outputs.version }}
@@ -125,6 +140,10 @@ jobs:
           path: |
             dist/aether_${{ needs.version.outputs.version }}_${{ matrix.deb_arch }}.deb
             dist/aether-${{ needs.version.outputs.version }}-linux-${{ matrix.arch }}.AppImage
+            dist/aether-${{ needs.version.outputs.version }}-linux-${{ matrix.arch }}
+            dist/aether-cli-${{ needs.version.outputs.version }}-linux-${{ matrix.arch }}
+            dist/aether-daemon-${{ needs.version.outputs.version }}-linux-${{ matrix.arch }}
+            dist/aether-native-host-${{ needs.version.outputs.version }}-linux-${{ matrix.arch }}
           if-no-files-found: error
 
   windows:

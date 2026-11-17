@@ -54,7 +54,10 @@ AETHER_UPDATE_SECRET_KEY=... cargo run -p aether-update --bin aether-plugin-sign
 ```
 
 - `assets` 的 key 与 `aether_plugin_sdk::current_platform_key()` 一致。
-- `kind`：`appimage` / `deb` / `zip` / `dmg`。
+- `kind`：`appimage` / `deb` / `binary` / `zip` / `dmg`。
+- `runtimes`（可选）：`{平台: {"files": {程序名: 资产}}}`，包安装用它做用户态
+  更新（见 §3.1）。程序名是 `aether` / `aether-cli` / `aether-daemon` /
+  `aether-native-host`。缺这个字段时回退 `packages`。
 - 只接受 semver 大于当前版本的清单。
 - 更新清单和 `.sig` 放在 release 的固定下载地址，例如
   `releases/latest/download/update.json`。
@@ -78,10 +81,12 @@ AETHER_UPDATE_APPIMAGE=/home/user/Applications/Aether.AppImage  # 仅 AppImage �
 - 先验签，再下载到 `<downloads>/.aether/artifacts/<version>/`，校验 size/SHA-256。
 - `kind=appimage` 且配置了 `AETHER_UPDATE_APPIMAGE`：原子替换目标，旧文件保留为
   `<target>.old`；下次启动生效。失败可手工把 `.old` 复制回去。
-- 非 AppImage 安装（`.deb` 等）：下载清单 `packages` 里对应平台的安装包（如
-  `aether_0.6.0_amd64.deb`），状态报 `package` 并带上路径与 `kind`；daemon 不自行
-  提权，UI 提示 `sudo dpkg -i <path>`。没有 `packages` 条目时回退到 `assets` 的便携
-  产物，同样只报路径。
+- 包安装（由 `/usr/bin/*` 启动器拉起，或运行体就在 `versions/`、`seed/` 下）且清单
+  带 `runtimes`：直接写用户运行副本（§3.1），状态报 `ready`、`kind=runtime`。全程
+  不碰 `/usr`，不需要 root，也没有授权框。
+- 包安装但清单没有 `runtimes`（0.6.5 及更早的清单）：退回下载 `packages` 里的 deb，
+  状态报 `package` 并带上路径；daemon 不自行提权，UI 提示 `sudo dpkg -i <path>`。
+- AppImage 安装但没配 `AETHER_UPDATE_APPIMAGE`：只报路径，不替换。
 - 状态查询：
 
 ```bash
@@ -90,7 +95,39 @@ printf '%s\n' '{"id":1,"method":"update_status"}' \
 ```
 
 返回 `disabled / idle / up_to_date / available / ready / package / error`：
-`ready` 只在 AppImage 已原地替换后出现，`package` 表示安装包已下载、需用户安装。
+`ready` 表示新版本已就位（AppImage 已原地替换，或 `kind=runtime` 的用户副本已装好，
+重启生效），`package` 表示安装包已下载、需用户安装。
+
+## 3.1 deb 安装怎么做到静默更新
+
+`.deb` 只装「启动器 + 种子」，运行体可以整体换成用户态副本：
+
+| 路径 | 内容 | 所有者 |
+| --- | --- | --- |
+| `/usr/bin/{aether,aether-cli,aether-daemon,aether-native-host}` | 验签启动器 | root |
+| `/usr/lib/aether/seed/{aether,…}`、`seed/version` | 首次安装的运行体 | root（dpkg 保证完整性） |
+| `~/.local/share/aether/versions/<版本>/` | 更新后的运行体 + `update.json` + `update.json.sig` + `version` | 用户 |
+| `~/.local/share/aether/versions/current` | 指向当前版本的**相对**软链 | 用户 |
+
+启动器每次启动挑版本最高的候选（种子 vs 用户副本）；用户副本必须用编译进启动器的
+公钥验过 `update.json`、且运行体 SHA-256 与清单 `runtimes[…].files[…].sha256` 一致
+才执行，报告不受信任就回落到种子：
+
+```bash
+/usr/bin/aether --print-target            # 这次会启动哪份、版本多少
+AETHER_LAUNCHER_VERBOSE=1 aether          # 打印选择与拒绝原因
+ls -l ~/.local/share/aether/versions      # 已装的版本与 current 指向
+```
+
+由此：**首装 `apt install` 需要一次授权，之后的更新完全不需要**——更新只写用户目录，
+既不提权也不触发 polkit；副本被改过或清单验签失败时不会执行，而是静默回落到种子。
+
+**边界**：更新只替换上面四个运行体；插件目录（`/usr/lib/aether/plugins`）随 deb
+走，仍是 apt 装的那份，直到下次 `apt upgrade`。插件是独立进程，旧插件配新运行体可用，
+只是拿不到新插件带的修复。
+
+**过渡**：0.6.5 及更早的 deb 还没有启动器，必须先手动装一次新版 deb
+（`sudo apt install ./aether_<版本>_amd64.deb`），之后才彻底静默。
 
 ## 4. 发布接入
 
@@ -100,15 +137,15 @@ printf '%s\n' '{"id":1,"method":"update_status"}' \
 
 | 项 | 位置 |
 | --- | --- |
-| 私钥（base64 32 字节 seed） | `~/.ssh/aether-update-signing.key`，权限 `0600` |
-| 公钥 | `~/.ssh/aether-update-signing.pub`，同时写进 `packaging/daemon.env.example` |
+| 私钥（base64 32 字节 seed） | `~/.ssh/aether-update-manifest-signing.key`，权限 `0600` |
+| 公钥 | `~/.ssh/aether-update-manifest-signing.pub`，同时写进 `packaging/daemon.env.example` |
 | 公钥值 | `gmTgGxsoxi9dyYiWQ+mlqeqx4gDNnMwQ+P0jwNbsa+w=` |
 
 - 私钥**不进仓库、不进 CI、不贴进聊天/日志**。备份到离线介质或密码管理器，
   丢失后无法为已发布用户签名新版本（只能发一个带新公钥的版本）。
 - 换机器时把私钥文件拷到新机器的 `~/.ssh/`（`chmod 600`）即可；公钥由签名
   工具从私钥推导，可随时核对是否一致。
-- 签名前先确认 `~/.ssh/aether-update-signing.pub` 与工具输出的 `public key:`
+- 签名前先确认 `~/.ssh/aether-update-manifest-signing.pub` 与工具输出的 `public key:`
   相同，再上传签名。
 
 ### 4.2 发布步骤
@@ -121,7 +158,7 @@ printf '%s\n' '{"id":1,"method":"update_status"}' \
 4. 本机签名（私钥只在这一步读取）：
 
    ```bash
-   AETHER_UPDATE_SECRET_KEY="$(cat ~/.ssh/aether-update-signing.key)" \
+   AETHER_UPDATE_SECRET_KEY="$(cat ~/.ssh/aether-update-manifest-signing.key)" \
      cargo run -q -p aether-update --bin aether-update-sign -- update.json
    # 打印的 public key 必须等于上面的公钥
    ```

@@ -93,10 +93,16 @@ pub(crate) fn update_status_text(update: Option<&serde_json::Value>) -> String {
             format!("发现新版本 {latest}，自动下载已关闭"),
             format!("Version {latest} is available; automatic downloads are off"),
         ),
-        "ready" => i18n::tr(
-            format!("新版本 {latest} 已下载，重启后生效"),
-            format!("Version {latest} downloaded; restart to apply"),
-        ),
+        "ready" => match update["kind"].as_str().unwrap_or_default() {
+            "runtime" => i18n::tr(
+                format!("新版本 {latest} 已就绪，重启后自动生效（不需要输入密码）"),
+                format!("Version {latest} is ready; restart to apply (no password needed)"),
+            ),
+            _ => i18n::tr(
+                format!("新版本 {latest} 已下载，重启后生效"),
+                format!("Version {latest} downloaded; restart to apply"),
+            ),
+        },
         // The updater cannot install this one itself; hand the user the file.
         "package" => {
             let artifact = update["artifact"].as_str().unwrap_or_default();

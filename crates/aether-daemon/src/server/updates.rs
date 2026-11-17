@@ -39,13 +39,40 @@ pub(crate) fn update_pass(
             aether_plugin_sdk::current_platform_key(),
             data_dir,
         )?;
-        let Some(manifest) = client.check()? else {
+        let Some(signed) = client.check_signed()? else {
             return Ok(json!({"status": "up_to_date"}));
         };
+        let manifest = signed.manifest.clone();
         if !auto {
             // Background downloads are off: report the version and let the
             // user decide from the About panel.
             return Ok(json!({"status": "available", "latest": manifest.version}));
+        }
+        // A package install swaps its programs in user space: the signed
+        // runtime lands in ~/.local/share/aether/versions and the launcher
+        // starts it next time. No root, so no authorization prompt.
+        if aether_update::is_package_install() && client.runtime_files(&manifest).is_some() {
+            let mut last_report = std::time::Instant::now() - Duration::from_secs(1);
+            let mut report = |written: u64, total: Option<u64>| {
+                if last_report.elapsed() < Duration::from_millis(200) {
+                    return;
+                }
+                last_report = std::time::Instant::now();
+                *status.lock().unwrap() = json!({
+                    "status": "downloading",
+                    "latest": manifest.version,
+                    "downloaded": written,
+                    "total": total,
+                });
+            };
+            let root = aether_update::default_runtime_root();
+            let installed = client.install_runtime_with_progress(&signed, &root, &mut report)?;
+            return Ok(json!({
+                "status": "ready",
+                "latest": manifest.version,
+                "kind": "runtime",
+                "artifact": installed.to_string_lossy(),
+            }));
         }
         // AppImage replaces itself in place; every other install downloads
         // the installer the platform ships and reports it for a manual step.

@@ -42,10 +42,18 @@ check-licenses:
 
 deb: release plugins
 	rm -rf "$(STAGE)"
-	install -Dm755 target/release/aether "$(STAGE)/usr/bin/aether"
-	install -Dm755 target/release/aether-cli "$(STAGE)/usr/bin/aether-cli"
-	install -Dm755 target/release/aether-daemon "$(STAGE)/usr/bin/aether-daemon"
-	install -Dm755 target/release/aether-native-host "$(STAGE)/usr/bin/aether-native-host"
+	@# /usr/bin holds the verified launcher; the programs themselves live in
+	@# /usr/lib/aether/seed and are replaced by user-space copies on update, so
+	@# an update needs no root and therefore no authorization prompt.
+	for name in aether aether-cli aether-daemon aether-native-host; do \
+		install -Dm755 target/release/aether-launcher "$(STAGE)/usr/bin/$$name"; \
+	done
+	install -Dm755 target/release/aether "$(STAGE)/usr/lib/aether/seed/aether"
+	install -Dm755 target/release/aether-cli "$(STAGE)/usr/lib/aether/seed/aether-cli"
+	install -Dm755 target/release/aether-daemon "$(STAGE)/usr/lib/aether/seed/aether-daemon"
+	install -Dm755 target/release/aether-native-host "$(STAGE)/usr/lib/aether/seed/aether-native-host"
+	printf '%s\n' "$(VERSION)" > "$(STAGE)/usr/lib/aether/seed/version"
+	chmod 644 "$(STAGE)/usr/lib/aether/seed/version"
 	install -Dm644 packaging/aether-url-handler.desktop \
 		"$(STAGE)/usr/share/applications/aether-url-handler.desktop"
 	install -d "$(STAGE)/usr/share/aether/native-messaging"

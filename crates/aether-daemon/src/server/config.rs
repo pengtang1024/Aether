@@ -30,7 +30,9 @@ pub struct DaemonConfig {
 const DEFAULT_UPDATE_URL: &str =
     "https://github.com/pengtang1024/Aether/releases/latest/download/update.json";
 /// Official Aether release key. Public by design: it only verifies manifests.
-const RELEASE_PUBLIC_KEY: &str = "gmTgGxsoxi9dyYiWQ+mlqeqx4gDNnMwQ+P0jwNbsa+w=";
+// Shared with the launcher, which re-checks the same signature before it
+// starts a downloaded runtime.
+const RELEASE_PUBLIC_KEY: &str = include_str!("../../../../packaging/release-public-key.txt");
 
 /// `AETHER_UPDATE_*` when set (empty means "disabled"), else the built-in
 /// default so a daemon started by the desktop app checks updates too.

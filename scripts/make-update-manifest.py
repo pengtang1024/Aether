@@ -14,6 +14,11 @@ ships goes into `packages`, so a distro install can download the .deb and ask
 the user to run dpkg. Windows setup .exe files are release assets but not
 manifest entries — the portable zip covers that platform key.
 
+Linux releases also carry the bare programs (`aether-<version>-linux-<arch>`,
+`aether-daemon-...`) that a package install updates into user space: they land
+in the manifest's `runtimes` map, which the launcher re-verifies on every
+start.
+
 The manifest is only trustworthy once signed (aether-update-sign); the
 release workflow drops it when no signing key is configured.
 """
@@ -46,6 +51,16 @@ PATTERNS = [
     (re.compile(r"^aether-(?P<version>[^_]+)-macos-universal\.dmg$"), "macos-universal", "dmg"),
 ]
 
+# Bare programs a package install can swap into user space. The launcher
+# verifies each one against the signed manifest before starting it, so these
+# are what makes post-install updates silent (no root, no prompt).
+RUNTIME_PATTERNS = [
+    (
+        re.compile(r"^(?P<program>aether(?:-[a-z-]+)?)-(?P<version>[^_]+)-linux-(?P<arch>x86_64|aarch64)$"),
+        "linux-{arch}",
+    ),
+]
+
 
 def digest(path: Path) -> tuple[str, int]:
     hasher = hashlib.sha256()
@@ -55,6 +70,23 @@ def digest(path: Path) -> tuple[str, int]:
             hasher.update(chunk)
             size += len(chunk)
     return hasher.hexdigest(), size
+
+
+def match_runtime(name: str, version: str) -> tuple[str, str] | None:
+    """Platform key and program name for a bare Linux program, if `name` is one."""
+    for pattern, key_template in RUNTIME_PATTERNS:
+        match = pattern.match(name)
+        if not match:
+            continue
+        found = match.group("version")
+        if found != version:
+            print(
+                f"{name}: version {found} does not match --version {version}",
+                file=sys.stderr,
+            )
+            return None
+        return key_template.format(arch=match.group("arch")), match.group("program")
+    return None
 
 
 def main() -> int:
@@ -81,7 +113,20 @@ def main() -> int:
 
     assets: dict[str, dict] = {}
     packages: dict[str, dict] = {}
+    runtimes: dict[str, dict] = {}
     for path in sorted(dist.iterdir()):
+        runtime = match_runtime(path.name, args.version)
+        if runtime is not None:
+            key, program = runtime
+            sha256, size = digest(path)
+            bundle = runtimes.setdefault(key, {"files": {}})
+            bundle["files"][program] = {
+                "url": f"{base}/{path.name}",
+                "sha256": sha256,
+                "size": size,
+                "kind": "binary",
+            }
+            continue
         for pattern, key, kind in PATTERNS:
             match = pattern.match(path.name)
             if not match:
@@ -129,6 +174,11 @@ def main() -> int:
     }
     if packages:
         manifest["packages"] = dict(sorted(packages.items()))
+    if runtimes:
+        manifest["runtimes"] = {
+            key: {"files": dict(sorted(bundle["files"].items()))}
+            for key, bundle in sorted(runtimes.items())
+        }
     out = Path(args.out) if args.out else dist / "update.json"
     out.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(
@@ -139,6 +189,9 @@ def main() -> int:
         print(f"  {key}: {assets[key]['kind']} {assets[key]['size']} bytes")
     for key in sorted(packages):
         print(f"  {key} package: {packages[key]['kind']} {packages[key]['size']} bytes")
+    for key in sorted(runtimes):
+        programs = ", ".join(sorted(runtimes[key]["files"]))
+        print(f"  {key} runtime: {programs}")
     return 0
 
 

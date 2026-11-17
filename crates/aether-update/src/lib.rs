@@ -7,6 +7,13 @@
 //! 4. download to staging, verify SHA-256, then atomically apply or report
 //!    that the package needs a manual install (`.deb`).
 
+mod runtime;
+
+pub use runtime::{
+    default_root as default_runtime_root, is_package_install, CURRENT_LINK, MANIFEST_FILE,
+    SIGNATURE_FILE, VERSIONS_DIR, VERSION_FILE,
+};
+
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::{Read, Write};
@@ -38,6 +45,11 @@ pub struct UpdateManifest {
     /// updater can download but not apply itself.
     #[serde(default)]
     pub packages: BTreeMap<String, UpdateAsset>,
+    /// Signed runtime bundles keyed by platform: the program files a package
+    /// install can swap into user space without root (see `aether-launcher`).
+    /// Absent in older manifests and for platforms that only ship installers.
+    #[serde(default)]
+    pub runtimes: BTreeMap<String, RuntimeBundle>,
     /// Optional plugin releases keyed by plugin id; absent in older
     /// manifests (serde default keeps them parsing).
     #[serde(default)]
@@ -76,6 +88,25 @@ pub struct UpdateAsset {
     pub size: Option<u64>,
     #[serde(default)]
     pub kind: String,
+}
+
+/// One platform's runtime bundle: program name → asset. Every file is
+/// covered by the manifest signature, so the launcher can re-check a copy on
+/// disk long after the update ran.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RuntimeBundle {
+    #[serde(default)]
+    pub files: BTreeMap<String, UpdateAsset>,
+}
+
+/// A manifest together with the exact bytes and detached signature that were
+/// verified. Stored beside an installed runtime so the launcher can validate
+/// it without network access.
+#[derive(Debug, Clone)]
+pub struct SignedManifest {
+    pub manifest: UpdateManifest,
+    pub bytes: Vec<u8>,
+    pub signature: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -140,14 +171,43 @@ impl UpdateClient {
     /// version. The plugin update channel uses this: plugin entries matter
     /// even when the app itself is up to date.
     pub fn check_manifest(&self) -> Result<UpdateManifest, UpdateError> {
+        Ok(self.fetch_signed_manifest()?.manifest)
+    }
+
+    /// Manifest plus the bytes and signature that were checked against the
+    /// release key, for callers that must keep the proof on disk.
+    pub fn fetch_signed_manifest(&self) -> Result<SignedManifest, UpdateError> {
         let bytes = self.fetch(self.manifest_url.as_str())?;
-        let signature_bytes = self.fetch(&format!("{}.sig", self.manifest_url))?;
-        verify_signature(&bytes, &signature_bytes, &self.public_key)?;
-        Ok(serde_json::from_slice(&bytes)?)
+        let signature = self.fetch(&format!("{}.sig", self.manifest_url))?;
+        verify_signature(&bytes, &signature, &self.public_key)?;
+        let manifest = serde_json::from_slice(&bytes)?;
+        Ok(SignedManifest {
+            manifest,
+            bytes,
+            signature,
+        })
+    }
+
+    /// Runtime files for this platform, when the release ships a bundle the
+    /// launcher can verify and start.
+    pub fn runtime_files<'a>(
+        &self,
+        manifest: &'a UpdateManifest,
+    ) -> Option<&'a BTreeMap<String, UpdateAsset>> {
+        manifest
+            .runtimes
+            .get(&self.platform)
+            .map(|bundle| &bundle.files)
     }
 
     pub fn check(&self) -> Result<Option<UpdateManifest>, UpdateError> {
-        let manifest = self.check_manifest()?;
+        Ok(self.check_signed()?.map(|signed| signed.manifest))
+    }
+
+    /// [`Self::check`] that also hands back the verified manifest bytes.
+    pub fn check_signed(&self) -> Result<Option<SignedManifest>, UpdateError> {
+        let signed = self.fetch_signed_manifest()?;
+        let manifest = &signed.manifest;
         let version = Version::parse(&manifest.version)
             .map_err(|error| UpdateError::Protocol(format!("manifest version: {error}")))?;
         if version <= self.current_version {
@@ -163,12 +223,9 @@ impl UpdateClient {
             )));
         }
         if !in_rollout(&manifest.version, manifest.rollout) {
-            // Staged rollout: this machine's turn has not come yet. It is
-            // "up to date" for now — the next check re-evaluates the same
-            // stable bucket.
             return Ok(None);
         }
-        Ok(Some(manifest))
+        Ok(Some(signed))
     }
 
     pub fn asset_for_platform<'a>(
