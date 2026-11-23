@@ -97,7 +97,7 @@ jobs:
         # host dependencies differently there, so the platform columns are
         # only reproducible on Linux/macOS.
         run: python3 scripts/check-license-bundles.py --check-recipes --check-generated
-      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+      - uses: EmbarkStudios/cargo-deny-action@17aeb3c839e42274e2b8adf721c8c65edfdc74dd # v2.1.3
         with:
           # Global args go before the subcommand. Without --workspace,
           # cargo-deny roots the graph at default-members = ["."] and misses
